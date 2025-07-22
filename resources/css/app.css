@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos adicionales para el componente React de propiedades */
+@layer components {
+    .property-card {
+        @apply cursor-pointer;
+    }
+
+    .property-card:hover {
+        @apply shadow-2xl;
+    }
+
+    .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Animaciones personalizadas */
+    .fade-in {
+        animation: fadeIn 0.5s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Estilos para el modal */
+    .modal-overlay {
+        backdrop-filter: blur(4px);
+    }
+
+    /* Estilos para los filtros */
+    .filter-button {
+        @apply transition-all duration-300 ease-in-out;
+    }
+
+    .filter-button:hover {
+        @apply transform scale-105;
+    }
+}
