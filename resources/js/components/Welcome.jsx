@@ -2,6 +2,19 @@ import React, { useState, useEffect } from 'react';
 import PropertyMap from './PropertyMap';
 
 function Welcome({ user = null }) {
+   const [isMobile, setIsMobile] = useState(false);
+
+   // Responsive detection
+   useEffect(() => {
+       const checkScreenSize = () => {
+           setIsMobile(window.innerWidth < 768);
+       };
+
+       checkScreenSize();
+       window.addEventListener('resize', checkScreenSize);
+       return () => window.removeEventListener('resize', checkScreenSize);
+   }, []);
+
    // Scroll effects
    useEffect(() => {
        const handleScroll = () => {
@@ -67,20 +80,46 @@ function Welcome({ user = null }) {
                    }}>
                        <form className="search-form" action="/search" method="POST" style={{
                            display: 'grid',
-                           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                           gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr auto',
                            gap: '1rem',
                            alignItems: 'end'
                        }}>
                            <input type="hidden" name="_token" value={document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')} />
-                           <input type="text" name="location" placeholder="¿Dónde quieres vivir?" className="search-input" />
-                           <select name="property_type" className="search-input">
+                           <input type="text" name="location" placeholder="¿Dónde quieres vivir?" className="search-input" style={{
+                               width: '100%',
+                               padding: '0.75rem 1rem',
+                               border: '1px solid var(--border-primary)',
+                               borderRadius: '0.5rem',
+                               background: 'var(--bg-primary)',
+                               color: 'var(--text-primary)',
+                               fontSize: '1rem'
+                           }} />
+                           <select name="property_type" className="search-input" style={{
+                               width: '100%',
+                               padding: '0.75rem 1rem',
+                               border: '1px solid var(--border-primary)',
+                               borderRadius: '0.5rem',
+                               background: 'var(--bg-primary)',
+                               color: 'var(--text-primary)',
+                               fontSize: '1rem'
+                           }}>
                                <option value="">Tipo de propiedad</option>
                                <option value="casa">Casa</option>
                                <option value="departamento">Departamento</option>
                                <option value="estudio">Estudio</option>
                            </select>
                            <button type="submit" className="search-btn" style={{
-                               gridColumn: window.innerWidth < 768 ? '1 / -1' : 'auto'
+                               padding: '0.75rem 1.5rem',
+                               background: 'var(--primary)',
+                               color: 'white',
+                               border: 'none',
+                               borderRadius: '0.5rem',
+                               cursor: 'pointer',
+                               fontSize: '1rem',
+                               fontWeight: '600',
+                               transition: 'all 0.3s ease',
+                               whiteSpace: 'nowrap',
+                               gridColumn: isMobile ? '1 / -1' : 'auto'
                            }}>
                                <i className="fas fa-search" style={{ marginRight: 'var(--spacing-sm)' }}></i> Buscar
                            </button>

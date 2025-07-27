@@ -15,6 +15,7 @@ import Email from './components/Email'; // ← NUEVO componente agregado
 import Chat from './components/Chat'; // ← Agregar esta línea
 import TestOCR from './components/TestOCR';
 import PhotoVerification from './components/PhotoVerification';
+import Comunidad from './components/Comunidad';
 
 
 
@@ -116,6 +117,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const userData = getUserData();
         const root = createRoot(photoVerificationContainer);
         root.render(<PhotoVerification user={userData} />);
+        return;
+    }
+
+    const comunidadContainer = document.getElementById('comunidad-root');
+    if (comunidadContainer) {
+        const userData = getUserData();
+        const root = createRoot(comunidadContainer);
+        root.render(<Comunidad user={userData} />);
         return;
     }
 

@@ -7,6 +7,9 @@ use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\VerificationController;
 use App\Http\Controllers\Comparison\PhotoComparisonController;
+use App\Http\Controllers\ComunidadController;
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -272,3 +275,32 @@ Route::get('/test-model-files', function() {
         'weights_size' => file_exists($weightsPath) ? filesize($weightsPath) : 0,
     ]);
 });
+
+// Rutas para la comunidad
+Route::get('/comunidad', function () {
+    return view('comunidad');
+})->name('comunidad');
+
+// Resource completo para la API
+// ✅ CORREGIDO:
+Route::prefix('api')->middleware('auth')->group(function () {
+    Route::get('/user', function () {
+        return response()->json([
+            'success' => true,
+            'user' => auth()->user()
+        ]);
+    });
+
+    Route::resource('comunidad', ComunidadController::class)->except(['create', 'edit']);
+    Route::post('comunidad/{id}/react', [ComunidadController::class, 'react']);
+    Route::get('comunidad/zone/{zone}', [ComunidadController::class, 'byZone']);
+
+    // Rutas para comentarios
+    Route::post('comunidad/{id}/comments', [ComunidadController::class, 'addComment']);
+    Route::get('comunidad/{id}/comments', [ComunidadController::class, 'getComments']);
+    Route::delete('comunidad/comments/{commentId}', [ComunidadController::class, 'deleteComment']);
+    Route::post('comments/{commentId}/react', [ComunidadController::class, 'reactToComment']);
+});
+
+
+

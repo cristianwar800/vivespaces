@@ -106,161 +106,137 @@ const PhotoVerification = () => {
     // 🆕 INICIAR VALIDACIÓN INDIVIDUAL CON DELAY
     const startIndividualValidation = async (type) => {
         console.log(`🚀 Iniciando validación de ${type.toUpperCase()}...`);
+        setError('');
 
-        if (type === 'ine') {
-            setValidationMode('validating-ine');
-            setCurrentInstruction('🆔 Preparando validación de INE...');
-        } else {
-            setValidationMode('validating-person');
-            setCurrentInstruction('👤 Preparando validación de Persona...');
-        }
+        // Animación de transición
+        setValidationMode('transition');
+        setCurrentInstruction(
+            type === 'ine'
+                ? '🔄 Preparando validación de documento...'
+                : '🔄 Preparando reconocimiento facial...'
+        );
 
+        // Delay para la animación
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        setValidationMode(`validating-${type}`);
         setCurrentValidationProgress(0);
 
-        // 🔧 ESPERAR UN MOMENTO PARA QUE SE RENDERICE EL VIDEO
+        // Mensajes más descriptivos
+        const instructions = {
+            'ine': {
+                preparing: '🔍 Ajustando para documento...',
+                ready: '🆔 Muestre su INE/cliente claramente dentro del marco',
+                success: '✅ Documento detectado!'
+            },
+            'person': {
+                preparing: '🔍 Ajustando para rostro...',
+                ready: '👤 Mire directamente a la cámara con buena iluminación',
+                success: '✅ Rostro detectado!'
+            }
+        };
+
+        setCurrentInstruction(instructions[type].preparing);
+
         setTimeout(async () => {
             if (webcamRef.current) {
-                console.log('✅ Referencia de video disponible, iniciando cámara...');
-                if (type === 'ine') {
-                    setCurrentInstruction('🆔 Muestre su INE claramente a la cámara');
-                } else {
-                    setCurrentInstruction('👤 Muestre su cara claramente a la cámara');
+                setCurrentInstruction(instructions[type].ready);
+                try {
+                    await startWebcam();
+                } catch (err) {
+                    setCurrentInstruction('❌ Error al iniciar cámara');
                 }
-                await startWebcam();
             } else {
-                console.error('❌ Referencia de video aún no disponible');
-                setError('Error: elemento video no disponible');
+                setError('Error: Video no disponible');
+                setCurrentInstruction('❌ Error técnico');
             }
-        }, 200); // Aumentado a 200ms
+        }, 300);
     };
 
     // FUNCIÓN DE CÁMARA - EXACTAMENTE IGUAL que tu código que funciona
     const startWebcam = async () => {
         try {
-            console.log('📹 PASO 1: Iniciando cámara...');
+            console.log('📹 Iniciando cámara...');
             setError('');
             setCameraStatus('Solicitando permisos...');
 
-            // Verificar que la referencia esté disponible
+            // Mostrar loader de cámara
+            setIsWebcamActive(true); // Cambiado para mostrar el contenedor de video inmediatamente
+            setCurrentInstruction('⌛ Preparando cámara...');
+
             if (!webcamRef.current) {
                 throw new Error('Elemento video no disponible');
             }
 
-            console.log('✅ Referencia de video confirmada');
-
-            // Primero detener cualquier stream anterior
+            // Detener stream existente con animación
             if (webcamStream) {
-                webcamStream.getTracks().forEach(track => track.stop());
-                setWebcamStream(null);
+                setCurrentInstruction('🔄 Reiniciando cámara...');
+                await new Promise(resolve => {
+                    const video = webcamRef.current;
+                    video.style.opacity = '0';
+                    setTimeout(() => {
+                        webcamStream.getTracks().forEach(track => track.stop());
+                        setWebcamStream(null);
+                        resolve();
+                    }, 500); // Animación de fade out
+                });
             }
 
-            // Solicitar acceso a la cámara
-            console.log('📹 PASO 2: Solicitando getUserMedia...');
+            // Configuración mejorada de cámara
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: 'user',
-                    width: { ideal: 640, min: 320 },
-                    height: { ideal: 480, min: 240 }
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
                 },
                 audio: false
             });
 
-            console.log('✅ PASO 3: Stream obtenido:', {
-                id: stream.id,
-                active: stream.active,
-                tracks: stream.getTracks().length
-            });
-
-            setCameraStatus('Stream obtenido, configurando video...');
             setWebcamStream(stream);
+            const video = webcamRef.current;
 
-            // Configurar el elemento video
-            if (webcamRef.current) {
-                console.log('📹 PASO 4: Configurando elemento video...');
+            // Efecto de fade in para el video
+            video.style.transition = 'opacity 0.5s ease';
+            video.style.opacity = '0';
+            video.srcObject = stream;
+            video.muted = true;
+            video.playsInline = true;
+            video.autoplay = true;
 
-                const video = webcamRef.current;
-
-                // Limpiar eventos anteriores
-                video.onloadedmetadata = null;
-                video.onloadeddata = null;
-                video.oncanplay = null;
-                video.onerror = null;
-
-                // Configurar el stream
-                video.srcObject = stream;
-                video.muted = true;
-                video.playsInline = true;
-                video.autoplay = true;
-
-                console.log('📹 PASO 5: Configurando eventos...');
-
-                // Evento cuando los metadatos están listos
+            return new Promise((resolve) => {
                 video.onloadedmetadata = () => {
-                    console.log('✅ PASO 6: Metadatos cargados:', {
-                        videoWidth: video.videoWidth,
-                        videoHeight: video.videoHeight,
-                        readyState: video.readyState
-                    });
-                    setCameraStatus('Metadatos cargados, reproduciendo...');
-                };
-
-                // Evento cuando hay suficiente datos para reproducir
-                video.onloadeddata = () => {
-                    console.log('✅ PASO 7: Datos cargados, readyState:', video.readyState);
-                    setCameraStatus('Datos cargados...');
-                };
-
-                // Evento cuando puede empezar a reproducir
-                video.oncanplay = () => {
-                    console.log('✅ PASO 8: Video puede reproducirse');
-                    setCameraStatus('Listo para reproducir...');
-
-                    // Intentar reproducir
+                    setCameraStatus('Configurando video...');
                     video.play()
                         .then(() => {
-                            console.log('🎉 PASO 9: ¡Video reproduciéndose!');
-                            setCameraStatus('Reproduciéndose');
+                            video.style.opacity = '1'; // Fade in
+                            setCameraStatus('Cámara activa');
                             setIsWebcamActive(true);
-
-                            // Esperar y verificar que realmente está funcionando
-                            setTimeout(() => {
-                                if (video.videoWidth > 0 && video.videoHeight > 0) {
-                                    console.log('🚀 PASO 10: Iniciando predicciones...');
-                                    setCameraStatus('Activa - Análisis en tiempo real');
-                                    startRealTimePredictions();
-                                } else {
-                                    console.error('❌ Video sin dimensiones después de play()');
-                                    setError('Video sin dimensiones');
-                                }
-                            }, 1500);
+                            startRealTimePredictions();
+                            resolve();
                         })
                         .catch(err => {
-                            console.error('❌ PASO 9 FALLÓ: Error en play():', err);
-                            setCameraStatus('Error reproduciendo');
-                            setError('Error reproduciendo video: ' + err.message);
+                            console.error('Error al reproducir video:', err);
+                            setCameraStatus('Error en reproducción');
+                            setError(`Error: ${err.message}`);
                         });
                 };
 
-                // Evento de error
                 video.onerror = (err) => {
-                    console.error('❌ Error en elemento video:', err);
-                    setCameraStatus('Error en video');
-                    setError('Error en elemento de video');
+                    console.error('Error en video:', err);
+                    setCameraStatus('Error en dispositivo');
+                    setError('Error al acceder a la cámara');
                 };
-
-                // Forzar carga de metadatos
-                console.log('📹 PASO 5b: Forzando load()...');
-                video.load();
-
-            } else {
-                console.error('❌ Referencia de webcam no disponible');
-                setError('Elemento video no encontrado');
-            }
+            });
 
         } catch (error) {
-            console.error('❌ Error completo accediendo a la cámara:', error);
+            console.error('Error en cámara:', error);
+            setIsWebcamActive(false);
             setCameraStatus('Error: ' + error.message);
-            setError('Error accediendo a la cámara: ' + error.message);
+            setError(`No se pudo iniciar la cámara: ${error.message}`);
+
+            // Mostrar mensaje amigable
+            setCurrentInstruction('❌ Error al acceder a la cámara. Por favor revisa los permisos.');
         }
     };
 
@@ -327,33 +303,54 @@ const PhotoVerification = () => {
         const ineConfidence = predictions.find(p => p.className === 'INE')?.probability || 0;
         const personConfidence = predictions.find(p => p.className === 'Persona')?.probability || 0;
 
+        // Efectos visuales basados en confianza
+        const getConfidenceStyle = (confidence) => ({
+            width: `${confidence * 100}%`,
+            backgroundColor: confidence >= VALIDATION_THRESHOLD
+                ? '#10B981'
+                : confidence > VALIDATION_THRESHOLD * 0.7
+                    ? '#F59E0B'
+                    : '#EF4444'
+        });
+
         if (validationMode === 'validating-ine') {
             if (ineConfidence >= VALIDATION_THRESHOLD) {
                 if (!validationTimerRef.current) {
                     console.log('🆔 INE detectada, iniciando validación...');
-                    setCurrentInstruction('🆔 ¡INE detectada! Mantenga la posición...');
+                    setCurrentInstruction('🎯 ¡Documento válido detectado! Mantenga la posición...');
                     startValidationTimer('ine');
                 }
             } else {
                 if (validationTimerRef.current) {
                     console.log('⚠️ INE perdida, cancelando validación...');
                     cancelValidationTimer();
-                    setCurrentInstruction('🆔 Muestre su INE claramente a la cámara');
+                    setCurrentInstruction('🔍 Ajuste el documento en el marco por favor');
                 }
+                // Feedback visual en tiempo real
+                setWebcamPredictions(predictions.map(p => ({
+                    ...p,
+                    style: getConfidenceStyle(p.className === 'INE' ? p.probability : 0)
+                })));
             }
-        } else if (validationMode === 'validating-person') {
+        }
+        else if (validationMode === 'validating-person') {
             if (personConfidence >= VALIDATION_THRESHOLD) {
                 if (!validationTimerRef.current) {
                     console.log('👤 Persona detectada, iniciando validación...');
-                    setCurrentInstruction('👤 ¡Persona detectada! Mantenga la posición...');
+                    setCurrentInstruction('🎯 ¡Rostro detectado! Mantenga la posición...');
                     startValidationTimer('person');
                 }
             } else {
                 if (validationTimerRef.current) {
                     console.log('⚠️ Persona perdida, cancelando validación...');
                     cancelValidationTimer();
-                    setCurrentInstruction('👤 Muestre su cara claramente a la cámara');
+                    setCurrentInstruction('👀 Mire directamente a la cámara');
                 }
+                // Feedback visual en tiempo real
+                setWebcamPredictions(predictions.map(p => ({
+                    ...p,
+                    style: getConfidenceStyle(p.className === 'Persona' ? p.probability : 0)
+                })));
             }
         }
     };
@@ -397,38 +394,58 @@ const PhotoVerification = () => {
 
     const completeIndividualValidation = (type) => {
         // Limpiar timers
-        if (validationTimerRef.current) {
-            clearTimeout(validationTimerRef.current);
-            validationTimerRef.current = null;
-        }
-        if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-            progressIntervalRef.current = null;
-        }
-
+        cancelValidationTimer();
         setCurrentValidationProgress(100);
+
+        // Efectos de celebración
+        const celebration = {
+            'ine': {
+                emoji: '🆔',
+                message: '¡Documento validado con éxito!',
+                color: 'text-blue-600'
+            },
+            'person': {
+                emoji: '👤',
+                message: '¡Rostro verificado con éxito!',
+                color: 'text-green-600'
+            }
+        };
 
         if (type === 'ine') {
             setIneValidated(true);
             setValidationMode('ine-completed');
-            setCurrentInstruction('🎉 ¡INE validada exitosamente!');
-        } else if (type === 'person') {
+        } else {
             setPersonValidated(true);
             setValidationMode('person-completed');
-            setCurrentInstruction('🎉 ¡Persona validada exitosamente!');
+        }
+
+        setCurrentInstruction(
+            <span className={`${celebration[type].color} animate-bounce`}>
+                {celebration[type].emoji} {celebration[type].message}
+            </span>
+        );
+
+        // Sonido de éxito (opcional)
+        if (typeof window !== 'undefined') {
+            const audio = new Audio('/sounds/success.mp3'); // Asegúrate de tener este archivo
+            audio.volume = 0.3;
+            audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
         }
 
         // Detener cámara después de un momento
         setTimeout(() => {
             stopWebcam();
 
-            // Verificar si ambas están validadas
             if ((type === 'ine' && personValidated) || (type === 'person' && ineValidated)) {
                 setValidationMode('all-completed');
-                setCurrentInstruction('🎉 ¡Validación completa! Ambas verificaciones exitosas');
+                setCurrentInstruction(
+                    <span className="text-purple-600 font-bold text-xl">
+                        🎉 ¡Validación completa! ✔️
+                    </span>
+                );
             } else {
                 setValidationMode('selection');
-                setCurrentInstruction('Selecciona qué quieres validar');
+                setCurrentInstruction('Seleccione siguiente validación');
             }
         }, 2000);
     };

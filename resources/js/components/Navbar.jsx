@@ -97,8 +97,8 @@ function Navbar({ user = null }) {
                             </a>
                         </li>
                         <li>
-                            <a href="/home" className="text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 font-medium transition-colors duration-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-                                Renta tu Hogar
+                            <a href="/comunidad" className="text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 font-medium transition-colors duration-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                                Comunidad
                             </a>
                         </li>
                         <li>
