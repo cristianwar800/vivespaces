@@ -24,8 +24,16 @@ class MessageController extends Controller
 
         // Cargar datos adicionales
         foreach ($conversations as &$conversation) {
-            $conversation['other_user'] = User::find($conversation['other_user_id']);
-            $conversation['property'] = Property::find($conversation['property_id']);
+            $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')->find($conversation['other_user_id']);
+
+            if ($otherUser) {
+                $otherUser->avatar_url = $otherUser->avatar_url;
+                $conversation['other_user'] = $otherUser;
+            } else {
+                $conversation['other_user'] = null;
+            }
+
+            $conversation['property'] = Property::select('id', 'title')->find($conversation['property_id']);
             $conversation['last_message'] = Auth::user()->getLastMessageWith(
                 $conversation['other_user_id'],
                 $conversation['property_id']
@@ -44,7 +52,10 @@ class MessageController extends Controller
     public function show($propertyId, $userId)
     {
         $property = Property::findOrFail($propertyId);
-        $otherUser = User::findOrFail($userId);
+        $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')->findOrFail($userId);
+
+        $otherUser->avatar_url = $otherUser->avatar_url;
+
 
         // Verificar permisos
         if (!Auth::user()->canContactProperty($propertyId) && $property->user_id !== Auth::id()) {
@@ -292,7 +303,11 @@ class MessageController extends Controller
             \Log::info('💾 Creando mensaje:', $messageData);
 
             $message = Message::create($messageData);
-            $message->load(['sender', 'replyTo']);
+            $message->load(['sender:id,name,last_name,profile_photo', 'replyTo']);
+
+            if ($message->sender) {
+                $message->sender->avatar_url = $message->sender->avatar_url;
+            }
 
             // ✅ RESPUESTA MEJORADA CON DATOS DE AUDIO
             $formattedMessage = [
@@ -507,8 +522,18 @@ public function getConversations()
 
         // Cargar datos adicionales
         foreach ($conversations as &$conversation) {
-            $conversation['other_user'] = User::find($conversation['other_user_id']);
-            $conversation['property'] = Property::find($conversation['property_id']);
+
+            $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')->find($conversation['other_user_id']);
+
+                if ($otherUser) {
+                    $otherUser->avatar_url = $otherUser->avatar_url;
+                    $conversation['other_user'] = $otherUser;
+                } else {
+                    $conversation['other_user'] = null;
+                }
+
+
+            $conversation['property'] = Property::select('id', 'title')->find($conversation['property_id']);
             $conversation['last_message'] = Auth::user()->getLastMessageWith(
                 $conversation['other_user_id'],
                 $conversation['property_id']
@@ -569,9 +594,14 @@ public function getConversations()
 
         // Obtener mensajes
         $messages = Message::forConversation($propertyId, $currentUserId, $otherUserId)
-                           ->with(['sender', 'replyTo'])
+                            ->with(['sender:id,name,last_name,profile_photo', 'replyTo'])
                            ->orderBy('created_at', 'asc')
                            ->get()
+                           ->each(function ($message) {
+                            if ($message->sender) {
+                                $message->sender->avatar_url = $message->sender->avatar_url;
+                            }
+                        })
                            ->map(function ($message) {
                                return [
                                    'id' => $message->id,

@@ -16,6 +16,8 @@ import Chat from './components/Chat'; // ← Agregar esta línea
 import TestOCR from './components/TestOCR';
 import PhotoVerification from './components/PhotoVerification';
 import Comunidad from './components/Comunidad';
+import AdminPanel from './components/AdminPanel';
+
 
 
 
@@ -125,6 +127,18 @@ document.addEventListener('DOMContentLoaded', function() {
         const userData = getUserData();
         const root = createRoot(comunidadContainer);
         root.render(<Comunidad user={userData} />);
+        return;
+    }
+
+                // En resources/js/app.jsx, agrega después de los otros imports
+
+// Y después de los otros contenedores, agrega:
+    // Admin Panel (sin navbar - ya está en layout)
+    const adminPanelContainer = document.getElementById('admin-panel-root');
+    if (adminPanelContainer) {
+        const userData = getUserData();
+        const root = createRoot(adminPanelContainer);
+        root.render(<AdminPanel user={userData} />);
         return;
     }
 

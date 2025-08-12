@@ -27,6 +27,8 @@ class User extends Authenticatable
         'is_identity_verified',    // 🆕 NUEVO
         'verified_at',             // 🆕 NUEVO
         'verification_method',     // 🆕 NUEVO
+        'suspended_at',           // 🆕 NUEVO
+        'must_change_password',   // 🆕 NUEVO
     ];
 
     protected $hidden = [
@@ -38,8 +40,10 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'suspended_at' => 'datetime',        // 🆕 NUEVO
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_change_password' => 'boolean', // 🆕 NUEVO
         ];
     }
 

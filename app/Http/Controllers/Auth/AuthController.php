@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Property;
 use App\Models\EmailVerification;
 use App\Mail\EmailVerificationMail;
 use Illuminate\Http\Request;
@@ -29,8 +30,26 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
+
+
+
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
+
             $request->session()->regenerate();
+            $user = Auth::user();
+
+
+            if ($user->suspended_at !== null) {
+                Auth::logout();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tu cuenta ha sido suspendida. Contacta al administrador.'
+                ], 403);
+            }
+
+
+
+
 
             return response()->json([
                 'success' => true,
@@ -71,6 +90,21 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $passwordErrors = $this->validateSecurePassword($request->password);
+
+        if (!empty($passwordErrors)) {
+            // RETORNAR ERRORES DE VALIDACIÓN
+            // Formato JSON con estructura estándar de errores de Laravel
+            // 'password' => array de errores específicos de contraseña
+            // 422 = código HTTP para "Unprocessable Entity" (datos inválidos)
+            return response()->json([
+                'success' => false,
+                'errors' => [
+                    'password' => $passwordErrors  // Array con todos los errores encontrados
+                ]
             ], 422);
         }
 
@@ -128,6 +162,74 @@ class AuthController extends Controller
                 'message' => 'Error enviando código de verificación: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function validateSecurePassword($password)
+    {
+        $errors = [];
+
+        // VERIFICAR LETRAS MINÚSCULAS
+        // preg_match() busca patrones regex en el texto
+        // '/[a-z]/' = busca cualquier letra del alfabeto en minúscula (a hasta z)
+        // Si NO encuentra ninguna minúscula, añade error al array
+
+        if (!preg_match('/[a-z]/', $password)) {
+            $errors[] = 'Debe contener al menos una letra minúscula';
+        }
+
+        if (!preg_match('/[A-Z]/', $password)) {
+            $errors[] = 'Debe contener al menos una letra mayúscula';
+        }
+
+        // VERIFICAR NÚMEROS
+        // '/[0-9]/' = busca cualquier dígito del 0 al 9
+        // Si NO encuentra ningún número, añade error al array
+        if (!preg_match('/[0-9]/', $password)) {
+            $errors[] = 'Debe contener al menos un número';
+        }
+
+        if (!preg_match('/[!@#$%^&*(),.?":{}|<>\-_+=\[\]\/~`]/', $password)) {
+             $errors[] = 'Debe contener al menos un carácter especial';
+        }
+
+        if (preg_match('/(?:0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210)/', $password)) {
+            $errors[] = 'No debe contener secuencias numéricas consecutivas';
+        }
+
+        if (preg_match('/(?:abcd|bcde|cdef|defg|efgh|fghi|ghij|hijk|ijkl|jklm|klmn|lmno|mnop|nopq|opqr|pqrs|qrst|rstu|stuv|tuvw|uvwx|vwxy|wxyz)/i', $password)) {
+        $errors[] = 'No debe contener secuencias de letras consecutivas';
+        }
+
+        if (preg_match('/(.)\1{3,}/', $password)) {
+        $errors[] = 'No debe contener más de 3 caracteres iguales consecutivos';
+        }
+
+        $commonPasswords = [
+            'password',     // La contraseña más común en inglés
+            'contraseña',   // La contraseña más común en español
+            '12345678',     // Secuencia numérica básica
+            'qwerty123',    // Patrón del teclado + números
+            'admin123',     // Contraseña típica de administrador
+            'password1',    // Variación de password con número
+            'password123',  // Otra variación común
+            'welcome123',   // Contraseña corporativa típica
+            'letmein123'    // Frase común con números
+        ];
+
+
+        foreach ($commonPasswords as $common) {
+            if (stripos($password, $common) !== false) {
+                $errors[] = 'No debe contener contraseñas comunes';
+                break; // Salir del bucle para evitar múltiples errores del mismo tipo
+            }
+        }
+
+        if (preg_match('/^\d+$/', $password)) {
+        $errors[] = 'No debe contener solo números';
+        }
+
+        return $errors;
+
     }
 
     /**
@@ -306,6 +408,7 @@ class AuthController extends Controller
                     'country' => $user->country,
                     'postal_code' => $user->postal_code,
                     'profile_photo' => $user->profile_photo,
+                    'avatar_url' => $user->avatar_url,
                     'role' => $user->role,
                 ]
             ]);
@@ -343,4 +446,9 @@ class AuthController extends Controller
             ]
         ]);
     }
+
+
+
+
+
 }

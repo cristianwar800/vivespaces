@@ -1,440 +1,703 @@
 import React, { useState, useEffect, useRef } from 'react';
 import '../styles/global.css';
 
-
 function Navbar({ user = null }) {
-    const [darkMode, setDarkMode] = useState(false);
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+   const [darkMode, setDarkMode] = useState(false);
+   const [dropdownOpen, setDropdownOpen] = useState(false);
+   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+   const [isScrolled, setIsScrolled] = useState(false);
+   const [notificationCount, setNotificationCount] = useState(0);
+   const [searchQuery, setSearchQuery] = useState('');
+   const [searchResults, setSearchResults] = useState([]);
+   const [isSearchExpanded, setIsSearchExpanded] = useState(false); // Para desktop
+   const [isSearchOpen, setIsSearchOpen] = useState(false); // Para mobile
 
-    // Referencias para cerrar menús al hacer clic fuera
-    const dropdownRef = useRef(null);
-    const mobileMenuRef = useRef(null);
+   const dropdownRef = useRef(null);
+   const mobileMenuRef = useRef(null);
+   const searchRef = useRef(null);
+   const searchInputRef = useRef(null); // Nueva ref para el input
+   const searchTimeoutRef = useRef(null);
 
-    useEffect(() => {
-        // Aplicar tema inicial
-        const savedTheme = localStorage.getItem('theme') ||
-            (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+   // Real search function - conectado con tu API de Laravel
+   const performSearch = async (query) => {
+       try {
+           const response = await fetch(`/api/search/properties?query=${encodeURIComponent(query)}&limit=6`);
+           const data = await response.json();
 
-        setDarkMode(savedTheme === 'dark');
+           if (data.success) {
+               return data.results;
+           } else {
+               console.error('Search API error:', data.message);
+               return [];
+           }
+       } catch (error) {
+           console.error('Search error:', error);
+           return [];
+       }
+   };
 
-        if (savedTheme === 'dark') {
-            document.documentElement.classList.add('dark');
-        }
+   useEffect(() => {
+       if (typeof window !== 'undefined') {
+           const savedTheme = localStorage.getItem('theme') ||
+               (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
-        // Cerrar menús al hacer clic fuera
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setDropdownOpen(false);
-            }
-            if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target)) {
-                setMobileMenuOpen(false);
-            }
-        };
+           setDarkMode(savedTheme === 'dark');
 
-        // Cerrar menú móvil al cambiar tamaño de ventana
-        const handleResize = () => {
-            if (window.innerWidth > 768) {
-                setMobileMenuOpen(false);
-                setDropdownOpen(false);
-            }
-        };
+           if (savedTheme === 'dark') {
+               document.documentElement.classList.add('dark');
+           }
 
-        document.addEventListener('mousedown', handleClickOutside);
-        window.addEventListener('resize', handleResize);
+           const handleScroll = () => {
+               setIsScrolled(window.scrollY > 20);
+           };
 
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            window.removeEventListener('resize', handleResize);
-        };
-    }, []);
+           window.addEventListener('scroll', handleScroll);
+           return () => window.removeEventListener('scroll', handleScroll);
+       }
 
-    const toggleDarkMode = () => {
-        const newDarkMode = !darkMode;
-        setDarkMode(newDarkMode);
+       const handleClickOutside = (event) => {
+           if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+               setDropdownOpen(false);
+           }
+           if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target)) {
+               setMobileMenuOpen(false);
+           }
+           if (searchRef.current && !searchRef.current.contains(event.target)) {
+               setIsSearchOpen(false);
+               setIsSearchExpanded(false);
+               setSearchQuery('');
+           }
+       };
 
-        if (newDarkMode) {
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
-        }
-    };
+       const handleResize = () => {
+           if (typeof window !== 'undefined' && window.innerWidth >= 1280) {
+               setMobileMenuOpen(false);
+               setDropdownOpen(false);
+               setIsSearchOpen(false);
+               setIsSearchExpanded(false);
+           }
+       };
 
-    const toggleDropdown = () => {
-        setDropdownOpen(!dropdownOpen);
-    };
+       document.addEventListener('mousedown', handleClickOutside);
+       if (typeof window !== 'undefined') {
+           window.addEventListener('resize', handleResize);
+       }
 
-    const toggleMobileMenu = () => {
-        setMobileMenuOpen(!mobileMenuOpen);
-    };
+       return () => {
+           document.removeEventListener('mousedown', handleClickOutside);
+           if (typeof window !== 'undefined') {
+               window.removeEventListener('resize', handleResize);
+           }
+       };
+   }, []);
 
-    const closeMobileMenu = () => {
-        setMobileMenuOpen(false);
-    };
+   // Efecto para enfocar el input cuando se expande y manejar ESC
+   useEffect(() => {
+       if (isSearchExpanded && searchInputRef.current) {
+           searchInputRef.current.focus();
+       }
 
-    return (
-        <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-lg bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700 shadow-lg transition-all duration-300">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between items-center h-16">
+       const handleKeyDown = (event) => {
+           if (event.key === 'Escape' && isSearchExpanded) {
+               setIsSearchExpanded(false);
+               setSearchQuery('');
+           }
+       };
 
-                    {/* Logo */}
-                    <a href="/" className="flex items-center space-x-3 hover:scale-105 transition-transform duration-300">
-                        <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
-                            <span className="text-white font-bold text-xl">V</span>
-                        </div>
-                        <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent hidden sm:block">
-                            ViveSpaces
-                        </span>
-                    </a>
+       document.addEventListener('keydown', handleKeyDown);
+       return () => {
+           document.removeEventListener('keydown', handleKeyDown);
+       };
+   }, [isSearchExpanded]);
 
-                    {/* Desktop Navigation */}
-                    <ul className="hidden md:flex items-center space-x-8">
-                        <li>
-                            <a href="/properties" className="text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 font-medium transition-colors duration-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-                                Propiedades
-                            </a>
-                        </li>
-                        <li>
-                            <a href="/comunidad" className="text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 font-medium transition-colors duration-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-                                Comunidad
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#contacto" className="text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 font-medium transition-colors duration-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-                                Contacto
-                            </a>
-                        </li>
-                    </ul>
+   useEffect(() => {
+       if (searchTimeoutRef.current) {
+           clearTimeout(searchTimeoutRef.current);
+       }
 
-                    {/* Desktop Right Section */}
-                    <div className="hidden md:flex items-center space-x-4">
-                        {user ? (
-                            /* User Dropdown */
-                            <div className="relative" ref={dropdownRef}>
-                                <button
-                                    onClick={toggleDropdown}
-                                    className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-200"
-                                >
-                                    <div className="w-8 h-8 rounded-full overflow-hidden">
-                                        {user.profile_photo ? (
-                                            <img
-                                                src={`/storage/${user.profile_photo}`}
-                                                alt="Avatar"
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center text-white font-semibold text-sm">
-                                                {user.name?.charAt(0)?.toUpperCase() || ''}
-                                                {user.last_name?.charAt(0)?.toUpperCase() || ''}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="text-left">
-                                        <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                            {user.name} {user.last_name}
-                                        </p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                            {user.role?.charAt(0)?.toUpperCase() + user.role?.slice(1) || 'Usuario'}
-                                        </p>
-                                    </div>
-                                    <svg
-                                        className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
+       if (searchQuery.trim() === '') {
+           setSearchResults([]);
+           return;
+       }
 
-                                {/* Dropdown Menu */}
-                                <div className={`absolute right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 transition-all duration-200 ${dropdownOpen ? 'opacity-100 visible translate-y-0' : 'opacity-0 invisible -translate-y-2'}`}>
+       searchTimeoutRef.current = setTimeout(async () => {
+           const results = await performSearch(searchQuery);
+           setSearchResults(results);
+       }, 300);
 
-                                    {/* Header */}
-                                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="w-12 h-12 rounded-full overflow-hidden">
-                                                {user.profile_photo ? (
-                                                    <img
-                                                        src={`/storage/${user.profile_photo}`}
-                                                        alt="Avatar"
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-full h-full bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center text-white font-semibold">
-                                                        {user.name?.charAt(0)?.toUpperCase() || ''}
-                                                        {user.last_name?.charAt(0)?.toUpperCase() || ''}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold text-gray-900 dark:text-white">
-                                                    {user.name} {user.last_name}
-                                                </p>
-                                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                                    {user.email}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
+       return () => {
+           if (searchTimeoutRef.current) {
+               clearTimeout(searchTimeoutRef.current);
+           }
+       };
+   }, [searchQuery]);
 
-                                    {/* Menu Items */}
-                                    <div className="py-2">
-                                        <a href="/profile" className="flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors duration-150">
-                                            <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            Mi Perfil
-                                        </a>
+   const toggleDarkMode = () => {
+       const newDarkMode = !darkMode;
+       setDarkMode(newDarkMode);
 
-                                        <a href="/properties" className="flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors duration-150">
-                                            <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                                            </svg>
-                                            Mis Propiedades
-                                        </a>
+       if (typeof window !== 'undefined') {
+           if (newDarkMode) {
+               document.documentElement.classList.add('dark');
+               localStorage.setItem('theme', 'dark');
+           } else {
+               document.documentElement.classList.remove('dark');
+               localStorage.setItem('theme', 'light');
+           }
+       }
+   };
 
-                                        <a href="/chat" className="flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors duration-150">
-                                            <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                            </svg>
-                                            Mensajes
-                                        </a>
+   const getCSRFToken = () => {
+       if (typeof document !== 'undefined') {
+           const metaTag = document.querySelector('meta[name="csrf-token"]');
+           return metaTag ? metaTag.getAttribute('content') : '';
+       }
+       return '';
+   };
 
-                                        <a href="#" className="flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors duration-150">
-                                            <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                            </svg>
-                                            Favoritos
-                                        </a>
-                                    </div>
+   const handleSearchToggle = () => {
+       setIsSearchExpanded(!isSearchExpanded);
+       // Solo limpiar cuando se está cerrando
+       if (isSearchExpanded) {
+           setSearchQuery('');
+           setSearchResults([]);
+       }
+   };
 
-                                    {/* Logout */}
-                                    <div className="border-t border-gray-200 dark:border-gray-700 py-2">
-                                        <form method="POST" action="/logout">
-                                            <input
-                                                type="hidden"
-                                                name="_token"
-                                                value={document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')}
-                                            />
-                                            <button
-                                                type="submit"
-                                                className="w-full text-left flex items-center px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150"
-                                            >
-                                                <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                                </svg>
-                                                Cerrar Sesión
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            /* Auth Buttons */
-                            <div className="flex items-center space-x-3">
-                                <a
-                                    href="/login"
-                                    className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors duration-200"
-                                >
-                                    Iniciar Sesión
-                                </a>
-                                <a
-                                    href="/register"
-                                    className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-                                >
-                                    Regístrate
-                                </a>
-                            </div>
-                        )}
+   return (
+       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+           isScrolled
+               ? 'backdrop-blur-xl bg-white/95 dark:bg-gray-900/95 shadow-xl border-b border-gray-200/50 dark:border-gray-700/50'
+               : 'backdrop-blur-lg bg-white/90 dark:bg-gray-900/90 shadow-lg border-b border-gray-200/30 dark:border-gray-700/30'
+       }`}>
+           <div className="max-w-full mx-auto">
+               <div className={`flex justify-between items-center px-4 sm:px-6 lg:px-8 transition-all duration-300 ${
+                   isScrolled ? 'h-16' : 'h-20'
+               }`}>
 
-                        {/* Dark Mode Toggle */}
-                        <button
-                            onClick={toggleDarkMode}
-                            className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200"
-                        >
-                            {darkMode ? (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                                </svg>
-                            ) : (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                                </svg>
-                            )}
-                        </button>
-                    </div>
+                   {/* Logo */}
+                   <a href="/" className="group flex items-center space-x-3 hover:scale-105 transition-all duration-300">
+                       <div className="relative">
+                           <div className={`${isScrolled ? 'w-12 h-12' : 'w-14 h-14'} rounded-xl overflow-hidden shadow-lg transition-all duration-300 group-hover:shadow-emerald-500/25 group-hover:rotate-3 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center border-2 border-white/20 dark:border-gray-700/30`}>
+                               <img
+                                   src="https://i.ibb.co/1fG75QgM/Whats-App-Image-2025-08-01-at-11-58-36-PM.jpg"
+                                   alt="ViveSpaces Logo"
+                                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                   onError={(e) => {
+                                       e.target.style.display = 'none';
+                                       e.target.nextElementSibling.style.display = 'flex';
+                                   }}
+                               />
+                               <span className="text-white font-bold text-2xl group-hover:scale-110 transition-transform duration-300 hidden">V</span>
+                           </div>
+                       </div>
+                       <div className="hidden sm:block">
+                           <span className={`${isScrolled ? 'text-xl' : 'text-2xl'} font-bold bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 bg-clip-text text-transparent transition-all duration-300`}>
+                               ViveSpaces
+                           </span>
+                       </div>
+                   </a>
 
-                    {/* Mobile Menu Button */}
-                    <button
-                        onClick={toggleMobileMenu}
-                        className="md:hidden p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-200"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            {mobileMenuOpen ? (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                            ) : (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                            )}
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                   {/* Desktop Navigation */}
+                   <ul className="hidden xl:flex items-center space-x-8">
+                       {[
+                           { href: "/properties", label: "Propiedades", icon: "🏠" },
+                           { href: "/comunidad", label: "Comunidad", icon: "👥" },
+                           ...(user && user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
+                           { href: "#contacto", label: "Contacto", icon: "💬" }
+                       ].map((link) => (
+                           <li key={link.href}>
+                               <a
+                                   href={link.href}
+                                   className="group relative px-4 py-3 text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium transition-all duration-300 rounded-lg hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20"
+                               >
+                                   <span className="relative z-10 flex items-center space-x-2">
+                                       <span className="text-sm opacity-70 group-hover:opacity-100 transition-all duration-200">{link.icon}</span>
+                                       <span className="text-sm">{link.label}</span>
+                                   </span>
+                                   <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-0 h-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 group-hover:w-3/4 transition-all duration-300 rounded-full"></div>
+                               </a>
+                           </li>
+                       ))}
+                   </ul>
 
-            {/* Mobile Menu */}
-            <div className={`md:hidden transition-all duration-300 ease-in-out ${mobileMenuOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-                <div className="px-4 pt-2 pb-4 space-y-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg border-t border-gray-200 dark:border-gray-700" ref={mobileMenuRef}>
+                   {/* Desktop Right Section */}
+                   <div className="hidden lg:flex items-center space-x-6">
+                       {/* Search Bar - Versión profesional que se desliza SOLO REACT */}
+                       <div className="relative" ref={searchRef}>
+                           <div className="flex items-center">
+                               {/* Botón de búsqueda - solo visible cuando está colapsado */}
+                               {!isSearchExpanded && (
+                                   <button
+                                       onClick={handleSearchToggle}
+                                       className="group p-2.5 rounded-lg bg-gray-100/70 dark:bg-gray-800/70 text-gray-600 dark:text-gray-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 hover:shadow-lg hover:shadow-emerald-500/20 dark:hover:shadow-emerald-400/20 transition-all duration-300 hover:scale-110 active:scale-95"
+                                   >
+                                       <svg className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                       </svg>
+                                   </button>
+                               )}
 
-                    {/* User Info Mobile */}
-                    {user && (
-                        <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg mb-4">
-                            <div className="w-10 h-10 rounded-full overflow-hidden">
-                                {user.profile_photo ? (
-                                    <img
-                                        src={`/storage/${user.profile_photo}`}
-                                        alt="Avatar"
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center text-white font-semibold">
-                                        {user.name?.charAt(0)?.toUpperCase() || ''}
-                                        {user.last_name?.charAt(0)?.toUpperCase() || ''}
-                                    </div>
-                                )}
-                            </div>
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">
-                                    {user.name} {user.last_name}
-                                </p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    {user.email}
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                               {/* Barra de búsqueda que se desliza - ESTILO PROFESIONAL */}
+                               <div
+                                   className={`transition-all duration-500 ease-out ${
+                                       isSearchExpanded ? 'w-96 ml-2' : 'w-0 ml-0 overflow-hidden'
+                                   }`}
+                               >
+                                   <div className="flex items-center bg-white/98 dark:bg-gray-900/98 rounded-2xl px-5 py-3.5 shadow-2xl shadow-black/10 dark:shadow-black/30 border border-gray-200/60 dark:border-gray-700/60 backdrop-blur-xl w-96 transform transition-all duration-700 ease-out hover:shadow-3xl ring-1 ring-gray-300/20 dark:ring-gray-600/20 hover:ring-emerald-500/30 dark:hover:ring-emerald-400/30">
 
-                    {/* Navigation Links */}
-                    <a
-                        href="/properties"
-                        className="block px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                        onClick={closeMobileMenu}
-                    >
-                        Propiedades
-                    </a>
+                                       {/* Ícono de búsqueda profesional */}
+                                       <div className="relative mr-4">
+                                           <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                           </svg>
+                                       </div>
 
-                    <a
-                        href="/home"
-                        className="block px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                        onClick={closeMobileMenu}
-                    >
-                        Renta tu Hogar
-                    </a>
+                                       {/* Input profesional */}
+                                       <input
+                                           ref={searchInputRef}
+                                           type="text"
+                                           value={searchQuery}
+                                           onChange={(e) => setSearchQuery(e.target.value)}
+                                           placeholder="Buscar propiedades, usuarios, ubicaciones..."
+                                           className="bg-transparent text-base text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none w-full font-normal tracking-normal focus:placeholder-gray-600 dark:focus:placeholder-gray-300 transition-all duration-300"
+                                       />
 
-                    {user && (
-                        <a
-                            href="/chat"
-                            className="block px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                            onClick={closeMobileMenu}
-                        >
-                            Mensajes
-                        </a>
-                    )}
+                                       {/* Divisor vertical */}
+                                       <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-3"></div>
 
-                    <a
-                        href="#contacto"
-                        className="block px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                        onClick={closeMobileMenu}
-                    >
-                        Contacto
-                    </a>
+                                       {/* Botón cerrar profesional */}
+                                       <button
+                                           onClick={handleSearchToggle}
+                                           className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg group"
+                                       >
+                                           <svg className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                           </svg>
+                                       </button>
 
-                    {/* User Actions */}
-                    {user ? (
-                        <div className="pt-4 space-y-2 border-t border-gray-200 dark:border-gray-700">
-                            <a
-                                href="/profile"
-                                className="block px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                                onClick={closeMobileMenu}
-                            >
-                                Mi Perfil
-                            </a>
+                                       {/* Indicador de comandos - estilo profesional */}
+                                       <div className="flex items-center space-x-1 ml-2">
+                                           <kbd className="px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-sm">
+                                               ESC
+                                           </kbd>
+                                       </div>
+                                   </div>
+                               </div>
+                           </div>
 
-                            <a
-                                href="#"
-                                className="block px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                                onClick={closeMobileMenu}
-                            >
-                                Favoritos
-                            </a>
-                        </div>
-                    ) : (
-                        /* Auth Buttons Mobile */
-                        <div className="pt-4 space-y-3 border-t border-gray-200 dark:border-gray-700">
-                            <a
-                                href="/login"
-                                className="block w-full text-center px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors duration-200"
-                                onClick={closeMobileMenu}
-                            >
-                                Iniciar Sesión
-                            </a>
-                            <a
-                                href="/register"
-                                className="block w-full text-center px-4 py-2 text-base font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-200"
-                                onClick={closeMobileMenu}
-                            >
-                                Regístrate
-                            </a>
-                        </div>
-                    )}
+                           {/* Resultados de búsqueda - ESTILO PROFESIONAL */}
+                           {isSearchExpanded && (
+                               <div className="absolute top-full left-0 mt-2 w-96 z-50">
+                                   <div className="bg-white dark:bg-gray-800 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
+                                       {searchResults.length > 0 ? searchResults.map((result) => (
+                                           <a
+                                               key={result.id}
+                                               href={result.url}
+                                               className="flex items-center px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 group"
+                                               onClick={() => setIsSearchExpanded(false)}
+                                           >
+                                               {/* Imagen o ícono */}
+                                               <div className="flex-shrink-0 w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center mr-3 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors duration-200 overflow-hidden">
+                                                   {result.image ? (
+                                                       <img
+                                                           src={result.image}
+                                                           alt={result.title}
+                                                           className="w-full h-full object-cover"
+                                                       />
+                                                   ) : (
+                                                       <span className="text-lg">🏠</span>
+                                                   )}
+                                               </div>
 
-                    {/* Mobile Settings */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <button
-                            onClick={toggleDarkMode}
-                            className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                        >
-                            {darkMode ? (
-                                <>
-                                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                                    </svg>
-                                    Modo Claro
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                                    </svg>
-                                    Modo Oscuro
-                                </>
-                            )}
-                        </button>
+                                               {/* Contenido */}
+                                               <div className="flex-1 min-w-0">
+                                                   <div className="font-medium text-gray-900 dark:text-white truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors duration-200">
+                                                       {result.title}
+                                                   </div>
+                                                   <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                                       {result.subtitle}
+                                                   </div>
+                                                   {result.details && (
+                                                       <div className="text-xs text-gray-400 dark:text-gray-500 truncate">
+                                                           {result.details}
+                                                       </div>
+                                                   )}
+                                               </div>
 
-                        {user && (
-                            <form method="POST" action="/logout" className="mt-2">
-                                <input
-                                    type="hidden"
-                                    name="_token"
-                                    value={document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')}
-                                />
-                                <button
-                                    type="submit"
-                                    className="flex items-center w-full px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors duration-200"
-                                >
-                                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                    </svg>
-                                    Cerrar Sesión
-                                </button>
-                            </form>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </nav>
-    );
+                                               {/* Precio */}
+                                               <div className="flex-shrink-0 ml-3 text-right">
+                                                   <div className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
+                                                       {result.price}
+                                                   </div>
+                                                   <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                       {result.type}
+                                                   </div>
+                                               </div>
+
+                                               {/* Flecha */}
+                                               <svg className="flex-shrink-0 w-4 h-4 text-gray-400 dark:text-gray-500 ml-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                               </svg>
+                                           </a>
+                                       )) : searchQuery.trim() !== '' && (
+                                           <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                               <div className="flex flex-col items-center space-y-2">
+                                                   <svg className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                   </svg>
+                                                   <span>No se encontraron resultados para "{searchQuery}"</span>
+                                               </div>
+                                           </div>
+                                       )}
+                                   </div>
+                               </div>
+                           )}
+                       </div>
+
+                       {user ? (
+                           <>
+                               {/* Mensajes */}
+                               <a
+                                   href="/chat"
+                                   className="p-2.5 mx-2 rounded-lg bg-gray-100/70 dark:bg-gray-800/70 text-gray-600 dark:text-gray-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-300"
+                               >
+                                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-3.582 8-8 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 3.582-8 8-8s8 3.582 8 8z"/>
+                                   </svg>
+                               </a>
+
+                               {/* User Dropdown */}
+                               <div className="relative mx-2" ref={dropdownRef}>
+                                   <button
+                                       onClick={() => setDropdownOpen(!dropdownOpen)}
+                                       className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300"
+                                   >
+                                       <div className="w-8 h-8 rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center">
+                                           {user.profile_photo ? (
+                                               <img
+                                                   src={`/storage/${user.profile_photo}`}
+                                                   alt="Avatar"
+                                                   className="w-full h-full object-cover"
+                                               />
+                                           ) : (
+                                               <span className="text-white font-semibold text-sm">
+                                                   {user.name?.charAt(0)?.toUpperCase() || ''}
+                                                   {user.last_name?.charAt(0)?.toUpperCase() || ''}
+                                               </span>
+                                           )}
+                                       </div>
+                                       <div className="hidden lg:block text-left">
+                                           <p className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[100px]">
+                                               {user.name}
+                                           </p>
+                                           <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                                               {user.role || 'Usuario'}
+                                           </p>
+                                       </div>
+                                       <svg
+                                           className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}
+                                           fill="none"
+                                           stroke="currentColor"
+                                           viewBox="0 0 24 24"
+                                       >
+                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                       </svg>
+                                   </button>
+
+                                   {/* Dropdown Menu */}
+                                   <div className={`absolute right-0 mt-2 w-72 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 transition-all duration-200 ${dropdownOpen ? 'opacity-100 visible scale-100' : 'opacity-0 invisible scale-95'}`}>
+
+                                       {/* Header */}
+                                       <div className="p-4 border-b border-gray-200/50 dark:border-gray-700/50 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-emerald-900/10 dark:to-teal-900/10 rounded-t-xl">
+                                           <div className="flex items-center space-x-3">
+                                               <div className="w-12 h-12 rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center">
+                                                   {user.profile_photo ? (
+                                                       <img
+                                                           src={`/storage/${user.profile_photo}`}
+                                                           alt="Avatar"
+                                                           className="w-full h-full object-cover"
+                                                       />
+                                                   ) : (
+                                                       <span className="text-white font-bold">
+                                                           {user.name?.charAt(0)?.toUpperCase() || ''}
+                                                           {user.last_name?.charAt(0)?.toUpperCase() || ''}
+                                                       </span>
+                                                   )}
+                                               </div>
+                                               <div className="flex-1 min-w-0">
+                                                   <p className="font-bold text-gray-900 dark:text-white truncate">
+                                                       {user.name} {user.last_name}
+                                                   </p>
+                                                   <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                                                       {user.email}
+                                                   </p>
+                                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 mt-1">
+                                                       {user.role?.charAt(0)?.toUpperCase() + user.role?.slice(1) || 'Usuario'}
+                                                   </span>
+                                               </div>
+                                           </div>
+                                       </div>
+
+                                       {/* Menu Items */}
+                                       <div className="py-2">
+                                           {[
+                                               { href: "/profile", label: "Mi Perfil", icon: "👤" },
+                                               ...(user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
+                                               { href: "/properties", label: "Mis Propiedades", icon: "🏠" },
+                                               { href: "/chat", label: "Mensajes", icon: "💬" },
+                                               { href: "#", label: "Favoritos", icon: "❤️" }
+                                           ].map((item, index) => (
+                                               <a
+                                                   key={index}
+                                                   href={item.href}
+                                                   className="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-200"
+                                               >
+                                                   <span className="text-base mr-3">{item.icon}</span>
+                                                   <span className="font-medium">{item.label}</span>
+                                               </a>
+                                           ))}
+                                       </div>
+
+                                       {/* Logout */}
+                                       <div className="border-t border-gray-200/50 dark:border-gray-700/50">
+                                           <form method="POST" action="/logout">
+                                               <input type="hidden" name="_token" value={getCSRFToken()} />
+                                               <button
+                                                   type="submit"
+                                                   className="w-full text-left flex items-center px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-all duration-200 rounded-b-xl"
+                                               >
+                                                   <span className="text-base mr-3">🚪</span>
+                                                   <span className="font-medium">Cerrar Sesión</span>
+                                               </button>
+                                           </form>
+                                       </div>
+                                   </div>
+                               </div>
+                           </>
+                       ) : (
+                           /* Auth Buttons */
+                           <div className="flex items-center space-x-3">
+                               <a
+                                   href="/login"
+                                   className="px-4 py-2 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-300 rounded-lg hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20"
+                               >
+                                   Iniciar Sesión
+                               </a>
+                               <a
+                                   href="/register"
+                                   className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+                               >
+                                   Regístrate
+                               </a>
+                           </div>
+                       )}
+
+                       {/* Dark Mode Toggle */}
+                       <button
+                           onClick={toggleDarkMode}
+                           className="p-2.5 mx-2 rounded-lg bg-gray-100/70 dark:bg-gray-800/70 text-gray-600 dark:text-gray-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-300"
+                       >
+                           <div className="relative w-5 h-5">
+                               <svg className={`absolute inset-0 transition-all duration-300 ${darkMode ? 'opacity-0 rotate-180' : 'opacity-100 rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                               </svg>
+                               <svg className={`absolute inset-0 transition-all duration-300 ${darkMode ? 'opacity-100 rotate-0' : 'opacity-0 -rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                               </svg>
+                           </div>
+                       </button>
+                   </div>
+
+                   {/* Mobile Menu Button - Solo visible en pantallas pequeñas */}
+                   <div className="flex items-center xl:hidden space-x-3">
+                       {/* Solo mostrar en mobile/tablet, NO en desktop */}
+                       <button
+                           onClick={() => setIsSearchOpen(!isSearchOpen)}
+                           className="p-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300 xl:hidden"
+                       >
+                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                           </svg>
+                       </button>
+                       <button
+                           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                           className="p-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300 xl:hidden"
+                       >
+                           <div className="relative w-5 h-5">
+                               <span className={`absolute left-0 top-0.5 w-5 h-0.5 bg-current transition-all duration-300 ${mobileMenuOpen ? 'rotate-45 translate-y-2' : ''}`}></span>
+                               <span className={`absolute left-0 top-2 w-5 h-0.5 bg-current transition-all duration-300 ${mobileMenuOpen ? 'opacity-0' : ''}`}></span>
+                               <span className={`absolute left-0 top-3.5 w-5 h-0.5 bg-current transition-all duration-300 ${mobileMenuOpen ? '-rotate-45 -translate-y-2' : ''}`}></span>
+                           </div>
+                       </button>
+                   </div>
+               </div>
+           </div>
+
+           {/* Mobile Search */}
+           <div className={`xl:hidden transition-all duration-300 ${isSearchOpen ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+               <div className="px-4 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50" ref={searchRef}>
+                   <div className="flex items-center bg-gray-100/70 dark:bg-gray-800/70 rounded-lg px-3 py-2">
+                       <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                       </svg>
+                       <input
+                           type="text"
+                           value={searchQuery}
+                           onChange={(e) => setSearchQuery(e.target.value)}
+                           placeholder="Buscar propiedades o usuarios..."
+                           className="bg-transparent text-sm text-gray-600 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none w-full"
+                       />
+                   </div>
+                   {searchResults.length > 0 && (
+                       <div className="mt-2 bg-white dark:bg-gray-800 backdrop-blur-xl rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                           {searchResults.map((result) => (
+                               <a
+                                   key={result.id}
+                                   href={result.url}
+                                   className="flex items-center px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-200"
+                                   onClick={() => setIsSearchOpen(false)}
+                               >
+                                   <div className="flex-shrink-0 w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded mr-3 overflow-hidden">
+                                       {result.image ? (
+                                           <img src={result.image} alt={result.title} className="w-full h-full object-cover" />
+                                       ) : (
+                                           <div className="w-full h-full flex items-center justify-center">🏠</div>
+                                       )}
+                                   </div>
+                                   <div className="flex-1 min-w-0">
+                                       <div className="font-medium truncate text-gray-900 dark:text-white">{result.title}</div>
+                                       <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.subtitle}</div>
+                                   </div>
+                                   <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                                       {result.price}
+                                   </div>
+                               </a>
+                           ))}
+                       </div>
+                   )}
+               </div>
+           </div>
+
+           {/* Mobile Menu */}
+           <div className={`xl:hidden transition-all duration-300 ease-in-out ${mobileMenuOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+               <div className="px-4 pt-4 pb-6 space-y-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50" ref={mobileMenuRef}>
+
+                   {/* User Info Mobile */}
+                   {user && (
+                       <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-lg mb-4">
+                           <div className="w-10 h-10 rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center">
+                               {user.profile_photo ? (
+                                   <img src={`/storage/${user.profile_photo}`} alt="Avatar" className="w-full h-full object-cover" />
+                               ) : (
+                                   <span className="text-white font-semibold text-sm">
+                                       {user.name?.charAt(0)?.toUpperCase() || ''}{user.last_name?.charAt(0)?.toUpperCase() || ''}
+                                   </span>
+                               )}
+                           </div>
+                           <div className="flex-1 min-w-0">
+                               <p className="font-semibold text-gray-900 dark:text-white truncate">
+                                   {user.name} {user.last_name}
+                               </p>
+                               <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                                   {user.email}
+                               </p>
+                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 mt-1">
+                                   {user.role?.charAt(0)?.toUpperCase() + user.role?.slice(1) || 'Usuario'}
+                               </span>
+                           </div>
+                       </div>
+                   )}
+
+                   {/* Navigation Links */}
+                   {[
+                       { href: "/properties", label: "Propiedades", icon: "🏠" },
+                       { href: "/comunidad", label: "Comunidad", icon: "👥" },
+                       ...(user && user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
+                       ...(user ? [{ href: "/chat", label: "Mensajes", icon: "💬" }] : []),
+                       { href: "#contacto", label: "Contacto", icon: "📞" }
+                   ].map((link, index) => (
+                       <a
+                           key={index}
+                           href={link.href}
+                           className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
+                           onClick={() => setMobileMenuOpen(false)}
+                       >
+                           <span className="text-lg mr-3">{link.icon}</span>
+                           <span>{link.label}</span>
+                       </a>
+                   ))}
+
+                   {/* User Actions Mobile */}
+                   {user ? (
+                       <div className="pt-3 space-y-2 border-t border-gray-200/50 dark:border-gray-700/50">
+                           <a
+                               href="/profile"
+                               className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
+                               onClick={() => setMobileMenuOpen(false)}
+                           >
+                               <span className="text-lg mr-3">👤</span>
+                               <span>Mi Perfil</span>
+                           </a>
+                           <a
+                               href="#"
+                               className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
+                               onClick={() => setMobileMenuOpen(false)}
+                           >
+                               <span className="text-lg mr-3">❤️</span>
+                               <span>Favoritos</span>
+                           </a>
+                       </div>
+                   ) : (
+                       /* Auth Buttons Mobile */
+                       <div className="pt-3 space-y-3 border-t border-gray-200/50 dark:border-gray-700/50">
+                           <a
+                               href="/login"
+                               className="block w-full text-center px-4 py-2.5 text-base font-semibold text-gray-700 dark:text-gray-300 border border-emerald-200 dark:border-emerald-700 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-300 dark:hover:border-emerald-600 transition-all duration-300"
+                               onClick={() => setMobileMenuOpen(false)}
+                           >
+                               🔑 Iniciar Sesión
+                           </a>
+                           <a
+                               href="/register"
+                               className="block w-full text-center px-4 py-2.5 text-base font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+                               onClick={() => setMobileMenuOpen(false)}
+                           >
+                               ✨ Regístrate
+                           </a>
+                       </div>
+                   )}
+
+                   {/* Mobile Settings */}
+                   <div className="pt-3 border-t border-gray-200/50 dark:border-gray-700/50">
+                       <button
+                           onClick={toggleDarkMode}
+                           className="flex items-center w-full px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-all duration-300"
+                       >
+                           <div className="relative w-6 h-6 mr-3">
+                               <span className={`absolute inset-0 text-lg transition-all duration-300 ${darkMode ? 'opacity-0 rotate-180' : 'opacity-100 rotate-0'}`}>🌙</span>
+                               <span className={`absolute inset-0 text-lg transition-all duration-300 ${darkMode ? 'opacity-100 rotate-0' : 'opacity-0 -rotate-180'}`}>☀️</span>
+                           </div>
+                           <span>{darkMode ? 'Modo Claro' : 'Modo Oscuro'}</span>
+                       </button>
+
+                       {user && (
+                           <form method="POST" action="/logout" className="mt-2">
+                               <input type="hidden" name="_token" value={getCSRFToken()} />
+                               <button
+                                   type="submit"
+                                   className="flex items-center w-full px-3 py-2.5 text-base font-medium text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-900/20 rounded-lg transition-all duration-300"
+                               >
+                                   <span className="text-lg mr-3">🚪</span>
+                                   <span>Cerrar Sesión</span>
+                               </button>
+                           </form>
+                       )}
+                   </div>
+               </div>
+           </div>
+       </nav>
+   );
 }
 
 export default Navbar;

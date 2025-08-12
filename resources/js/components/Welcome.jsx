@@ -3,6 +3,8 @@ import PropertyMap from './PropertyMap';
 
 function Welcome({ user = null }) {
    const [isMobile, setIsMobile] = useState(false);
+   const [featuredProperties, setFeaturedProperties] = useState([]);
+   const [loadingProperties, setLoadingProperties] = useState(true);
 
    // Responsive detection
    useEffect(() => {
@@ -13,6 +15,31 @@ function Welcome({ user = null }) {
        checkScreenSize();
        window.addEventListener('resize', checkScreenSize);
        return () => window.removeEventListener('resize', checkScreenSize);
+   }, []);
+
+   // Cargar propiedades destacadas
+   useEffect(() => {
+       const loadFeaturedProperties = async () => {
+           try {
+               const response = await fetch('/api/featured-properties', {
+                   headers: {
+                       'Accept': 'application/json',
+                       'X-Requested-With': 'XMLHttpRequest',
+                   }
+               });
+
+               if (response.ok) {
+                   const data = await response.json();
+                   setFeaturedProperties(data.properties || []);
+               }
+           } catch (error) {
+               console.error('Error cargando propiedades destacadas:', error);
+           } finally {
+               setLoadingProperties(false);
+           }
+       };
+
+       loadFeaturedProperties();
    }, []);
 
    // Scroll effects
@@ -252,141 +279,105 @@ function Welcome({ user = null }) {
                        gap: '2rem',
                        marginBottom: '3rem'
                    }}>
-                       {/* Property 1 */}
-                       <div className="property-card animate-fade-scale">
-                           <div className="property-image">
-                               <img src="https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&h=300&fit=crop" alt="Casa Moderna" style={{width: '100%', height: '200px', objectFit: 'cover'}} />
-                               <div className="property-badge">Destacado</div>
+                       {loadingProperties ? (
+                           // Loading state
+                           Array.from({ length: 4 }).map((_, index) => (
+                               <div key={index} className="property-card animate-fade-scale" style={{animationDelay: `${index * 0.2}s`}}>
+                                   <div className="property-image" style={{
+                                       background: 'var(--bg-tertiary)',
+                                       height: '200px',
+                                       display: 'flex',
+                                       alignItems: 'center',
+                                       justifyContent: 'center'
+                                   }}>
+                                       <div style={{
+                                           width: '40px',
+                                           height: '40px',
+                                           border: '4px solid #d1d5db',
+                                           borderTop: '4px solid #10b981',
+                                           borderRadius: '50%',
+                                           animation: 'spin 1s linear infinite'
+                                       }}></div>
+                                   </div>
+                                   <div className="property-content">
+                                       <div style={{height: '20px', background: 'var(--bg-tertiary)', marginBottom: '10px', borderRadius: '4px'}}></div>
+                                       <div style={{height: '16px', background: 'var(--bg-tertiary)', marginBottom: '15px', borderRadius: '4px', width: '60%'}}></div>
+                                       <div style={{height: '60px', background: 'var(--bg-tertiary)', marginBottom: '10px', borderRadius: '4px'}}></div>
+                                       <div style={{height: '20px', background: 'var(--bg-tertiary)', marginBottom: '10px', borderRadius: '4px', width: '40%'}}></div>
+                                   </div>
+                               </div>
+                           ))
+                       ) : featuredProperties.length > 0 ? (
+                           // Render properties
+                           featuredProperties.map((property, index) => (
+                               <div key={property.id} className="property-card animate-fade-scale" style={{animationDelay: `${index * 0.2}s`}}>
+                                   <div className="property-image">
+                                       <img
+                                           src={property.image ? `/storage/${property.image}` : `https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&h=300&fit=crop&${index}`}
+                                           alt={property.title}
+                                           style={{width: '100%', height: '200px', objectFit: 'cover'}}
+                                           onError={(e) => {
+                                               e.target.src = `https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&h=300&fit=crop&${index}`;
+                                           }}
+                                       />
+                                       <div className="property-badge" style={{
+                                           background: index === 0 ? 'var(--primary)' :
+                                                      index === 1 ? 'var(--accent)' :
+                                                      index === 2 ? 'var(--gradient-purple)' : 'var(--accent)'
+                                       }}>
+                                           {index === 0 ? 'Destacado' :
+                                            index === 1 ? 'Nuevo' :
+                                            index === 2 ? 'Premium' : 'Oferta'}
+                                       </div>
+                                   </div>
+                                   <div className="property-content">
+                                       <div className="property-title">{property.title}</div>
+                                       <div className="property-location">
+                                           <i className="fas fa-map-marker-alt"></i>
+                                           <span>{property.city}{property.state ? `, ${property.state}` : ''}</span>
+                                       </div>
+                                       <div className="property-details">
+                                           <div className="detail-item">
+                                               <div className="detail-label">Habitaciones</div>
+                                               <div className="detail-value">{property.bedrooms || 0}</div>
+                                           </div>
+                                           <div className="detail-item">
+                                               <div className="detail-label">Baños</div>
+                                               <div className="detail-value">{property.bathrooms || 0}</div>
+                                           </div>
+                                           <div className="detail-item">
+                                               <div className="detail-label">m²</div>
+                                               <div className="detail-value">{property.area || 0}</div>
+                                           </div>
+                                       </div>
+                                       <p style={{color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)'}}>
+                                           {property.description ?
+                                               (property.description.length > 100 ?
+                                                   property.description.substring(0, 100) + '...' :
+                                                   property.description) :
+                                               'Propiedad disponible para renta.'
+                                           }
+                                       </p>
+                                       <div className="property-price">${Number(property.price).toLocaleString('es-MX')}</div>
+                                       <div className="property-actions">
+                                           <a href={`/properties/${property.id}`} className="btn btn-primary">Ver detalles</a>
+                                       </div>
+                                   </div>
+                               </div>
+                           ))
+                       ) : (
+                           // No properties state
+                           <div style={{
+                               gridColumn: '1 / -1',
+                               textAlign: 'center',
+                               padding: '3rem',
+                               color: 'var(--text-secondary)'
+                           }}>
+                               <i className="fas fa-home" style={{fontSize: '3rem', marginBottom: '1rem', opacity: 0.5}}></i>
+                               <h3>No hay propiedades disponibles</h3>
+                               <p>Pronto tendremos nuevas propiedades para ti.</p>
                            </div>
-                           <div className="property-content">
-                               <div className="property-title">Departamento Loft</div>
-                               <div className="property-location">
-                                   <i className="fas fa-map-marker-alt"></i>
-                                   <span>Roma Norte, CDMX</span>
-                               </div>
-                               <div className="property-details">
-                                   <div className="detail-item">
-                                       <div className="detail-label">Habitaciones</div>
-                                       <div className="detail-value">2</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">Baños</div>
-                                       <div className="detail-value">2</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">m²</div>
-                                       <div className="detail-value">85</div>
-                                   </div>
-                               </div>
-                               <p style={{color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)'}}>Loft moderno con techos altos y terraza privada.</p>
-                               <div className="property-price">$18,000</div>
-                               <div className="property-actions">
-                                   <button className="btn btn-primary">Ver detalles</button>
-                               </div>
-                           </div>
-                       </div>
-
-                       {/* Property 2 */}
-                       <div className="property-card animate-fade-scale" style={{animationDelay: '0.2s'}}>
-                           <div className="property-image">
-                               <img src="https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400&h=300&fit=crop" alt="Casa Familiar" style={{width: '100%', height: '200px', objectFit: 'cover'}} />
-                               <div className="property-badge" style={{background: 'var(--accent)'}}>Nuevo</div>
-                           </div>
-                           <div className="property-content">
-                               <div className="property-title">Casa Familiar</div>
-                               <div className="property-location">
-                                   <i className="fas fa-map-marker-alt"></i>
-                                   <span>Polanco, CDMX</span>
-                               </div>
-                               <div className="property-details">
-                                   <div className="detail-item">
-                                       <div className="detail-label">Habitaciones</div>
-                                       <div className="detail-value">3</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">Baños</div>
-                                       <div className="detail-value">2.5</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">m²</div>
-                                       <div className="detail-value">150</div>
-                                   </div>
-                               </div>
-                               <p style={{color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)'}}>Casa espaciosa con jardín y garage para 2 autos.</p>
-                               <div className="property-price">$28,000</div>
-                               <div className="property-actions">
-                                   <button className="btn btn-primary">Ver detalles</button>
-                               </div>
-                           </div>
-                       </div>
-
-                       {/* Property 3 */}
-                       <div className="property-card animate-fade-scale" style={{animationDelay: '0.4s'}}>
-                           <div className="property-image">
-                               <img src="https://images.unsplash.com/photo-1554995207-c18c203602cb?w=400&h=300&fit=crop" alt="Penthouse" style={{width: '100%', height: '200px', objectFit: 'cover'}} />
-                               <div className="property-badge" style={{background: 'var(--gradient-purple)'}}>Premium</div>
-                           </div>
-                           <div className="property-content">
-                               <div className="property-title">Penthouse Elite</div>
-                               <div className="property-location">
-                                   <i className="fas fa-map-marker-alt"></i>
-                                   <span>Santa Fe, CDMX</span>
-                               </div>
-                               <div className="property-details">
-                                   <div className="detail-item">
-                                       <div className="detail-label">Habitaciones</div>
-                                       <div className="detail-value">4</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">Baños</div>
-                                       <div className="detail-value">3</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">m²</div>
-                                       <div className="detail-value">200</div>
-                                   </div>
-                               </div>
-                               <p style={{color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)'}}>Penthouse exclusivo con vista panorámica de la ciudad.</p>
-                               <div className="property-price">$45,000</div>
-                               <div className="property-actions">
-                                   <button className="btn btn-primary">Ver detalles</button>
-                               </div>
-                           </div>
-                       </div>
-
-                       {/* Property 4 */}
-                       <div className="property-card animate-fade-scale" style={{animationDelay: '0.6s'}}>
-                           <div className="property-image">
-                               <img src="https://images.unsplash.com/photo-1560185893-1d49ec14df41?w=400&h=300&fit=crop" alt="Estudio Minimalista" style={{width: '100%', height: '200px', objectFit: 'cover'}} />
-                               <div className="property-badge" style={{background: 'var(--accent)'}}>Oferta</div>
-                           </div>
-                           <div className="property-content">
-                               <div className="property-title">Estudio Minimalista</div>
-                               <div className="property-location">
-                                   <i className="fas fa-map-marker-alt"></i>
-                                   <span>Condesa, CDMX</span>
-                               </div>
-                               <div className="property-details">
-                                   <div className="detail-item">
-                                       <div className="detail-label">Habitaciones</div>
-                                       <div className="detail-value">1</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">Baños</div>
-                                       <div className="detail-value">1</div>
-                                   </div>
-                                   <div className="detail-item">
-                                       <div className="detail-label">m²</div>
-                                       <div className="detail-value">45</div>
-                                   </div>
-                               </div>
-                               <p style={{color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)'}}>Estudio perfecto para jóvenes profesionales.</p>
-                               <div className="property-price">$12,000</div>
-                               <div className="property-actions">
-                                   <button className="btn btn-primary">Ver detalles</button>
-                               </div>
-                           </div>
-                       </div>
+                       )}
                    </div>
 
                    <div style={{textAlign: 'center'}}>
@@ -829,6 +820,14 @@ function Welcome({ user = null }) {
                 }}>
                     <i className="fas fa-arrow-up"></i>
                 </button>
+
+                {/* Estilos CSS para animaciones */}
+                <style>{`
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                `}</style>
             </div>
         );
      }

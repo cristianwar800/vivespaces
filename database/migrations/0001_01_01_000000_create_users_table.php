@@ -26,6 +26,11 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->string('profile_photo')->nullable();
             $table->timestamp('email_verified_at')->nullable();
+
+            $table->timestamp('suspended_at')->nullable();
+            $table->boolean('must_change_password')->default(false);
+
+
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();

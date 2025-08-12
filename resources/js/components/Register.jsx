@@ -66,8 +66,56 @@ function Register() {
         if (!formData.email.trim()) newErrors.email = 'El email es requerido';
         else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Email inválido';
         if (!formData.phone.trim()) newErrors.phone = 'El teléfono es requerido';
-        if (!formData.password) newErrors.password = 'La contraseña es requerida';
-        else if (formData.password.length < 8) newErrors.password = 'Mínimo 8 caracteres';
+
+
+                            // VALIDACIÓN DE CONTRASEÑA SEGURA (igual que backend)
+                if (!formData.password)
+                {
+                    newErrors.password = 'La contraseña es requerida';
+                }
+                else
+                {
+                    const passwordErrors = [];
+
+                    // Verificar longitud mínima
+                    if (formData.password.length < 8)
+                    {
+                        passwordErrors.push('Debe tener al menos 8 caracteres');
+                    }
+
+                    // Verificar minúscula
+                    if (!/[a-z]/.test(formData.password))
+                    {
+                        passwordErrors.push('Debe contener al menos una letra minúscula');
+                    }
+
+                    // Verificar mayúscula
+                    if (!/[A-Z]/.test(formData.password))
+                    {
+                        passwordErrors.push('Debe contener al menos una letra mayúscula');
+                    }
+
+                    // Verificar número
+                    if (!/[0-9]/.test(formData.password))
+                    {
+                        passwordErrors.push('Debe contener al menos un número');
+                    }
+
+                    // Verificar carácter especial
+                    if (!/[!@#$%^&*(),.?":{}|<>_+=\-\[\]\\\/~`]/.test(formData.password))
+                    {
+                        passwordErrors.push('Debe contener al menos un carácter especial');
+                    }
+
+                    // Si hay errores, tomarlos todos
+                    if (passwordErrors.length > 0)
+                    {
+                        newErrors.password = passwordErrors;
+                    }
+                }
+
+
+
         if (!formData.terms) newErrors.terms = 'Debe aceptar los términos';
 
         setErrors(newErrors);
@@ -292,7 +340,20 @@ function Register() {
                                     </div>
                                     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Mínimo 8 caracteres</p>
                                     {errors.password && (
-                                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.password}</p>
+
+
+                                                    <div className="mt-1 text-sm text-red-600 dark:text-red-400">
+                                                    {Array.isArray(errors.password) ? (
+                                                        <ul className="list-disc list-inside space-y-1">
+                                                            {errors.password.map((error, index) => (
+                                                                <li key={index}>{error}</li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p>{errors.password}</p>
+                                                    )}
+                                                    </div>
+
                                     )}
                                 </div>
 

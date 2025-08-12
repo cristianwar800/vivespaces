@@ -6,6 +6,8 @@ use App\Models\Property;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+
 
 class PropertyController extends Controller
 {
@@ -182,257 +184,122 @@ class PropertyController extends Controller
     /**
      * Almacena una nueva propiedad en la base de datos - MEJORADO PARA AJAX
      */
+                    /**
+     * Almacena una nueva propiedad en la base de datos - CORREGIDO
+     */
     public function store(Request $request)
     {
-        // ✅ VERIFICACIÓN TEMPORAL DE getID3
-        try {
-            $getID3 = new \getID3;
-            \Log::info('✅ getID3 disponible, versión: ' . $getID3->version());
-        } catch (\Exception $e) {
-            \Log::error('❌ getID3 NO disponible: ' . $e->getMessage());
-        }
-
-        // Debug logging
-        \Log::info('📥 Recibiendo mensaje:', [
-            'all_data' => $request->all(),
-            'files' => $request->allFiles(),
-            'has_file' => $request->hasFile('file')
+        // Log para confirmar que llegamos aquí
+        \Log::info('STORE METHOD REACHED', [
+            'path' => request()->path(),
+            'user' => auth()->id(),
+            'data' => $request->all()
         ]);
 
-        // ✅ VALIDACIÓN ACTUALIZADA PARA AUDIO
-        $validator = Validator::make($request->all(), [
-            'property_id' => 'required|exists:properties,id',
-            'receiver_id' => 'required|exists:users,id',
-            'message' => 'nullable|string|max:1000',
-            // ✅ AGREGADO MÁS TIPOS DE AUDIO
-            'file' => 'nullable|file|max:10240|mimes:jpeg,png,jpg,gif,webp,pdf,txt,doc,docx,mp3,wav,ogg,webm,mp4,aac,m4a,flac',
-            'reply_to_id' => 'nullable|exists:messages,id',
-            'type' => 'nullable|in:text,image,file,voice,location',
-            'metadata' => 'nullable|string'
-        ], [
-            'property_id.required' => 'La propiedad es requerida',
-            'property_id.exists' => 'La propiedad no existe',
-            'receiver_id.required' => 'El receptor es requerido',
-            'receiver_id.exists' => 'El receptor no existe',
-            'message.max' => 'El mensaje no puede tener más de 1000 caracteres',
-            'file.file' => 'El archivo debe ser válido',
-            'file.max' => 'El archivo no puede ser mayor a 10MB',
-            'file.mimes' => 'El archivo debe ser de tipo: imágenes (jpeg, png, jpg, gif, webp), documentos (pdf, txt, doc, docx) o audio (mp3, wav, ogg, webm, mp4, aac, m4a, flac)',
-        ]);
-
-        if ($validator->fails()) {
-            \Log::error('❌ Validation failed:', $validator->errors()->toArray());
-            return response()->json([
-                'success' => false,
-                'message' => 'Errores de validación',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // ✅ VERIFICACIÓN ACTUALIZADA: mensaje O archivo O ubicación
-        if (empty($request->message) && !$request->hasFile('file') && $request->type !== 'location') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Debes enviar un mensaje, un archivo o compartir ubicación',
-                'errors' => ['message' => ['Debes enviar un mensaje, un archivo o compartir ubicación']]
-            ], 422);
-        }
-
-        try {
-            $property = Property::findOrFail($request->property_id);
-
-            // Verificar permisos básicos
-            if ($request->receiver_id == Auth::id()) {
+        // Verificar autenticación
+        if (!auth()->check()) {
+            if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No puedes enviarte mensajes a ti mismo'
+                    'message' => 'Debes iniciar sesión para crear una propiedad.',
+                    'errors' => ['auth' => ['Usuario no autenticado']]
+                ], 401);
+            }
+            return redirect()->route('login')->with('error', 'Debes iniciar sesión para crear una propiedad.');
+        }
+
+        // Validar request
+        $validator = $this->validateRequest($request);
+        if ($validator->fails()) {
+            \Log::error('Validation failed:', $validator->errors()->toArray());
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Errores de validación',
+                    'errors' => $validator->errors()
                 ], 422);
             }
+            return back()->withErrors($validator)->withInput();
+        }
 
-            $messageData = [
-                'property_id' => $request->property_id,
-                'sender_id' => Auth::id(),
-                'receiver_id' => $request->receiver_id,
-                'message' => $request->message ?: '',
-                'type' => $request->type ?: 'text',
-                'reply_to_id' => $request->reply_to_id,
-            ];
+        try {
+            $data = $validator->validated();
 
-            // ✅ MANEJO DE UBICACIÓN
-            if ($request->type === 'location' && $request->has('metadata')) {
-                \Log::info('📍 Procesando ubicación...');
+            // Agregar el ID del usuario autenticado
+            $data['user_id'] = auth()->id();
 
-                $metadata = json_decode($request->metadata, true);
-                if (isset($metadata['latitude']) && isset($metadata['longitude'])) {
-                    $messageData['metadata'] = $metadata;
-                    $messageData['type'] = 'location';
+            // Convertir a enteros donde sea necesario
+            if (isset($data['bathrooms'])) {
+                $data['bathrooms'] = (int) $data['bathrooms'];
+            }
 
-                    // Si no hay mensaje, crear uno descriptivo
-                    if (empty($messageData['message'])) {
-                        $messageData['message'] = '📍 Ubicación compartida';
-                    }
+            if (isset($data['bedrooms'])) {
+                $data['bedrooms'] = (int) $data['bedrooms'];
+            }
 
-                    \Log::info('✅ Ubicación procesada:', [
-                        'lat' => $metadata['latitude'],
-                        'lng' => $metadata['longitude']
-                    ]);
+            if (isset($data['area'])) {
+                $data['area'] = (int) $data['area'];
+            }
+
+            // Manejar el checkbox is_active
+            $data['is_active'] = $request->has('is_active') ||
+                                $request->input('is_active') === '1' ||
+                                $request->input('is_active') === 'true' ||
+                                $request->input('is_active') === true;
+
+            // Manejar la subida de imagen
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('properties', 'public');
+                $data['image'] = $imagePath;
+            }
+
+            // Limpiar campos vacíos (convertir strings vacíos a null)
+            foreach ($data as $key => $value) {
+                if ($value === '') {
+                    $data[$key] = null;
                 }
             }
 
-            // ✅ MANEJO MEJORADO DE ARCHIVOS CON getID3
-            if ($request->hasFile('file')) {
-                \Log::info('📎 Procesando archivo...');
+            // Crear la propiedad
+            $property = Property::create($data);
 
-                $file = $request->file('file');
-                $path = $file->store('messages', 'public');
-                $fullPath = storage_path('app/public/' . $path);
+            \Log::info('Property created successfully:', [
+                'property_id' => $property->id,
+                'user_id' => auth()->id(),
+                'title' => $property->title
+            ]);
 
-                $messageData['file_path'] = $path;
-                $messageData['file_name'] = $file->getClientOriginalName();
-                $messageData['file_size'] = $file->getSize();
-                $messageData['mime_type'] = $file->getMimeType();
-
-                \Log::info('📁 Detalles del archivo:', [
-                    'path' => $fullPath,
-                    'name' => $file->getClientOriginalName(),
-                    'mime_type' => $file->getMimeType(),
-                    'extension' => $file->getExtension(),
-                    'size' => $file->getSize()
-                ]);
-
-                // ✅ DETECCIÓN MEJORADA DE TIPO DE ARCHIVO
-                if (str_starts_with($file->getMimeType(), 'image/')) {
-                    $messageData['type'] = 'image';
-                    \Log::info('🖼️ Detectado como imagen');
-                }
-                // ✅ MEJORA: Detectar audio por extensión Y mime-type
-                elseif (
-                    str_starts_with($file->getMimeType(), 'audio/') ||
-                    $file->getMimeType() === 'video/webm' ||  // ✅ AGREGADO: webm puede ser audio
-                    in_array(strtolower($file->getExtension()), ['mp3', 'wav', 'ogg', 'webm', 'm4a', 'aac', 'flac']) ||
-                    $file->getClientOriginalName() === 'voice-message.wav'  // ✅ AGREGADO: Detectar por nombre
-                ) {
-                    $messageData['type'] = 'voice';
-                    \Log::info('🎵 Detectado como audio/voz');
-
-                    // ✅ OBTENER DURACIÓN DEL AUDIO CON getID3
-                    try {
-                        \Log::info('🎵 Analizando audio con getID3...');
-                        \Log::info('📁 Archivo a analizar: ' . $fullPath);
-                        \Log::info('🔍 Mime type: ' . $file->getMimeType());
-                        \Log::info('📝 Nombre original: ' . $file->getClientOriginalName());
-
-                        $getID3 = new \getID3;
-                        $fileInfo = $getID3->analyze($fullPath);
-
-                        \Log::info('📊 Información completa del archivo:', $fileInfo);
-
-                        if (isset($fileInfo['playtime_seconds'])) {
-                            $duration = round($fileInfo['playtime_seconds']);
-                            $messageData['duration'] = $duration;
-
-                            \Log::info('✅ Duración obtenida:', [
-                                'duration_seconds' => $duration,
-                                'duration_formatted' => gmdate('i:s', $duration)
-                            ]);
-                        } else {
-                            \Log::warning('⚠️ No se encontró playtime_seconds en fileInfo');
-                            \Log::info('🔍 Claves disponibles en fileInfo: ' . implode(', ', array_keys($fileInfo)));
-                        }
-
-                        // Información adicional del audio
-                        if (isset($fileInfo['audio'])) {
-                            $audioInfo = [
-                                'bitrate' => $fileInfo['audio']['bitrate'] ?? null,
-                                'sample_rate' => $fileInfo['audio']['sample_rate'] ?? null,
-                                'channels' => $fileInfo['audio']['channels'] ?? null,
-                            ];
-
-                            $messageData['metadata'] = $audioInfo;
-                            \Log::info('🎵 Info del audio:', $audioInfo);
-                        } elseif (isset($fileInfo['video'])) {
-                            // Para archivos webm que pueden tener info en 'video'
-                            $audioInfo = [
-                                'bitrate' => $fileInfo['video']['bitrate'] ?? null,
-                                'resolution' => ($fileInfo['video']['resolution_x'] ?? '') . 'x' . ($fileInfo['video']['resolution_y'] ?? ''),
-                                'dataformat' => $fileInfo['video']['dataformat'] ?? null,
-                            ];
-
-                            $messageData['metadata'] = $audioInfo;
-                            \Log::info('🎥 Info del video/webm:', $audioInfo);
-                        }
-
-                    } catch (\Exception $e) {
-                        \Log::error('💥 Error al analizar audio con getID3: ' . $e->getMessage());
-                        \Log::error('📍 Stack trace: ' . $e->getTraceAsString());
-
-                        // Fallback: duración por defecto para webm
-                        if ($file->getMimeType() === 'video/webm' || $file->getClientOriginalName() === 'voice-message.wav') {
-                            $messageData['duration'] = 10; // 10 segundos por defecto
-                            \Log::info('🔄 Usando duración por defecto para audio: 10 segundos');
-                        }
-                    }
-                }
-                else {
-                    $messageData['type'] = 'file';
-                    \Log::info('📄 Detectado como archivo general');
-                }
-
-                \Log::info('✅ Archivo procesado completamente:', [
-                    'path' => $path,
-                    'name' => $file->getClientOriginalName(),
-                    'size' => $file->getSize(),
-                    'type' => $messageData['type'],
-                    'mime_type' => $file->getMimeType(),
-                    'duration' => $messageData['duration'] ?? 'N/A'
+            // Si es petición AJAX, devolver JSON
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => '¡Propiedad creada exitosamente!',
+                    'property' => $property,
+                    'redirect' => route('properties')
                 ]);
             }
 
-            \Log::info('💾 Creando mensaje:', $messageData);
-
-            $message = Message::create($messageData);
-            $message->load(['sender', 'replyTo']);
-
-            // ✅ RESPUESTA MEJORADA CON DATOS DE AUDIO
-            $formattedMessage = [
-                'id' => $message->id,
-                'sender_id' => $message->sender_id,
-                'receiver_id' => $message->receiver_id,
-                'message' => $message->message,
-                'type' => $message->type,
-                'file_url' => $message->getFileUrl(),
-                'file_name' => $message->file_name,
-                'file_size_formatted' => $message->getFileSizeFormatted(),
-                'mime_type' => $message->mime_type,
-                'duration' => $message->duration,
-                'duration_formatted' => $message->duration ? gmdate('i:s', $message->duration) : null,
-                'metadata' => $message->metadata,
-                'read_at' => $message->read_at,
-                'created_at' => $message->created_at,
-                'sender' => $message->sender
-            ];
-
-            \Log::info('✅ Mensaje creado exitosamente:', [
-                'message_id' => $message->id,
-                'type' => $message->type,
-                'duration' => $message->duration ?? 'N/A'
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => $formattedMessage
-            ]);
+            return redirect()->route('properties')
+                ->with('success', '¡Propiedad creada exitosamente!');
 
         } catch (\Exception $e) {
-            \Log::error('💥 Error creating message:', [
+            \Log::error('Error creating property:', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'user_id' => auth()->id()
             ]);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Error interno del servidor: ' . $e->getMessage()
-            ], 500);
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al crear la propiedad: ' . $e->getMessage(),
+                    'errors' => ['general' => ['Error interno del servidor']]
+                ], 500);
+            }
+
+            return back()->withInput()
+                ->withErrors(['error' => 'Error al crear la propiedad. Por favor, intenta de nuevo.']);
         }
     }
     /**
@@ -589,5 +456,128 @@ class PropertyController extends Controller
 
             return back()->withErrors(['error' => 'Error al eliminar la propiedad. Por favor, intenta de nuevo.']);
         }
+    }
+
+
+
+    public function searchProperties(Request $request)
+    {
+        $request->validate([
+            'query' => 'nullable|string|max:255',
+            'limit' => 'nullable|integer|min:1|max:20'
+        ]);
+
+        $query = $request->get('query', '');
+        $limit = $request->get('limit', 8);
+
+        if (empty(trim($query))) {
+            return response()->json([
+                'success' => true,
+                'results' => [],
+                'total' => 0
+            ]);
+        }
+
+        try {
+            $searchQuery = Property::with(['user:id,name,last_name'])
+                ->where('is_active', true)
+                ->where(function($q) use ($query) {
+                    $searchTerm = '%' . $query . '%';
+
+                    $q->where('title', 'like', $searchTerm)
+                      ->orWhere('description', 'like', $searchTerm)
+                      ->orWhere('city', 'like', $searchTerm)
+                      ->orWhere('address', 'like', $searchTerm)
+                      ->orWhere('state', 'like', $searchTerm)
+                      ->orWhere('type', 'like', $searchTerm);
+                })
+                ->select([
+                    'id', 'title', 'description', 'city', 'address',
+                    'state', 'price', 'type', 'bedrooms', 'bathrooms',
+                    'area', 'image', 'user_id'
+                ])
+                ->orderByRaw("
+                    CASE
+                        WHEN title LIKE ? THEN 1
+                        WHEN city LIKE ? THEN 2
+                        WHEN address LIKE ? THEN 3
+                        WHEN type LIKE ? THEN 4
+                        ELSE 5
+                    END
+                ", [
+                    '%' . $query . '%',
+                    '%' . $query . '%',
+                    '%' . $query . '%',
+                    '%' . $query . '%'
+                ])
+                ->limit($limit);
+
+            $properties = $searchQuery->get();
+
+            $formattedResults = $properties->map(function($property) {
+                return [
+                    'id' => $property->id,
+                    'type' => 'Property',
+                    'title' => $property->title,
+                    'subtitle' => $property->city . ', ' . $property->state,
+                    'description' => $property->description ?
+                        Str::limit($property->description, 80) : null,
+                    'price' => '$' . number_format($property->price, 0, '.', ','),
+                    'details' => $this->formatPropertyDetails($property),
+                    'image' => $property->image ?
+                        asset('storage/' . $property->image) : null,
+                    'url' => route('properties.show', $property->id),
+                    'owner' => $property->user ?
+                        $property->user->name . ' ' . $property->user->last_name : null
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'results' => $formattedResults,
+                'total' => $properties->count(),
+                'query' => $query
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error en búsqueda de propiedades:', [
+                'error' => $e->getMessage(),
+                'query' => $query,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al realizar la búsqueda',
+                'results' => [],
+                'total' => 0
+            ], 500);
+        }
+    }
+
+    /**
+     * Formatear detalles de la propiedad para mostrar
+     */
+    private function formatPropertyDetails($property)
+    {
+        $details = [];
+
+        if ($property->bedrooms) {
+            $details[] = $property->bedrooms . ' hab';
+        }
+
+        if ($property->bathrooms) {
+            $details[] = $property->bathrooms . ' baños';
+        }
+
+        if ($property->area) {
+            $details[] = $property->area . ' m²';
+        }
+
+        if ($property->type) {
+            $details[] = ucfirst($property->type);
+        }
+
+        return implode(' • ', $details);
     }
 }
