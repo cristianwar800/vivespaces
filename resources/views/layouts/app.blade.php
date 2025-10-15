@@ -35,6 +35,10 @@
 
     <!-- React Navbar -->
     <div id="navbar-root"></div>
+    <div id="chatbox-root"></div>
+    <div id="layout-map-root"></div> <!-- ← AGREGAR ESTA LÍNEA -->
+
+
 
     <!-- Main Content -->
     <main>

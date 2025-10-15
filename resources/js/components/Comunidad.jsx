@@ -21,6 +21,14 @@ function Comunidad() {
         search: ''
     });
 
+    // Nuevos estados para animaciones y efectos
+    const [animateHeader, setAnimateHeader] = useState(false);
+    const [hoveredPost, setHoveredPost] = useState(null);
+    const [searchFocused, setSearchFocused] = useState(false);
+    const [activeTab, setActiveTab] = useState('all');
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' o 'list'
+    const [sortBy, setSortBy] = useState('recent'); // 'recent', 'popular', 'trending'
+
     // Obtener CSRF token
     const getCsrfToken = () => {
         return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -439,6 +447,19 @@ function Comunidad() {
         }
     }, [selectedPost, getCsrfToken]);
 
+    useEffect(() => {
+        const timer = setTimeout(() => setAnimateHeader(true), 100);
+        return () => clearTimeout(timer);
+    }, []);
+
+    // Función para scroll suave hacia arriba
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    // Detectar scroll para mostrar botón de volver arriba
+   
+
     // Cargar datos iniciales
     useEffect(() => {
         loadUser();
@@ -450,13 +471,16 @@ function Comunidad() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16">
-            {/* Header */}
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-emerald-50 to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 pt-16">
+            {/* Header mejorado con animaciones */}
             <CommunityHeader
                 user={user}
                 onCreatePost={() => setShowCreateForm(true)}
                 filters={filters}
                 onFilterChange={handleFilterChange}
+                animateHeader={animateHeader}
+                searchFocused={searchFocused}
+                setSearchFocused={setSearchFocused}
             />
 
             {/* Create Post Modal */}
@@ -484,8 +508,82 @@ function Comunidad() {
                 />
             )}
 
-            {/* Posts Feed */}
-            <div className="max-w-4xl mx-auto px-4 py-8">
+            {/* Posts Feed mejorado con controles de vista */}
+            <div className="max-w-5xl mx-auto px-4 py-6">
+            {/* Controles de vista y ordenamiento */}
+                <div className="mb-8 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                        {/* Tabs de categorías */}
+                        <div className="flex flex-wrap gap-2">
+                            {[
+                                { id: 'all', label: 'Todas', icon: '🏠' },
+                                { id: 'social', label: 'Social', icon: '👥' },
+                                { id: 'security', label: 'Seguridad', icon: '🛡️' },
+                                { id: 'maintenance', label: 'Mantenimiento', icon: '🔨' },
+                                { id: 'marketplace', label: 'Marketplace', icon: '🛒' },
+                                { id: 'events', label: 'Eventos', icon: '🎉' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 ${
+                                        activeTab === tab.id
+                                            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
+                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/20'
+                                    }`}
+                                >
+                                    <span>{tab.icon}</span>
+                                    <span>{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Controles de vista */}
+                        <div className="flex items-center space-x-4">
+                            {/* Selector de vista */}
+                            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-1">
+                                <button
+                                    onClick={() => setViewMode('grid')}
+                                    className={`p-2 rounded-lg transition-all duration-300 ${
+                                        viewMode === 'grid'
+                                            ? 'bg-white dark:bg-gray-600 text-emerald-600 shadow-md'
+                                            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                    }`}
+                                    title="Vista de cuadrícula"
+                                >
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                    className={`p-2 rounded-lg transition-all duration-300 ${
+                                        viewMode === 'list'
+                                            ? 'bg-white dark:bg-gray-600 text-emerald-600 shadow-md'
+                                            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                    }`}
+                                    title="Vista de lista"
+                                >
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Selector de ordenamiento */}
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
+                            >
+                                <option value="recent">Más recientes</option>
+                                <option value="popular">Más populares</option>
+                                <option value="trending">Tendencia</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 {posts.length === 0 ? (
                     <EmptyState onCreatePost={() => setShowCreateForm(true)} user={user} />
                 ) : (
@@ -502,6 +600,9 @@ function Comunidad() {
                             setShowEditForm(true);
                         }}
                         onDelete={handleDeletePost}
+                        hoveredPost={hoveredPost}
+                        setHoveredPost={setHoveredPost}
+                        viewMode={viewMode}
                     />
                 )}
             </div>
@@ -531,53 +632,121 @@ function Comunidad() {
                     onDeleteComment={handleDeleteComment}
                 />
             )}
+
+            {/* Botón de volver arriba */}
+
+
+                        {/* Indicador de progreso de lectura */}
         </div>
     );
 }
 
+// Componente para la barra de progreso de lectura
+
+
 // Componente Loading
 function LoadingSpinner() {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-emerald-50 to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
             <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4"></div>
-                <p className="text-gray-600 dark:text-gray-400">Cargando comunidad...</p>
+                {/* Spinner principal con efectos */}
+                <div className="relative mx-auto mb-8">
+                    <div className="w-20 h-20 border-4 border-emerald-200 dark:border-emerald-800 rounded-full animate-pulse"></div>
+                    <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-t-emerald-500 rounded-full animate-spin"></div>
+                    <div className="absolute inset-2 w-16 h-16 border-4 border-transparent border-b-emerald-400 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+                </div>
+
+                {/* Texto de carga con animación */}
+                <div className="space-y-2">
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-900 via-emerald-700 to-emerald-600 dark:from-white dark:via-emerald-300 dark:to-emerald-400 bg-clip-text text-transparent animate-pulse">
+                        Cargando Comunidad
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-lg">Preparando tu experiencia vecinal...</p>
+                </div>
+
+                {/* Puntos de carga animados */}
+                <div className="flex justify-center space-x-2 mt-6">
+                    {[0, 1, 2].map((i) => (
+                        <div
+                            key={i}
+                            className="w-3 h-3 bg-emerald-500 rounded-full animate-bounce"
+                            style={{ animationDelay: `${i * 0.2}s` }}
+                        />
+                    ))}
+                </div>
             </div>
         </div>
     );
 }
 
 // Componente Header
-function CommunityHeader({ user, onCreatePost, filters, onFilterChange }) {
+function CommunityHeader({ user, onCreatePost, filters, onFilterChange, animateHeader, searchFocused, setSearchFocused }) {
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     return (
-        <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-            <div className="max-w-6xl mx-auto px-4 py-6">
-                {/* Título */}
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                            🏘️ Comunidad Vecinal
-                        </h1>
-                        <p className="text-gray-600 dark:text-gray-400 mt-1">
-                            Mantente conectado con tu vecindario
-                        </p>
+        <div className={`bg-gradient-to-br from-white via-emerald-50 to-emerald-100 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 shadow-2xl border-b border-emerald-200 dark:border-emerald-800 relative overflow-hidden`}>
+            {/* Elementos decorativos de fondo */}
+            <div className="absolute inset-0 overflow-hidden">
+                <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-200 dark:bg-emerald-800 rounded-full opacity-20 blur-3xl animate-pulse"></div>
+                <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-200 dark:bg-blue-800 rounded-full opacity-20 blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+            </div>
+
+            <div className="max-w-6xl mx-auto px-6 py-8 relative z-10">
+                {/* Título con animaciones */}
+                <div className={`flex items-center justify-between mb-8 transition-all duration-1000 ${animateHeader ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+                    <div className="space-y-3">
+                        <div className="flex items-center space-x-3">
+                            <div className={`w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-700 ${animateHeader ? 'rotate-0 scale-100' : 'rotate-180 scale-0'}`}>
+                                <span className="text-3xl animate-bounce" style={{ animationDelay: '0.5s' }}>🏘️</span>
+                            </div>
+                            <div className={`transition-all duration-700 ${animateHeader ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8'}`}>
+                                <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-emerald-700 to-emerald-600 dark:from-white dark:via-emerald-300 dark:to-emerald-400 bg-clip-text text-transparent animate-pulse">
+                                    Comunidad Vecinal
+                                </h1>
+                                <p className="text-lg text-gray-600 dark:text-gray-400 mt-1 font-medium">
+                                    Mantente conectado con tu vecindario
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                     {user && (
                         <button
                             onClick={onCreatePost}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
+                            className={`group relative bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-8 py-4 rounded-2xl font-semibold transition-all duration-500 transform hover:scale-105 hover:shadow-2xl flex items-center space-x-3 shadow-lg overflow-hidden ${animateHeader ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+                            style={{ transitionDelay: '0.3s' }}
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                            </svg>
-                            <span>Nueva Publicación</span>
+                            <div className="w-6 h-6 bg-white bg-opacity-20 rounded-full flex items-center justify-center group-hover:rotate-90 transition-transform duration-300">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
+                            </div>
+                            <span className="relative z-10">Nueva Publicación</span>
+                            <div className="absolute inset-0 bg-white bg-opacity-20 rounded-2xl transform scale-0 group-hover:scale-100 transition-transform duration-500"></div>
+
+                            {/* Efecto de partículas en hover */}
+                            <div className="absolute inset-0 overflow-hidden rounded-2xl">
+                                <div className="absolute -top-2 -left-2 w-4 h-4 bg-white bg-opacity-30 rounded-full transform scale-0 group-hover:scale-100 transition-all duration-700" style={{ transitionDelay: '0.1s' }}></div>
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-white bg-opacity-30 rounded-full transform scale-0 group-hover:scale-100 transition-all duration-700" style={{ transitionDelay: '0.2s' }}></div>
+                                <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-white bg-opacity-30 rounded-full transform scale-0 group-hover:scale-100 transition-all duration-700" style={{ transitionDelay: '0.3s' }}></div>
+                            </div>
                         </button>
                     )}
                 </div>
 
-                {/* Filtros */}
-                <CommunityFilters filters={filters} onChange={onFilterChange} />
+                {/* Filtros mejorados con animaciones */}
+                <div className={`transition-all duration-700 ${animateHeader ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`} style={{ transitionDelay: '0.5s' }}>
+                    <CommunityFilters
+                        filters={filters}
+                        onChange={onFilterChange}
+                        searchFocused={searchFocused}
+                        setSearchFocused={setSearchFocused}
+                    />
+                </div>
             </div>
         </div>
     );
@@ -589,120 +758,169 @@ function CommunityFilters({ filters, onChange }) {
         onChange({ [key]: value });
     };
 
+    const CustomSelect = ({ value, onChange, options, values }) => (
+        <div className="relative">
+            <select
+                value={value}
+                onChange={onChange}
+                className="w-full px-4 py-3 pr-12 border-2 border-emerald-200 dark:border-emerald-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-200 cursor-pointer"
+                style={{
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    backgroundImage: 'none'
+                }}
+            >
+                {options.map((option, index) => (
+                    <option key={index} value={values[index]}>{option}</option>
+                ))}
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                <svg className="h-5 w-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </div>
+        </div>
+    );
+
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Búsqueda */}
-            <div className="relative">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Búsqueda con mejor diseño */}
+            <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-emerald-500 group-focus-within:text-emerald-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
                 <input
                     type="text"
                     placeholder="Buscar publicaciones..."
                     value={filters.search}
                     onChange={(e) => handleInputChange('search', e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full pl-12 pr-4 py-3 border-2 border-emerald-200 dark:border-emerald-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-200 placeholder-gray-400 dark:placeholder-gray-500"
                 />
-                <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
             </div>
 
-            {/* Zona */}
-            <select
+            {/* Selects mejorados */}
+            <CustomSelect
                 value={filters.zone}
                 onChange={(e) => handleInputChange('zone', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-                <option value="">Todas las zonas</option>
-                <option value="centro">Centro</option>
-                <option value="norte">Norte</option>
-                <option value="sur">Sur</option>
-                <option value="este">Este</option>
-                <option value="oeste">Oeste</option>
-            </select>
+                options={['Todas las zonas', 'Centro', 'Norte', 'Sur', 'Este', 'Oeste']}
+                values={['', 'centro', 'norte', 'sur', 'este', 'oeste']}
+            />
 
-            {/* Tipo de Post */}
-            <select
+            <CustomSelect
                 value={filters.post_type}
                 onChange={(e) => handleInputChange('post_type', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-                <option value="">Todos los tipos</option>
-                <option value="general">📝 General</option>
-                <option value="alert">🚨 Alertas</option>
-                <option value="question">❓ Preguntas</option>
-                <option value="sale">💰 Ventas</option>
-                <option value="service">🔧 Servicios</option>
-                <option value="event">🎉 Eventos</option>
-                <option value="lost_found">🔍 Perdidos y Encontrados</option>
-            </select>
+                options={['Todos los tipos', '📝 General', '🚨 Alertas', '❓ Preguntas', '💰 Ventas', '🔧 Servicios', '🎉 Eventos', '🔍 Perdidos y Encontrados']}
+                values={['', 'general', 'alert', 'question', 'sale', 'service', 'event', 'lost_found']}
+            />
 
-            {/* Tema */}
-            <select
+            <CustomSelect
                 value={filters.topic}
                 onChange={(e) => handleInputChange('topic', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-                <option value="">Todos los temas</option>
-                <option value="security">🛡️ Seguridad</option>
-                <option value="maintenance">🔨 Mantenimiento</option>
-                <option value="social">👥 Social</option>
-                <option value="services">🏪 Servicios</option>
-                <option value="marketplace">🛒 Marketplace</option>
-                <option value="pets">🐕 Mascotas</option>
-                <option value="transportation">🚗 Transporte</option>
-                <option value="other">📋 Otros</option>
-            </select>
+                options={['Todos los temas', '🛡️ Seguridad', '🔨 Mantenimiento', '👥 Social', '🏪 Servicios', '🛒 Marketplace', '🐕 Mascotas', '🚗 Transporte', '📋 Otros']}
+                values={['', 'security', 'maintenance', 'social', 'services', 'marketplace', 'pets', 'transportation', 'other']}
+            />
         </div>
     );
 }
-
 // Componente Estado Vacío
 function EmptyState({ onCreatePost, user }) {
     return (
-        <div className="text-center py-12">
-            <div className="mx-auto w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-6">
-                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
+        <div className="text-center py-20">
+            <div className="relative mx-auto w-40 h-40 mb-8">
+                {/* Círculos animados de fondo */}
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-900 dark:to-emerald-800 rounded-full animate-pulse"></div>
+                <div className="absolute inset-2 bg-gradient-to-br from-emerald-200 to-emerald-300 dark:from-emerald-800 dark:to-emerald-700 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+                <div className="absolute inset-4 bg-gradient-to-br from-emerald-300 to-emerald-400 dark:from-emerald-700 dark:to-emerald-600 rounded-full flex items-center justify-center shadow-2xl animate-bounce">
+                    <svg className="w-20 h-20 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                </div>
             </div>
-            <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
-                No hay publicaciones aún
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Sé el primero en compartir algo con tu comunidad
-            </p>
+
+            <div className="space-y-4 mb-10">
+                <h3 className="text-3xl font-bold bg-gradient-to-r from-gray-900 via-emerald-700 to-emerald-600 dark:from-white dark:via-emerald-300 dark:to-emerald-400 bg-clip-text text-transparent">
+                    ¡Bienvenido a tu Comunidad!
+                </h3>
+                <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto leading-relaxed">
+                    Aún no hay publicaciones, pero eso está a punto de cambiar. Sé el primero en compartir algo increíble con tus vecinos.
+                </p>
+            </div>
+
+            {/* Estadísticas animadas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto mb-10">
+                {[
+                    { icon: '👥', label: 'Vecinos Conectados', value: '0' },
+                    { icon: '📝', label: 'Publicaciones', value: '0' },
+                    { icon: '💬', label: 'Conversaciones', value: '0' }
+                ].map((stat, index) => (
+                    <div key={index} className="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 transform hover:scale-105 transition-all duration-300">
+                        <div className="text-3xl mb-2">{stat.icon}</div>
+                        <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-1">{stat.value}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">{stat.label}</div>
+                    </div>
+                ))}
+            </div>
+
             {user && (
-                <button
-                    onClick={onCreatePost}
-                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-                >
-                    Crear Primera Publicación
-                </button>
+                <div className="space-y-4">
+                    <button
+                        onClick={onCreatePost}
+                        className="group bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-10 py-5 rounded-2xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-2xl shadow-lg relative overflow-hidden"
+                    >
+                        <div className="absolute inset-0 bg-white bg-opacity-20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                        <span className="flex items-center space-x-3 relative z-10">
+                            <svg className="w-6 h-6 transform group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            <span>Crear Primera Publicación</span>
+                        </span>
+                    </button>
+
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                        💡 Tip: Las publicaciones sobre eventos locales, alertas de seguridad y recomendaciones de servicios son muy populares
+                    </p>
+                </div>
             )}
         </div>
     );
 }
 
 // Componente Lista de Posts - CORREGIDO
-function PostsList({ posts, user, onReact, onSelect, onEdit, onDelete }) {
+function PostsList({ posts, user, onReact, onSelect, onEdit, onDelete, hoveredPost, setHoveredPost, viewMode }) {
     return (
-        <div className="space-y-6">
-            {posts.map(post => (
-                <PostCard
+        <div className={`space-y-6 ${viewMode === 'list' ? 'list-style-none' : ''}`}>
+            {posts.map((post, index) => (
+                <div
                     key={post.id}
-                    post={post}
-                    user={user}
-                    onReact={onReact}
-                    onSelect={onSelect}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                />
+                    className={`transition-all duration-500 ${index < 3 ? 'animate-fade-in-up' : ''}`}
+                    style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                    <PostCard
+                        post={post}
+                        user={user}
+                        onReact={onReact}
+                        onSelect={onSelect}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                        hoveredPost={hoveredPost}
+                        setHoveredPost={setHoveredPost}
+                        viewMode={viewMode}
+                    />
+                </div>
             ))}
         </div>
     );
 }
 
+
 // Componente Tarjeta de Post - CORREGIDO
-function PostCard({ post, user, onReact, onSelect, onEdit, onDelete }) {
+function PostCard({ post, user, onReact, onSelect, onEdit, onDelete, hoveredPost, setHoveredPost, viewMode }) {
+    const [isLiked, setIsLiked] = useState(false);
+    const [showActions, setShowActions] = useState(false);
+
     const getPostTypeIcon = (type) => {
         const icons = {
             general: '📝',
@@ -723,7 +941,7 @@ function PostCard({ post, user, onReact, onSelect, onEdit, onDelete }) {
             social: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
             services: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
             marketplace: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-            pets: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
+            pets: 'bg-pink-100 text-pink-800 dark:bg-purple-900 dark:text-pink-200',
             transportation: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
             other: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
         };
@@ -746,66 +964,102 @@ function PostCard({ post, user, onReact, onSelect, onEdit, onDelete }) {
         }
     };
 
+    const handleLike = () => {
+        setIsLiked(!isLiked);
+        onReact(post.id);
+    };
+
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow duration-200">
-            {/* Header del post */}
-            <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                    {/* Avatar */}
-                    <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-medium">
-                        {post.is_anonymous ? '?' : (post.user?.name?.charAt(0) || 'A')}
+        <div
+        className={`group bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-all duration-500 transform hover:-translate-y-1 hover:shadow-lg hover:border-emerald-200 dark:hover:border-emerald-700 relative overflow-hidden max-w-2xl mx-auto ${hoveredPost === post.id ? 'ring-2 ring-emerald-500/20' : ''
+        } ${viewMode === 'list' ? 'flex items-start space-x-4 max-w-4xl' : ''}`}
+            onMouseEnter={() => setHoveredPost(post.id)}
+            onMouseLeave={() => setHoveredPost(null)}
+        >
+            {/* Efecto de brillo en hover */}
+            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/0 via-emerald-500/5 to-emerald-500/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+
+            {/* Indicador de tipo de post con animación */}
+            <div className="absolute top-4 right-4 z-10">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl transform transition-all duration-300 group-hover:scale-110 ${
+                    post.post_type === 'alert' ? 'bg-red-100 dark:bg-red-900/30 animate-pulse' :
+                    post.post_type === 'event' ? 'bg-purple-100 dark:bg-purple-900/30' :
+                    post.post_type === 'sale' ? 'bg-green-100 dark:bg-green-900/30' :
+                    'bg-blue-100 dark:bg-blue-900/30'
+                }`}>
+                    {getPostTypeIcon(post.post_type)}
+                </div>
+            </div>
+
+            {/* Header del post mejorado */}
+            <div className="flex items-start justify-between mb-6 relative z-10">
+                <div className="flex items-center space-x-4">
+                    {/* Avatar con efectos */}
+                    <div className="relative group/avatar">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center font-semibold text-lg shadow-lg transition-all duration-300 group-hover/avatar:scale-110 group-hover/avatar:shadow-xl">
+                            {post.is_anonymous ? '?' : (post.user?.name?.charAt(0) || 'A')}
+                        </div>
+                        {post.is_pinned && (
+                            <div className="absolute -top-2 -right-2 w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                                <svg className="w-3 h-3 text-yellow-800" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                        )}
+                        {/* Anillo de estado online */}
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 border-2 border-white dark:border-gray-800 rounded-full animate-pulse"></div>
                     </div>
 
-                    <div>
-                        <div className="flex items-center space-x-2">
-                            <h4 className="font-medium text-gray-900 dark:text-white">
+                    <div className="space-y-2">
+                        <div className="flex items-center space-x-3">
+                            <h4 className="font-semibold text-gray-900 dark:text-white text-lg transition-colors duration-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
                                 {post.is_anonymous ? 'Usuario Anónimo' : `${post.user?.name || 'Usuario'} ${post.user?.last_name || ''}`}
                             </h4>
-                            <span className={`px-2 py-1 text-xs rounded-full ${getTopicColor(post.topic)}`}>
+                            <span className={`px-3 py-1.5 text-sm rounded-full font-medium ${getTopicColor(post.topic)} shadow-sm transition-all duration-300 group-hover:scale-105`}>
                                 {post.topic}
                             </span>
                         </div>
-                        <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
-                            <span>📍 {post.zone}</span>
+                        <div className="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
+                            <span className="flex items-center space-x-1 transition-colors duration-300 group-hover:text-emerald-500">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span>{post.zone}</span>
+                            </span>
                             {post.subzone && (
                                 <>
-                                    <span>•</span>
+                                    <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
                                     <span>{post.subzone}</span>
                                 </>
                             )}
-                            <span>•</span>
+                            <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
                             <span>{formatDate(post.created_at)}</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Acciones del propietario */}
-                <div className="flex items-center space-x-2">
-                    <span className="text-lg">{getPostTypeIcon(post.post_type)}</span>
-                    {post.is_pinned && (
-                        <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3z" clipRule="evenodd" />
-                        </svg>
-                    )}
+                {/* Acciones del propietario mejoradas */}
+                <div className="flex items-center space-x-3">
+                    <span className="text-2xl animate-pulse">{getPostTypeIcon(post.post_type)}</span>
 
-                    {/* Botones de editar y eliminar para el propietario */}
                     {user && user.id === post.user_id && (
-                        <div className="flex items-center space-x-1 ml-2">
+                        <div className={`flex items-center space-x-2 transition-all duration-300 ${showActions ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'}`}>
                             <button
                                 onClick={() => onEdit(post)}
-                                className="text-blue-500 hover:text-blue-600 p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                className="p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all duration-200 hover:scale-110"
                                 title="Editar publicación"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                             </button>
                             <button
                                 onClick={() => onDelete(post.id)}
-                                className="text-red-500 hover:text-red-600 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all duration-200 hover:scale-110"
                                 title="Eliminar publicación"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                             </button>
@@ -814,12 +1068,12 @@ function PostCard({ post, user, onReact, onSelect, onEdit, onDelete }) {
                 </div>
             </div>
 
-            {/* Contenido */}
-            <div className="mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            {/* Contenido mejorado */}
+            <div className="mb-6 relative z-10">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3 leading-tight transition-colors duration-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
                     {post.title}
                 </h3>
-                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-base">
                     {post.content.length > 200
                         ? `${post.content.substring(0, 200)}...`
                         : post.content
@@ -827,79 +1081,115 @@ function PostCard({ post, user, onReact, onSelect, onEdit, onDelete }) {
                 </p>
             </div>
 
-            {/* Attachments */}
-            {post.attachments && post.attachments.length > 0 && (
-                <div className="mb-4">
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {post.attachments.slice(0, 3).map((attachment, index) => (
-                            <div key={index} className="relative group">
-                                {attachment.type?.startsWith('image/') ? (
-                                    <img
-                                        src={`/storage/${attachment.path}`}
-                                        alt={attachment.name}
-                                        className="w-full h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                                        onClick={() => onSelect && onSelect(post)}
-                                    />
-                                ) : (
-                                    <div
-                                        className="w-full h-32 bg-gray-100 dark:bg-gray-700 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                                        onClick={() => onSelect && onSelect(post)}
-                                    >
-                                        <svg className="w-8 h-8 text-gray-400 mb-2" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm5 3a1 1 0 000 2h6a1 1 0 100-2H9zM7 9a1 1 0 000 2h8a1 1 0 100-2H7zm-2 3a1 1 0 100 2h4a1 1 0 100-2H5z" clipRule="evenodd" />
-                                        </svg>
-                                        <span className="text-xs text-gray-500 text-center px-2">{attachment.name}</span>
-                                    </div>
-                                )}
-
-                                {/* Overlay para más archivos */}
-                                {post.attachments.length > 3 && index === 2 && (
-                                    <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center text-white font-medium cursor-pointer hover:bg-opacity-60 transition-all">
-                                        +{post.attachments.length - 3} más
-                                    </div>
-                                )}
+            {/* Attachments mejorados con efectos */}
+                                    {/* Attachments mejorados con efectos */}
+{post.attachments && post.attachments.length > 0 && (
+    <div className="mb-6 relative z-10">
+        <div className={`grid gap-3 ${
+            post.attachments.length === 1 ? 'grid-cols-1' :
+            post.attachments.length === 2 ? 'grid-cols-2' :
+            'grid-cols-2 md:grid-cols-3'
+        }`}>
+            {post.attachments.slice(0, 3).map((attachment, index) => (
+                <div key={index} className="relative group/attachment overflow-hidden rounded-xl transition-all duration-300 hover:scale-105 cursor-pointer">
+                    {attachment.type?.startsWith('image/') ? (
+                        <div onClick={() => onSelect && onSelect(post)}>
+                            <img
+                                src={`/storage/${attachment.path}`}
+                                alt={attachment.name}
+                                className="w-full h-48 object-cover transition-all duration-300 group-hover/attachment:brightness-110 rounded-xl"
+                            />
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover/attachment:bg-opacity-20 transition-all duration-300 rounded-xl flex items-center justify-center">
+                                <svg className="w-8 h-8 text-white opacity-0 group-hover/attachment:opacity-100 transition-opacity duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
                             </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+                        </div>
+                    ) : (
+                        <div
+                            className="w-full h-32 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group-hover/attachment:scale-105 border-2 border-dashed border-gray-300 dark:border-gray-600"
+                            onClick={() => onSelect && onSelect(post)}
+                        >
+                            <svg className="w-8 h-8 text-gray-400 mb-2 transition-transform duration-300 group-hover/attachment:scale-110" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm5 3a1 1 0 000 2h6a1 1 0 100-2H9zM7 9a1 1 0 000 2h8a1 1 0 100-2H7zm-2 3a1 1 0 100 2h4a1 1 0 100-2H5z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-xs text-gray-500 text-center px-2 font-medium">{attachment.name.length > 20 ? attachment.name.substring(0, 20) + '...' : attachment.name}</span>
+                        </div>
+                    )}
 
-            {/* Acciones */}
-            <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center space-x-4">
+                    {/* Overlay para más archivos */}
+                    {post.attachments.length > 3 && index === 2 && (
+                        <div className="absolute inset-0 bg-black bg-opacity-60 rounded-xl flex items-center justify-center text-white font-semibold cursor-pointer transition-all duration-300 group-hover/attachment:bg-opacity-70">
+                            <div className="text-center">
+                                <div className="text-2xl mb-1">+{post.attachments.length - 3}</div>
+                                <div className="text-xs">más archivos</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    </div>
+)}
+
+            {/* Acciones mejoradas con efectos */}
+            <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700 relative z-10">
+                <div className="flex items-center space-x-6">
                     {user && (
                         <button
-                            onClick={() => onReact(post.id)}
-                            className="flex items-center space-x-2 text-gray-500 hover:text-emerald-500 transition-colors duration-200"
+                            onClick={handleLike}
+                            className={`flex items-center space-x-2 transition-all duration-300 group/action ${isLiked ? 'text-emerald-500' : 'text-gray-500 hover:text-emerald-500'
+                                }`}
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                            </svg>
-                            <span>{post.reactions_count || 0}</span>
+                            <div className={`p-2 rounded-xl transition-all duration-300 group-hover/action:bg-emerald-50 dark:group-hover/action:bg-emerald-900/20 ${isLiked ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''
+                                }`}>
+                                <svg className={`w-5 h-5 transition-all duration-300 ${isLiked ? 'scale-110 fill-current' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                </svg>
+                            </div>
+                            <span className="font-medium transition-all duration-300 group-hover/action:scale-110">{post.reactions_count || 0}</span>
                         </button>
                     )}
 
                     <button
                         onClick={() => onSelect && onSelect(post)}
-                        className="flex items-center space-x-2 text-gray-500 hover:text-blue-500 transition-colors duration-200"
+                        className="flex items-center space-x-2 text-gray-500 hover:text-blue-500 transition-all duration-300 group/action"
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        <span>{post.comments_count || 0}</span>
+                        <div className="p-2 rounded-xl transition-all duration-300 group-hover/action:bg-blue-50 dark:group-hover/action:bg-blue-900/20 group-hover/action:scale-110">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                        </div>
+                        <span className="font-medium group-hover/action:scale-110">{post.comments_count || 0}</span>
                     </button>
 
-                    <button className="flex items-center space-x-2 text-gray-500 hover:text-purple-500 transition-colors duration-200">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                        </svg>
-                        <span>{post.shares_count || 0}</span>
+                    <button className="flex items-center space-x-2 text-gray-500 hover:text-purple-500 transition-all duration-300 group/action">
+                        <div className="p-2 rounded-xl transition-all duration-300 group-hover/action:bg-purple-50 dark:group-hover/action:bg-purple-900/20 group-hover/action:scale-110">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                            </svg>
+                        </div>
+                        <span className="font-medium group-hover/action:scale-110">{post.shares_count || 0}</span>
+                    </button>
+
+                    {/* Botón de guardar */}
+                    <button className="flex items-center space-x-2 text-gray-500 hover:text-yellow-500 transition-all duration-300 group/action">
+                        <div className="p-2 rounded-xl transition-all duration-300 group-hover/action:bg-yellow-50 dark:group-hover/action:bg-yellow-900/20 group-hover/action:scale-110">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                            </svg>
+                        </div>
                     </button>
                 </div>
 
-                <div className="text-sm text-gray-400">
+                <div className="text-sm">
                     {post.post_type === 'alert' && post.topic === 'security' && (
-                        <span className="text-red-500 font-medium">⚠️ Alerta de Seguridad</span>
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 shadow-sm animate-pulse">
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                            </svg>
+                            Alerta de Seguridad
+                        </span>
                     )}
                 </div>
             </div>

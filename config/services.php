@@ -43,4 +43,9 @@ return [
     'ocr_engine' => 2,
     ],
 
+    'mapbox' => [
+        'access_token' => env('MAPBOX_ACCESS_TOKEN'),
+        'base_url' => 'https://api.mapbox.com',
+    ],
+
 ];

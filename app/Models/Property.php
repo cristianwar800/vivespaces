@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\User;
+use App\Models\PropertyImageExtended;
 
 class Property extends Model
 {
@@ -25,11 +26,19 @@ class Property extends Model
         'is_active',
         'user_id',
         'image',
+        'latitude',
+        'longitude',
     ];
 
-    /**
-     * Relación: Una propiedad pertenece a un usuario (propietario)
-     */
+    // Casts DEBE ir aquí, antes de los métodos
+    protected $casts = [
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'price' => 'decimal:2',
+        'is_active' => 'boolean',
+    ];
+
+    // Métodos van después
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -40,5 +49,19 @@ class Property extends Model
         return $this->hasMany(Message::class);
     }
 
+    public function photos()
+    {
+        return $this->hasMany(PropertyImageExtended::class);
+    }
 
+    public function primaryPhoto()
+    {
+        return $this->hasOne(PropertyImageExtended::class)->where('is_primary', true);
+    }
+
+    public function getPhotosAttribute()
+    {
+        return $this->photos()->orderBy('sort_order')->get();
+    }
 }
+

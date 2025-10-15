@@ -10,6 +10,13 @@ use App\Http\Controllers\VerificationController;
 use App\Http\Controllers\Comparison\PhotoComparisonController;
 use App\Http\Controllers\ComunidadController;
 use App\Http\Controllers\AISearchController;
+use App\Http\Controllers\NotificationController;
+use Illuminate\Http\Request;
+use GuzzleHttp\Client;
+use Illuminate\Support\Facades\Http;
+use App\Http\Controllers\ChatBotController;
+use App\Http\Controllers\ContactoController;
+use Inertia\Inertia;
 
 /*
 |--------------------------------------------------------------------------
@@ -84,6 +91,17 @@ Route::middleware('auth')->group(function () {
         Route::get('/{property}', [PropertyController::class, 'show'])->name('properties.show');
     });
 
+    Route::prefix('properties/{property}/images')->group(function () {
+        Route::post('/', [PropertyController::class, 'uploadImages'])->name('properties.images.upload');
+        Route::get('/', [PropertyController::class, 'getImages'])->name('properties.images.index');
+        Route::delete('/{image}', [PropertyController::class, 'deleteImage'])->name('properties.images.delete');
+        Route::patch('/{image}/primary', [PropertyController::class, 'setPrimaryImage'])->name('properties.images.primary');
+        Route::patch('/reorder', [PropertyController::class, 'reorderImages'])->name('properties.images.reorder');
+    });
+
+    // Mis propiedades
+    Route::get('/my-properties', [PropertyController::class, 'myProperties'])->name('properties.my');
+
     // ----------------
     // ✅ Verificación de Identidad
     // ----------------
@@ -96,6 +114,9 @@ Route::middleware('auth')->group(function () {
         // Verificación OCR
         Route::post('/identity-ocr', [VerificationController::class, 'verify']);
         Route::post('/test-ocr', [VerificationController::class, 'testOCR']);
+        Route::post('/document', [VerificationController::class, 'verifySingleDocument']);
+        Route::post('/complete', [VerificationController::class, 'verifyComplete']);
+        Route::get('/documents/supported', [VerificationController::class, 'getSupportedDocuments']);
 
         // Vista de prueba
         Route::get('/test', function () {
@@ -124,6 +145,60 @@ Route::middleware('auth')->group(function () {
         Route::post('/', [MessageController::class, 'store']);
         Route::post('/{message}/reactions', [MessageController::class, 'addReaction']);
         Route::delete('/{message}/reactions', [MessageController::class, 'removeReaction']);
+    });
+
+    // ----------------
+    // 🔔 SISTEMA DE NOTIFICACIONES
+    // ----------------
+    Route::prefix('notifications')->group(function () {
+        // Vista principal de notificaciones
+        Route::get('/', function () {
+            return view('notifications');
+        })->name('notifications.index');
+
+        // Obtener todas las notificaciones
+        Route::get('/api/all', [NotificationController::class, 'index'])
+            ->name('notifications.api.index');
+
+        // Obtener solo no leídas
+        Route::get('/api/unread', [NotificationController::class, 'unread'])
+            ->name('notifications.api.unread');
+
+        // Obtener contador
+        Route::get('/api/count', [NotificationController::class, 'count'])
+            ->name('notifications.api.count');
+
+        // Marcar como leída
+        Route::post('/{id}/read', [NotificationController::class, 'markAsRead'])
+            ->name('notifications.read');
+
+        // Marcar todas como leídas
+        Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead'])
+            ->name('notifications.mark-all-read');
+
+        // Eliminar notificación
+        Route::delete('/{id}', [NotificationController::class, 'destroy'])
+            ->name('notifications.destroy');
+
+        // Eliminar todas las leídas
+        Route::delete('/clear/read', [NotificationController::class, 'clearRead'])
+            ->name('notifications.clear-read');
+
+        // Generar recomendaciones desde búsqueda
+        Route::post('/generate-recommendations', [NotificationController::class, 'generateRecommendations'])
+            ->name('notifications.generate-recommendations');
+
+        // Crear notificación de mensaje
+        Route::post('/message', [NotificationController::class, 'createMessageNotification'])
+            ->name('notifications.message');
+
+        // Notificar nueva propiedad
+        Route::post('/new-property', [NotificationController::class, 'notifyNewProperty'])
+            ->name('notifications.new-property');
+
+        // Notificar cambio de precio
+        Route::post('/price-change', [NotificationController::class, 'notifyPriceChange'])
+            ->name('notifications.price-change');
     });
 
     // ----------------
@@ -162,11 +237,8 @@ Route::middleware('auth')->group(function () {
             Route::delete('/{propertyId}', [AdminController::class, 'deleteProperty'])->name('admin.properties.delete');
         });
     });
-});
 
-// ==========================================
-// 🔌 API ROUTES (JSON responses)
-// ==========================================
+}); // FIN Route::middleware('auth')
 
 // ==========================================
 // 🌐 API ROUTES PÚBLICAS (Sin autenticación)
@@ -198,9 +270,6 @@ Route::get('/api/featured-properties', function() {
     ]);
 });
 
-
-// Agregar en la sección "API ROUTES PÚBLICAS (Sin autenticación)"
-
 // Búsqueda básica de propiedades (para el navbar)
 Route::get('/api/search/properties', [PropertyController::class, 'searchProperties'])
     ->name('api.search.properties');
@@ -226,9 +295,34 @@ Route::get('/api/search/cities', function(Request $request) {
     ]);
 });
 
+// Propiedades cercanas
+Route::post('/api/properties/nearby', [PropertyController::class, 'searchNearby'])
+    ->name('api.properties.nearby');
+
+// Configuración del mapa
+Route::get('/api/map-config', function() {
+    return response()->json([
+        'mapboxToken' => config('services.mapbox.access_token'),
+        'defaultCenter' => [-103.3496, 20.6597],
+        'defaultZoom' => 11
+    ]);
+});
+
+Route::post('/api/ai/track', [AISearchController::class, 'trackSearch']);
+
+// Ruta para procesar recomendaciones (después de 2 minutos)
+Route::post('/search/process-recommendations', [AISearchController::class, 'processRecommendations']);
+
+
+
+
 // ==========================================
-// 🔌 API ROUTES (JSON responses) - CON AUTENTICACIÓN
+// 🔌 API ROUTES CON AUTENTICACIÓN
 // ==========================================
+
+
+Route::get('/test-notification', [NotificationController::class, 'createTestNotification']);
+
 
 Route::prefix('api')->middleware('auth')->group(function () {
 
@@ -282,13 +376,122 @@ Route::prefix('api')->middleware('auth')->group(function () {
     });
 
     Route::post('comments/{commentId}/react', [ComunidadController::class, 'reactToComment']);
-});
+
+}); // FIN Route::prefix('api')->middleware('auth')
 
 // ==========================================
-// 🧪 RUTAS DE TESTING/DEBUG (ELIMINAR EN PRODUCCIÓN)
+// 🤖 AI API ROUTES - SIEMPRE DISPONIBLES
+// ==========================================
+
+Route::prefix('ai')->group(function () {
+
+    // ============================================
+    // RUTAS DE MACHINE LEARNING
+    // ============================================
+
+    // Test de algoritmos ML
+    Route::get('/ml-test', [AISearchController::class, 'testML']);
+
+    // Clasificación rápida con Naive Bayes
+    Route::post('/classify/quick', [AISearchController::class, 'classifyQuick']);
+
+    // Búsquedas similares con KNN
+    Route::post('/similar', [AISearchController::class, 'findSimilar']);
+
+    // Predicción compleja con MLP
+    Route::post('/predict/complex', [AISearchController::class, 'predictComplex']);
+
+    // Ensemble (los 3 algoritmos)
+    Route::post('/predict/ensemble', [AISearchController::class, 'predictEnsemble']);
+
+    // Comparar todos los algoritmos
+    Route::post('/compare', [AISearchController::class, 'compareAll']);
+
+    // ============================================
+    // RUTAS ORIGINALES
+    // ============================================
+
+    // Health check
+    Route::get('/health', [AISearchController::class, 'healthCheck']);
+
+    // Test de conexión
+    Route::get('/test', [AISearchController::class, 'testConnection']);
+
+    // Tracking de búsqueda
+    Route::post('/track', [AISearchController::class, 'trackSearch']);
+
+    // Patrones de usuario
+    Route::get('/patterns/user/{userId}', [AISearchController::class, 'getUserPatterns']);
+
+    // Patrones globales
+    Route::get('/patterns/global', [AISearchController::class, 'getGlobalPatterns']);
+
+    // Predicciones
+    Route::post('/predictions', [AISearchController::class, 'getPredictions']);
+
+    // Sugerencias
+    Route::get('/suggestions/{userId}', [AISearchController::class, 'getSuggestions']);
+
+    // Trending
+    Route::get('/trending', [AISearchController::class, 'getTrending']);
+
+    // Dashboard de analytics
+    Route::get('/analytics/dashboard', [AISearchController::class, 'getAnalyticsDashboard']);
+
+    // Analizar intención
+    Route::post('/intent', [AISearchController::class, 'analyzeIntent']);
+
+    // Inicializar sistema
+    Route::post('/initialize', [AISearchController::class, 'initialize']);
+
+}); // FIN Route::prefix('ai')
+
+
+
+
+Route::post('/notifications/delete-all', function() {
+    try {
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Usuario no autenticado'
+            ], 401);
+        }
+
+        // Eliminar todas las notificaciones del usuario
+        $deleted = $user->notifications()->delete();
+
+        \Log::info('🗑️ Notificaciones eliminadas', [
+            'user_id' => $user->id,
+            'deleted_count' => $deleted
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Todas las notificaciones han sido eliminadas',
+            'deleted_count' => $deleted
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('Error eliminando todas las notificaciones', [
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al eliminar notificaciones'
+        ], 500);
+    }
+})->middleware('auth')->name('notifications.deleteAll');
+
+// ==========================================
+// 🧪 RUTAS DE TESTING/DEBUG (Solo desarrollo)
 // ==========================================
 
 if (app()->environment(['local', 'staging'])) {
+
     Route::prefix('debug')->group(function () {
         Route::get('/auth', function() {
             if (auth()->check()) {
@@ -375,36 +578,32 @@ if (app()->environment(['local', 'staging'])) {
         })->middleware('auth');
     });
 
-    Route::prefix('api/ai')->group(function () {
-        Route::get('/health', [App\Http\Controllers\AISearchController::class, 'healthCheck']);
-        Route::get('/test', [App\Http\Controllers\AISearchController::class, 'testConnection']);
-        Route::post('/track', [App\Http\Controllers\AISearchController::class, 'trackSearch']);
+    Route::get('/test-ai', function () {
+        return view('test-ai');
+    })->name('test.ai');
+
+    Route::get('/ai-search-test', function () {
+        return view('test-ai');
+    })->name('ai-search-test');
+
+    Route::prefix('api/chatbot')->group(function () {
+        Route::post('/message', [ChatBotController::class, 'processMessage'])
+            ->name('api.chatbot.message');
+        Route::post('/welcome', [ChatBotController::class, 'getWelcomeMessage'])
+            ->name('api.chatbot.welcome');
     });
 
-    // ==========================================
-    // 🤖 AI PROXY SIMPLE - SIN ERRORES
-    // ==========================================
+    Route::get('/search', function () {
+        return view('search');
+    })->name('search');
 
-    Route::prefix('ai')->group(function () {
-        Route::get('/health', function () {
-            try {
-                $response = Http::timeout(10)->get('http://localhost:8001/health');
-                return response($response->body(), $response->status())
-                    ->header('Content-Type', 'application/json');
-            } catch (\Exception $e) {
-                return response()->json(['error' => 'AI not available'], 503);
-            }
-        });
+    Route::get('/search/properties', [PropertyController::class, 'searchProperties'])->name('search.properties');
 
-        Route::get('/', function () {
-            try {
-                $response = Http::timeout(10)->get('http://localhost:8001/');
-                return response($response->body(), $response->status())
-                    ->header('Content-Type', 'application/json');
-            } catch (\Exception $e) {
-                return response()->json(['error' => 'AI not available'], 503);
-            }
-        });
-    });
+    Route::get('/contacto', [ContactoController::class, 'index'])->name('contacto.index');
+    Route::post('/contacto', [ContactoController::class, 'enviar'])->name('contacto.enviar');
 
-}
+    Route::get('/recomendador', function () {
+        return view('fastapi-recomendador');
+    })->name('recomendador');
+
+} // FIN if (app()->environment(['local', 'staging']))

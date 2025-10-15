@@ -66,39 +66,39 @@ const AudioPlayer = ({ message, isOwn }) => {
   };
 
   return (
-      <div className={`flex items-center space-x-2 sm:space-x-3 p-3 sm:p-4 rounded-2xl transition-all duration-200 ${isOwn ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white shadow-md'}`} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+      <div className={`flex items-center space-x-2 sm:space-x-3 p-4 sm:p-5 rounded-2xl transition-all duration-300 transform hover:scale-[1.02] ${isOwn ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-xl shadow-emerald-500/30' : 'bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-900 dark:text-white shadow-lg'}`} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
           <audio ref={audioRef} src={message.file_url} onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onEnded={handleEnded} preload="metadata" />
-          <button onClick={togglePlay} disabled={isLoading} className={`flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all duration-200 transform ${isHovered ? 'scale-110' : 'scale-100'} ${isOwn ? 'bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-2 border-white border-opacity-40' : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'} disabled:opacity-50 disabled:scale-100`}>
-              {isLoading ? <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : isPlaying ? <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-5 h-5 sm:w-6 sm:h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
+          <button onClick={togglePlay} disabled={isLoading} className={`flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all duration-300 transform ${isHovered ? 'scale-110' : 'scale-100'} ${isOwn ? 'bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-2 border-white border-opacity-40 shadow-lg' : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-xl shadow-emerald-500/40'} disabled:opacity-50 disabled:scale-100`}>
+              {isLoading ? <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : isPlaying ? <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-6 h-6 sm:w-7 sm:h-7 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
           </button>
-          <div className="flex-1 min-w-0 space-y-1 sm:space-y-2">
-              <div className="flex items-center space-x-2 sm:space-x-3">
-                  <div className={`transition-all duration-200 ${isPlaying ? 'animate-pulse' : ''}`}>
-                      <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+          <div className="flex-1 min-w-0 space-y-2 sm:space-y-3">
+              <div className="flex items-center space-x-3 sm:space-x-4">
+                  <div className={`transition-all duration-300 ${isPlaying ? 'animate-pulse' : ''}`}>
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
                           <path d="M19 10v1a7 7 0 1 1-14 0v-1"/>
                           <path d="M12 18v4"/>
                           <path d="M8 22h8"/>
                       </svg>
                   </div>
-                  <div className={`flex-1 h-2 rounded-full cursor-pointer relative transition-all duration-200 ${isHovered ? 'h-3' : 'h-2'} ${isOwn ? 'bg-white bg-opacity-20' : 'bg-gray-300 dark:bg-gray-600'}`} onClick={handleSeek}>
-                      <div className={`h-full rounded-full transition-all duration-200 relative overflow-hidden ${isOwn ? 'bg-white bg-opacity-90 shadow-sm' : 'bg-emerald-500 shadow-md shadow-emerald-500/30'}`} style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }}>
-                          <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 ${isPlaying ? 'animate-pulse' : ''}`}></div>
+                  <div className={`flex-1 h-3 rounded-full cursor-pointer relative transition-all duration-300 ${isHovered ? 'h-4' : 'h-3'} ${isOwn ? 'bg-white bg-opacity-20' : 'bg-gray-300 dark:bg-gray-600'}`} onClick={handleSeek}>
+                      <div className={`h-full rounded-full transition-all duration-300 relative overflow-hidden ${isOwn ? 'bg-white bg-opacity-90 shadow-sm' : 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-md shadow-emerald-500/30'}`} style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }}>
+                          <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-40 ${isPlaying ? 'animate-pulse' : ''}`}></div>
                       </div>
                       {isHovered && duration > 0 && (
-                          <div className={`absolute top-1/2 w-3 h-3 sm:w-4 sm:h-4 rounded-full transition-all duration-200 transform -translate-y-1/2 -translate-x-1/2 shadow-lg ${isOwn ? 'bg-white border-2 border-emerald-400' : 'bg-emerald-500 border-2 border-white'}`} style={{ left: `${(currentTime / duration) * 100}%` }} />
+                          <div className={`absolute top-1/2 w-4 h-4 sm:w-5 sm:h-5 rounded-full transition-all duration-300 transform -translate-y-1/2 -translate-x-1/2 shadow-xl ${isOwn ? 'bg-white border-2 border-emerald-400' : 'bg-emerald-500 border-2 border-white'}`} style={{ left: `${(currentTime / duration) * 100}%` }} />
                       )}
                   </div>
-                  <div className={`text-xs sm:text-sm font-mono flex-shrink-0 min-w-[3rem] sm:min-w-[4rem] text-right transition-all duration-200 ${isOwn ? 'text-white text-opacity-90' : 'text-gray-600 dark:text-gray-300'}`}>
+                  <div className={`text-sm sm:text-base font-mono flex-shrink-0 min-w-[4rem] sm:min-w-[5rem] text-right transition-all duration-300 ${isOwn ? 'text-white text-opacity-90' : 'text-gray-600 dark:text-gray-300'}`}>
                       <span className="font-medium">{formatTime(currentTime)}</span>
                       <span className="opacity-60"> / </span>
                       <span className="opacity-80">{formatTime(duration)}</span>
                   </div>
               </div>
               {message.metadata && (
-                  <div className={`text-xs flex items-center space-x-2 transition-all duration-200 ${isOwn ? 'text-white text-opacity-70' : 'text-gray-500 dark:text-gray-400'}`}>
-                      <div className="flex items-center space-x-1">
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <div className={`text-sm flex items-center space-x-3 transition-all duration-300 ${isOwn ? 'text-white text-opacity-70' : 'text-gray-500 dark:text-gray-400'}`}>
+                      <div className="flex items-center space-x-2">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
                           </svg>
                           <span>
@@ -106,8 +106,8 @@ const AudioPlayer = ({ message, isOwn }) => {
                           </span>
                       </div>
                       {message.metadata.channels && (
-                          <div className="flex items-center space-x-1">
-                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                          <div className="flex items-center space-x-2">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                   <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
                               </svg>
                               <span>{message.metadata.channels === 1 ? 'Mono' : 'Estéreo'}</span>
@@ -148,9 +148,9 @@ const EmojiPicker = ({ messageId, onEmojiSelect, onClose, referenceElement }) =>
      <div
        ref={refs.setFloating}
        style={floatingStyles}
-       className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-50 w-48 sm:w-52"
+       className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-3 z-50 w-52 sm:w-56 backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95"
      >
-       <div className="grid grid-cols-5 gap-1">
+       <div className="grid grid-cols-5 gap-2">
          {emojis.map((emoji, index) => (
            <button
              key={index}
@@ -158,7 +158,7 @@ const EmojiPicker = ({ messageId, onEmojiSelect, onClose, referenceElement }) =>
                onEmojiSelect(messageId, emoji);
                onClose();
              }}
-             className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-200"
+             className="w-10 h-10 flex items-center justify-center text-xl hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100 dark:hover:from-emerald-900/30 dark:hover:to-emerald-800/30 rounded-xl transition-all duration-300 transform hover:scale-110 hover:shadow-lg"
            >
              {emoji}
            </button>
@@ -166,7 +166,7 @@ const EmojiPicker = ({ messageId, onEmojiSelect, onClose, referenceElement }) =>
        </div>
        <button
          onClick={onClose}
-         className="w-full mt-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border-t border-gray-200 dark:border-gray-600"
+         className="w-full mt-3 py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border-t border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
        >
          Cerrar
        </button>
@@ -182,8 +182,8 @@ const EmojiPicker = ({ messageId, onEmojiSelect, onClose, referenceElement }) =>
      }
 
      return (
-         <div className="mt-2 -mb-1 relative">
-             <div className="flex flex-wrap gap-1 max-w-[180px] sm:max-w-[250px] md:max-w-[300px]">
+         <div className="mt-3 -mb-1 relative">
+             <div className="flex flex-wrap gap-2 max-w-[200px] sm:max-w-[280px] md:max-w-[350px]">
                  {message.reactions && Object.keys(message.reactions).length > 0 && (
                      Object.entries(message.reactions).map(([emoji, userIds]) => {
                          const count = userIds.length;
@@ -192,14 +192,14 @@ const EmojiPicker = ({ messageId, onEmojiSelect, onClose, referenceElement }) =>
                              <button
                                  key={emoji}
                                  onClick={() => toggleReaction(message.id, emoji)}
-                                 className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-xs transition-all duration-200 shadow-sm ${
+                                 className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-full text-sm transition-all duration-300 transform hover:scale-105 shadow-md ${
                                      hasUserReacted
-                                         ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                         : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
+                                         ? 'bg-gradient-to-r from-emerald-100 to-emerald-200 dark:from-emerald-900/40 dark:to-emerald-800/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-emerald-500/20'
+                                         : 'bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-600 dark:text-gray-400 hover:from-gray-200 hover:to-gray-300 dark:hover:from-gray-600 dark:hover:to-gray-700 border border-gray-200 dark:border-gray-600'
                                  }`}
                              >
-                                 <span className="text-sm">{emoji}</span>
-                                 <span className="font-medium text-xs">{count}</span>
+                                 <span className="text-base">{emoji}</span>
+                                 <span className="font-semibold text-xs">{count}</span>
                              </button>
                          );
                      })
@@ -209,9 +209,9 @@ const EmojiPicker = ({ messageId, onEmojiSelect, onClose, referenceElement }) =>
                      <button
                          ref={buttonRef}
                          onClick={() => onEmojiPickerToggle(message.id)}
-                         className="inline-flex items-center justify-center w-7 h-7 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full text-gray-600 dark:text-gray-400 transition-colors duration-200 border border-gray-200 dark:border-gray-600"
+                         className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 hover:from-emerald-100 hover:to-emerald-200 dark:hover:from-emerald-900/30 dark:hover:to-emerald-800/30 rounded-full text-gray-600 dark:text-gray-400 transition-all duration-300 transform hover:scale-110 border border-gray-200 dark:border-gray-600 shadow-md"
                      >
-                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                          </svg>
                      </button>
@@ -696,34 +696,60 @@ function Chat() {
 
   if (isLoading) {
       return (
-          <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-emerald-50 to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
               <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4"></div>
-                  <p className="text-gray-600 dark:text-gray-400">Cargando chat...</p>
+                  <div className="relative mx-auto mb-6">
+                      <div className="w-20 h-20 border-4 border-emerald-200 dark:border-emerald-800 rounded-full animate-pulse"></div>
+                      <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-t-emerald-500 rounded-full animate-spin"></div>
+                      <div className="absolute inset-2 w-16 h-16 border-4 border-transparent border-b-emerald-400 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+                  </div>
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-900 via-emerald-700 to-emerald-600 dark:from-white dark:via-emerald-300 dark:to-emerald-400 bg-clip-text text-transparent animate-pulse mb-2">
+                      Cargando Chat
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-lg">Preparando tu experiencia de mensajería...</p>
+
+                  <div className="flex justify-center space-x-2 mt-6">
+                      {[0, 1, 2].map((i) => (
+                          <div
+                              key={i}
+                              className="w-3 h-3 bg-emerald-500 rounded-full animate-bounce"
+                              style={{ animationDelay: `${i * 0.2}s` }}
+                          />
+                      ))}
+                  </div>
               </div>
           </div>
       );
   }
 
   return (
-      <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden pt-16">
+      <div className="h-screen bg-gradient-to-br from-gray-50 via-emerald-50 to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex overflow-hidden pt-16">
           {/* Mobile Overlay */}
           {isMobile && showSidebar && (
               <div
-                  className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+                  className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden backdrop-blur-sm"
                   onClick={() => setShowSidebar(false)}
               />
           )}
 
           {/* Sidebar */}
-          <div className={`${isMobile ? 'fixed' : 'relative'} ${showSidebar ? 'translate-x-0' : '-translate-x-full'} ${isMobile ? 'w-full max-w-sm' : 'w-80'} bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out z-50 md:translate-x-0`}>
-              <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">Mensajes</h2>
+          <div className={`${isMobile ? 'fixed' : 'relative'} ${showSidebar ? 'translate-x-0' : '-translate-x-full'} ${isMobile ? 'w-full max-w-sm' : 'w-80'} bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-r border-gray-200/50 dark:border-gray-700/50 flex flex-col transition-all duration-300 ease-in-out z-50 md:translate-x-0 shadow-2xl`}>
+              <div className="p-4 sm:p-6 border-b border-gray-200/50 dark:border-gray-700/50 bg-gradient-to-r from-white/80 to-emerald-50/80 dark:from-gray-800/80 dark:to-emerald-900/20">
+                  <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                              </svg>
+                          </div>
+                          <h2 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 via-emerald-700 to-emerald-600 dark:from-white dark:via-emerald-300 dark:to-emerald-400 bg-clip-text text-transparent">
+                              Mensajes
+                          </h2>
+                      </div>
                       {isMobile && (
                           <button
                               onClick={() => setShowSidebar(false)}
-                              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                              className="p-2 text-gray-500 hover:text-emerald-600 dark:text-gray-400 dark:hover:text-emerald-400 transition-colors duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg"
                           >
                               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -731,15 +757,15 @@ function Chat() {
                           </button>
                       )}
                   </div>
-                  <div className="relative">
+                  <div className="relative group">
                       <input
                           type="text"
                           placeholder="Buscar conversaciones..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full pl-12 pr-4 py-3 text-sm border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white/80 dark:bg-gray-700/80 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-300 shadow-sm group-hover:shadow-md"
                       />
-                      <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="absolute left-4 top-3.5 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
                   </div>
@@ -757,27 +783,34 @@ function Chat() {
                           <div
                               key={conversation.id}
                               onClick={() => selectConversation(conversation)}
-                              className={`p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors duration-200 flex items-center space-x-3 ${currentChat?.id === conversation.id ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                              className={`p-4 sm:p-5 border-b border-gray-200/30 dark:border-gray-700/30 cursor-pointer transition-all duration-300 flex items-center space-x-4 hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-blue-50/50 dark:hover:from-emerald-900/10 dark:hover:to-blue-900/10 ${currentChat?.id === conversation.id ? 'bg-gradient-to-r from-emerald-50 to-emerald-100/50 dark:from-emerald-900/30 dark:to-emerald-800/20 shadow-inner' : ''}`}
                           >
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden flex-shrink-0">
-                                  <img src={conversation.other_user.avatar_url} alt={conversation.other_user.name} className="w-full h-full object-cover" />
+                              <div className="relative">
+                                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-gray-200 dark:ring-gray-600 shadow-lg">
+                                      <img src={conversation.other_user.avatar_url} alt={conversation.other_user.name} className="w-full h-full object-cover" />
+                                  </div>
+                                  {/* Indicador de estado online */}
+                                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 border-2 border-white dark:border-gray-800 rounded-full animate-pulse"></div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-center mb-1">
-                                      <h4 className="font-medium text-gray-900 dark:text-white truncate text-sm sm:text-base">{conversation.other_user.name} {conversation.other_user.last_name}</h4>
+                                  <div className="flex justify-between items-center mb-2">
+                                      <h4 className="font-semibold text-gray-900 dark:text-white truncate text-sm sm:text-base">{conversation.other_user.name} {conversation.other_user.last_name}</h4>
                                       {conversation.last_message && (
-                                          <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">{formatTime(conversation.last_message.created_at)}</span>
+                                          <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">{formatTime(conversation.last_message.created_at)}</span>
                                       )}
                                   </div>
                                   {conversation.last_message && (
-                                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">{conversation.last_message.type === 'text' ? conversation.last_message.message : `📎 ${conversation.last_message.file_name || 'Archivo'}`}</p>
+                                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate mb-1">{conversation.last_message.type === 'text' ? conversation.last_message.message : `📎 ${conversation.last_message.file_name || 'Archivo'}`}</p>
                                   )}
                                   {conversation.property && (
-                                      <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">📍 {conversation.property.title}</p>
+                                      <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center">
+                                          <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2"></span>
+                                          {conversation.property.title}
+                                      </p>
                                   )}
                               </div>
                               {conversation.unread_count > 0 && (
-                                  <div className="w-5 h-5 bg-emerald-500 text-white text-xs rounded-full flex items-center justify-center font-medium flex-shrink-0">
+                                  <div className="w-6 h-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs rounded-full flex items-center justify-center font-bold flex-shrink-0 shadow-lg animate-pulse">
                                       {conversation.unread_count > 9 ? '9+' : conversation.unread_count}
                                   </div>
                               )}
@@ -788,29 +821,36 @@ function Chat() {
           </div>
 
           {/* Main Chat Area */}
-          <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 min-w-0">
+          <div className="flex-1 flex flex-col bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm min-w-0 shadow-xl">
               {currentChat ? (
                   <>
                       {/* Chat Header */}
-                      <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                          <div className="flex items-center space-x-3 sm:space-x-4">
+                      <div className="p-4 sm:p-6 border-b border-gray-200/50 dark:border-gray-700/50 bg-gradient-to-r from-white/90 to-emerald-50/90 dark:from-gray-800/90 dark:to-emerald-900/20">
+                          <div className="flex items-center space-x-4 sm:space-x-5">
                               {isMobile && (
                                   <button
                                       onClick={() => setShowSidebar(true)}
-                                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 -ml-2"
+                                      className="p-2 text-gray-500 hover:text-emerald-600 dark:text-gray-400 dark:hover:text-emerald-400 transition-colors duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg -ml-2"
                                   >
                                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
                                       </svg>
                                   </button>
                               )}
-                              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden flex-shrink-0">
-                                  <img src={currentChat.other_user.avatar_url} alt={currentChat.other_user.name} className="w-full h-full object-cover" />
+                              <div className="relative">
+                                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-emerald-200 dark:ring-emerald-700 shadow-lg">
+                                      <img src={currentChat.other_user.avatar_url} alt={currentChat.other_user.name} className="w-full h-full object-cover" />
+                                  </div>
+                                  {/* Indicador de estado online */}
+                                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 border-2 border-white dark:border-gray-800 rounded-full animate-pulse"></div>
                               </div>
                               <div className="min-w-0 flex-1">
-                                  <h3 className="font-semibold text-gray-900 dark:text-white text-sm sm:text-base truncate">{currentChat.other_user.name} {currentChat.other_user.last_name}</h3>
+                                  <h3 className="font-bold text-gray-900 dark:text-white text-lg sm:text-xl truncate">{currentChat.other_user.name} {currentChat.other_user.last_name}</h3>
                                   {currentChat.property && (
-                                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">Sobre: {currentChat.property.title}</p>
+                                      <p className="text-sm sm:text-base text-emerald-600 dark:text-emerald-400 font-medium truncate flex items-center">
+                                          <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2"></span>
+                                          {currentChat.property.title}
+                                      </p>
                                   )}
                               </div>
                           </div>
@@ -842,7 +882,7 @@ function Chat() {
                                               )}
                                               {!isOwn && !showAvatar && <div className="w-6 sm:w-8" />}
                                               <div
-                                                  className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-2 ${message.reactions && Object.keys(message.reactions).length > 0 ? 'min-w-[140px] sm:min-w-[180px]' : ''} ${isOwn ? 'bg-emerald-500 text-white rounded-br-md' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-md'}`}
+                                                  className={`rounded-2xl px-4 py-3 sm:px-5 sm:py-3 ${message.reactions && Object.keys(message.reactions).length > 0 ? 'min-w-[160px] sm:min-w-[200px]' : ''} ${isOwn ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-br-md shadow-xl shadow-emerald-500/30' : 'bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-900 dark:text-white rounded-bl-md shadow-lg'}`}
                                                   onMouseEnter={() => setHoveredMessage(message.id)}
                                                   onMouseLeave={() => setHoveredMessage(null)}
                                               >
@@ -890,17 +930,22 @@ function Chat() {
                       </div>
 
                       {/* Message Input Area */}
-                      <div className="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <div className="p-4 sm:p-6 border-t border-gray-200/50 dark:border-gray-700/50 bg-gradient-to-r from-white/90 to-emerald-50/90 dark:from-gray-800/90 dark:to-emerald-900/20">
                           {showFilePreview && selectedFile && (
-                              <div className="mb-3 sm:mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between">
-                                  <div className="flex items-center space-x-2 min-w-0">
-                                      <svg className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                                          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
-                                      </svg>
-                                      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{selectedFile.name}</span>
+                              <div className="mb-4 sm:mb-5 p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/20 dark:to-blue-900/20 rounded-xl border border-emerald-200/50 dark:border-emerald-700/50 flex items-center justify-between shadow-lg">
+                                  <div className="flex items-center space-x-3 min-w-0">
+                                      <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center shadow-md">
+                                          <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                              <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+                                          </svg>
+                                      </div>
+                                      <div className="min-w-0">
+                                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{selectedFile.name}</p>
+                                          <p className="text-xs text-emerald-600 dark:text-emerald-400">Archivo listo para enviar</p>
+                                      </div>
                                   </div>
-                                  <button onClick={removeFile} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0 ml-2">
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <button onClick={removeFile} className="p-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all duration-200 flex-shrink-0 ml-2">
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                                       </svg>
                                   </button>
@@ -914,30 +959,30 @@ function Chat() {
                               </div>
                           ))}
 
-                          <form onSubmit={sendMessage} className="flex items-end space-x-2">
+                          <form onSubmit={sendMessage} className="flex items-end space-x-3">
                               <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*,.pdf,.doc,.docx,.txt,audio/*,.webm,.mp4" />
 
                               {/* Action Buttons */}
-                              <div className="flex space-x-1 flex-shrink-0">
-                                  <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-500 hover:text-emerald-500 dark:text-gray-400 dark:hover:text-emerald-400 transition-colors duration-200">
-                                      <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <div className="flex space-x-2 flex-shrink-0">
+                                  <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 text-gray-500 hover:text-emerald-500 dark:text-gray-400 dark:hover:text-emerald-400 transition-all duration-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl group">
+                                      <svg className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                                       </svg>
                                   </button>
-                                  <button type="button" onClick={isRecording ? stopVoiceRecording : startVoiceRecording} className={`p-2 transition-colors duration-200 ${isRecording ? 'text-red-500 hover:text-red-600' : 'text-gray-500 hover:text-emerald-500 dark:text-gray-400 dark:hover:text-emerald-400'}`}>
-                                      <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <button type="button" onClick={isRecording ? stopVoiceRecording : startVoiceRecording} className={`p-3 transition-all duration-300 rounded-xl group ${isRecording ? 'text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20' : 'text-gray-500 hover:text-emerald-500 dark:text-gray-400 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}>
+                                      <svg className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           {isRecording ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />}
                                       </svg>
                                   </button>
-                                  <button type="button" onClick={shareLocation} disabled={isGettingLocation} className="p-2 text-gray-500 hover:text-emerald-500 dark:text-gray-400 dark:hover:text-emerald-400 transition-colors duration-200 disabled:opacity-50">
+                                  <button type="button" onClick={shareLocation} disabled={isGettingLocation} className="p-3 text-gray-500 hover:text-emerald-500 dark:text-gray-400 dark:hover:text-emerald-400 transition-all duration-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl group disabled:opacity-50">
                                       {isGettingLocation ? (
-                                          <div className="w-5 h-5 sm:w-6 sm:h-6 animate-spin">
+                                          <div className="w-6 h-6 animate-spin">
                                               <svg className="w-full h-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                               </svg>
                                           </div>
                                       ) : (
-                                          <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <svg className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                           </svg>
@@ -953,7 +998,7 @@ function Chat() {
                                       onChange={(e) => setNewMessage(e.target.value)}
                                       placeholder="Escribe un mensaje..."
                                       rows="1"
-                                      className="w-full px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none"
+                                      className="w-full px-4 py-3 sm:px-5 sm:py-3 text-sm sm:text-base border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white/80 dark:bg-gray-700/80 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none transition-all duration-300 shadow-sm hover:shadow-md"
                                       onKeyPress={(e) => {
                                           if (e.key === 'Enter' && !e.shiftKey) {
                                               e.preventDefault();
@@ -967,16 +1012,16 @@ function Chat() {
                               <button
                                   type="submit"
                                   disabled={(!newMessage.trim() && !selectedFile) || isSending}
-                                  className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
+                                  className="p-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex-shrink-0 shadow-lg hover:shadow-xl transform hover:scale-105 group"
                               >
                                   {isSending ? (
-                                      <div className="w-5 h-5 sm:w-6 sm:h-6 animate-spin">
+                                      <div className="w-6 h-6 animate-spin">
                                           <svg className="w-full h-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                           </svg>
                                       </div>
                                   ) : (
-                                      <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <svg className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                                       </svg>
                                   )}

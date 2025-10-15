@@ -1,46 +1,284 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import '../styles/global.css';
+import NotificationPanel from './NotificationPanel'; // ⬅️ IMPORTAR AQUÍ
+
+// Hook personalizado para el arrastre (SIN localStorage)
+const useDraggable = (initialPosition, iconId) => {
+  const [position, setPosition] = useState(initialPosition);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const elementRef = useRef(null);
+  const dragTimeoutRef = useRef(null);
+
+  const magnetToEdge = useCallback((pos) => {
+    const margin = 20;
+    const elementWidth = 60;
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const navbarHeight = 80;
+
+    let newX = pos.x;
+    let newY = pos.y;
+
+    if (pos.x < windowWidth / 2) {
+      newX = margin;
+    } else {
+      newX = windowWidth - elementWidth - margin;
+    }
+
+    newY = Math.max(navbarHeight + margin, Math.min(pos.y, windowHeight - elementWidth - margin));
+
+    return { x: newX, y: newY };
+  }, []);
+
+  const handleStart = useCallback((clientX, clientY) => {
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+    }
+
+    setIsDragging(true);
+    setStartPos({
+      x: clientX - position.x,
+      y: clientY - position.y
+    });
+
+    document.body.style.userSelect = 'none';
+    document.body.style.overflow = 'hidden';
+  }, [position]);
+
+  const handleMove = useCallback((clientX, clientY) => {
+    if (!isDragging) return;
+
+    const newPosition = {
+      x: clientX - startPos.x,
+      y: clientY - startPos.y
+    };
+
+    const margin = 10;
+    const elementWidth = 60;
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const navbarHeight = 80;
+
+    newPosition.x = Math.max(margin, Math.min(newPosition.x, windowWidth - elementWidth - margin));
+    newPosition.y = Math.max(navbarHeight + margin, Math.min(newPosition.y, windowHeight - elementWidth - margin));
+
+    setPosition(newPosition);
+  }, [isDragging, startPos]);
+
+  const handleEnd = useCallback(() => {
+    if (!isDragging) return;
+
+    setIsDragging(false);
+    document.body.style.userSelect = '';
+    document.body.style.overflow = '';
+
+    dragTimeoutRef.current = setTimeout(() => {
+      const magnetizedPosition = magnetToEdge(position);
+      setPosition(magnetizedPosition);
+    }, 150);
+  }, [isDragging, position, magnetToEdge]);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => handleMove(e.clientX, e.clientY);
+    const handleMouseUp = () => handleEnd();
+    const handleTouchMove = (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleMove(touch.clientX, touch.clientY);
+    };
+    const handleTouchEnd = () => handleEnd();
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+      };
+    }
+  }, [isDragging, handleMove, handleEnd]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const magnetizedPosition = magnetToEdge(position);
+      setPosition(magnetizedPosition);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [position, magnetToEdge]);
+
+  const dragHandlers = {
+    onMouseDown: (e) => {
+      e.preventDefault();
+      handleStart(e.clientX, e.clientY);
+    },
+    onTouchStart: (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleStart(touch.clientX, touch.clientY);
+    }
+  };
+
+  return {
+    position,
+    isDragging,
+    elementRef,
+    dragHandlers,
+    resetPosition: () => {
+      const defaultPos = magnetToEdge(initialPosition);
+      setPosition(defaultPos);
+    }
+  };
+};
+
+// Componente DraggableIcon
+const DraggableIcon = ({
+  iconId,
+  initialPosition,
+  icon,
+  bgColor = 'bg-emerald-500',
+  onClick,
+  tooltip,
+  children
+}) => {
+  const { position, isDragging, elementRef, dragHandlers, resetPosition } = useDraggable(initialPosition, iconId);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const handleClick = (e) => {
+    if (!isDragging && onClick) {
+      e.stopPropagation();
+      onClick();
+    }
+  };
+
+  return (
+    <>
+      <div
+        ref={elementRef}
+        className={`fixed z-50 cursor-pointer select-none transition-all duration-300 ${
+          isDragging
+            ? 'scale-110 shadow-2xl rotate-3'
+            : 'hover:scale-105 shadow-lg hover:shadow-xl'
+        }`}
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          transform: isDragging ? 'scale(1.1) rotate(3deg)' : 'scale(1)',
+          zIndex: isDragging ? 9999 : 50
+        }}
+        {...dragHandlers}
+        onClick={handleClick}
+        onMouseEnter={() => !isDragging && setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <div className={`w-14 h-14 ${bgColor} rounded-full flex items-center justify-center text-white text-xl shadow-lg border-3 border-white/20 backdrop-blur-sm transition-all duration-300 ${
+          isDragging ? 'ring-4 ring-white/50' : 'hover:ring-2 ring-white/30'
+        }`}>
+          {icon}
+        </div>
+
+        {isDragging && (
+          <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/70 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+            Arrastrando...
+          </div>
+        )}
+
+        {showTooltip && tooltip && !isDragging && (
+          <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-sm px-3 py-1 rounded-lg whitespace-nowrap backdrop-blur-sm">
+            {tooltip}
+          </div>
+        )}
+      </div>
+
+      {children}
+    </>
+  );
+};
 
 function Navbar({ user = null }) {
    const [darkMode, setDarkMode] = useState(false);
    const [dropdownOpen, setDropdownOpen] = useState(false);
    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
    const [isScrolled, setIsScrolled] = useState(false);
-   const [notificationCount, setNotificationCount] = useState(0);
    const [searchQuery, setSearchQuery] = useState('');
    const [searchResults, setSearchResults] = useState([]);
-   const [isSearchExpanded, setIsSearchExpanded] = useState(false); // Para desktop
-   const [isSearchOpen, setIsSearchOpen] = useState(false); // Para mobile
+   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
    const dropdownRef = useRef(null);
    const mobileMenuRef = useRef(null);
    const searchRef = useRef(null);
-   const searchInputRef = useRef(null); // Nueva ref para el input
+   const searchInputRef = useRef(null);
    const searchTimeoutRef = useRef(null);
 
-   // Real search function - conectado con tu API de Laravel
-   const performSearch = async (query) => {
-       try {
-           const response = await fetch(`/api/search/properties?query=${encodeURIComponent(query)}&limit=6`);
-           const data = await response.json();
+   const [isChatOpen, setIsChatOpen] = useState(false);
 
-           if (data.success) {
-               return data.results;
-           } else {
-               console.error('Search API error:', data.message);
-               return [];
-           }
-       } catch (error) {
-           console.error('Search error:', error);
-           return [];
+   const handleChatToggle = () => {
+    window.location.href = '/chat';
+    setIsChatOpen(!isChatOpen);
+};
+
+   const handleMapToggle = () => {
+    const mapEvent = new CustomEvent('toggle-layout-map');
+    window.dispatchEvent(mapEvent);
+};
+
+const performSearch = async (query) => {
+    try {
+        const response = await fetch(`/api/search/properties?query=${encodeURIComponent(query)}&limit=6`);
+        const data = await response.json();
+
+        if (data.success) {
+            window.dispatchEvent(new CustomEvent('search-performed', {
+                detail: {
+                    query: query.trim(),
+                    location: null,
+                    results: data.results || []
+                }
+            }));
+
+            return data.results;
+        } else {
+            console.error('Search API error:', data.message);
+            return [];
+        }
+    } catch (error) {
+        console.error('Search error:', error);
+        return [];
+    }
+};
+
+   const handleSearchSubmit = (e) => {
+       e.preventDefault();
+       if (searchQuery.trim()) {
+           window.location.href = `/search?q=${encodeURIComponent(searchQuery.trim())}`;
+       }
+   };
+
+   const handleSearchKeyPress = (e) => {
+       if (e.key === 'Enter') {
+           handleSearchSubmit(e);
+       }
+   };
+
+   const goToAdvancedSearch = () => {
+       if (searchQuery.trim()) {
+           window.location.href = `/search?q=${encodeURIComponent(searchQuery.trim())}`;
+       } else {
+           window.location.href = '/search';
        }
    };
 
    useEffect(() => {
        if (typeof window !== 'undefined') {
-           const savedTheme = localStorage.getItem('theme') ||
-               (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-
+           const savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
            setDarkMode(savedTheme === 'dark');
 
            if (savedTheme === 'dark') {
@@ -91,7 +329,6 @@ function Navbar({ user = null }) {
        };
    }, []);
 
-   // Efecto para enfocar el input cuando se expande y manejar ESC
    useEffect(() => {
        if (isSearchExpanded && searchInputRef.current) {
            searchInputRef.current.focus();
@@ -139,10 +376,8 @@ function Navbar({ user = null }) {
        if (typeof window !== 'undefined') {
            if (newDarkMode) {
                document.documentElement.classList.add('dark');
-               localStorage.setItem('theme', 'dark');
            } else {
                document.documentElement.classList.remove('dark');
-               localStorage.setItem('theme', 'light');
            }
        }
    };
@@ -157,7 +392,6 @@ function Navbar({ user = null }) {
 
    const handleSearchToggle = () => {
        setIsSearchExpanded(!isSearchExpanded);
-       // Solo limpiar cuando se está cerrando
        if (isSearchExpanded) {
            setSearchQuery('');
            setSearchResults([]);
@@ -165,6 +399,7 @@ function Navbar({ user = null }) {
    };
 
    return (
+       <>
        <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
            isScrolled
                ? 'backdrop-blur-xl bg-white/95 dark:bg-gray-900/95 shadow-xl border-b border-gray-200/50 dark:border-gray-700/50'
@@ -175,7 +410,6 @@ function Navbar({ user = null }) {
                    isScrolled ? 'h-16' : 'h-20'
                }`}>
 
-                   {/* Logo */}
                    <a href="/" className="group flex items-center space-x-3 hover:scale-105 transition-all duration-300">
                        <div className="relative">
                            <div className={`${isScrolled ? 'w-12 h-12' : 'w-14 h-14'} rounded-xl overflow-hidden shadow-lg transition-all duration-300 group-hover:shadow-emerald-500/25 group-hover:rotate-3 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center border-2 border-white/20 dark:border-gray-700/30`}>
@@ -198,17 +432,16 @@ function Navbar({ user = null }) {
                        </div>
                    </a>
 
-                   {/* Desktop Navigation */}
+                   {/* MENÚ PRINCIPAL DESKTOP */}
                    <ul className="hidden xl:flex items-center space-x-8">
                        {[
                            { href: "/properties", label: "Propiedades", icon: "🏠" },
                            { href: "/comunidad", label: "Comunidad", icon: "👥" },
                            ...(user && user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
-                           { href: "#contacto", label: "Contacto", icon: "💬" }
+                           { href: "/contacto", label: "Contacto", icon: "💬" }
                        ].map((link) => (
                            <li key={link.href}>
-                               <a
-                                   href={link.href}
+                               <a href={link.href}
                                    className="group relative px-4 py-3 text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium transition-all duration-300 rounded-lg hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20"
                                >
                                    <span className="relative z-10 flex items-center space-x-2">
@@ -221,12 +454,10 @@ function Navbar({ user = null }) {
                        ))}
                    </ul>
 
-                   {/* Desktop Right Section */}
                    <div className="hidden lg:flex items-center space-x-6">
-                       {/* Search Bar - Versión profesional que se desliza SOLO REACT */}
+                       {/* BUSCADOR */}
                        <div className="relative" ref={searchRef}>
                            <div className="flex items-center">
-                               {/* Botón de búsqueda - solo visible cuando está colapsado */}
                                {!isSearchExpanded && (
                                    <button
                                        onClick={handleSearchToggle}
@@ -238,7 +469,6 @@ function Navbar({ user = null }) {
                                    </button>
                                )}
 
-                               {/* Barra de búsqueda que se desliza - ESTILO PROFESIONAL */}
                                <div
                                    className={`transition-all duration-500 ease-out ${
                                        isSearchExpanded ? 'w-96 ml-2' : 'w-0 ml-0 overflow-hidden'
@@ -246,27 +476,24 @@ function Navbar({ user = null }) {
                                >
                                    <div className="flex items-center bg-white/98 dark:bg-gray-900/98 rounded-2xl px-5 py-3.5 shadow-2xl shadow-black/10 dark:shadow-black/30 border border-gray-200/60 dark:border-gray-700/60 backdrop-blur-xl w-96 transform transition-all duration-700 ease-out hover:shadow-3xl ring-1 ring-gray-300/20 dark:ring-gray-600/20 hover:ring-emerald-500/30 dark:hover:ring-emerald-400/30">
 
-                                       {/* Ícono de búsqueda profesional */}
                                        <div className="relative mr-4">
                                            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                            </svg>
                                        </div>
 
-                                       {/* Input profesional */}
                                        <input
                                            ref={searchInputRef}
                                            type="text"
                                            value={searchQuery}
                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                           onKeyPress={handleSearchKeyPress}
                                            placeholder="Buscar propiedades, usuarios, ubicaciones..."
                                            className="bg-transparent text-base text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none w-full font-normal tracking-normal focus:placeholder-gray-600 dark:focus:placeholder-gray-300 transition-all duration-300"
                                        />
 
-                                       {/* Divisor vertical */}
                                        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-3"></div>
 
-                                       {/* Botón cerrar profesional */}
                                        <button
                                            onClick={handleSearchToggle}
                                            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg group"
@@ -276,79 +503,101 @@ function Navbar({ user = null }) {
                                            </svg>
                                        </button>
 
-                                       {/* Indicador de comandos - estilo profesional */}
                                        <div className="flex items-center space-x-1 ml-2">
                                            <kbd className="px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-sm">
-                                               ESC
+                                               ↵
                                            </kbd>
                                        </div>
                                    </div>
                                </div>
                            </div>
 
-                           {/* Resultados de búsqueda - ESTILO PROFESIONAL */}
+                           {/* RESULTADOS DE BÚSQUEDA */}
                            {isSearchExpanded && (
                                <div className="absolute top-full left-0 mt-2 w-96 z-50">
                                    <div className="bg-white dark:bg-gray-800 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
-                                       {searchResults.length > 0 ? searchResults.map((result) => (
-                                           <a
-                                               key={result.id}
-                                               href={result.url}
-                                               className="flex items-center px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 group"
-                                               onClick={() => setIsSearchExpanded(false)}
-                                           >
-                                               {/* Imagen o ícono */}
-                                               <div className="flex-shrink-0 w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center mr-3 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors duration-200 overflow-hidden">
-                                                   {result.image ? (
-                                                       <img
-                                                           src={result.image}
-                                                           alt={result.title}
-                                                           className="w-full h-full object-cover"
-                                                       />
-                                                   ) : (
-                                                       <span className="text-lg">🏠</span>
-                                                   )}
-                                               </div>
-
-                                               {/* Contenido */}
-                                               <div className="flex-1 min-w-0">
-                                                   <div className="font-medium text-gray-900 dark:text-white truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors duration-200">
-                                                       {result.title}
-                                                   </div>
-                                                   <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                                       {result.subtitle}
-                                                   </div>
-                                                   {result.details && (
-                                                       <div className="text-xs text-gray-400 dark:text-gray-500 truncate">
-                                                           {result.details}
+                                       {searchResults.length > 0 ? (
+                                           <>
+                                               {searchResults.map((result) => (
+                                                   <a key={result.id}
+                                                       href={result.url}
+                                                       className="flex items-center px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 group"
+                                                       onClick={() => setIsSearchExpanded(false)}
+                                                   >
+                                                       <div className="flex-shrink-0 w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center mr-3 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors duration-200 overflow-hidden">
+                                                           {result.image ? (
+                                                               <img
+                                                                   src={result.image}
+                                                                   alt={result.title}
+                                                                   className="w-full h-full object-cover"
+                                                               />
+                                                           ) : (
+                                                               <span className="text-lg">🏠</span>
+                                                           )}
                                                        </div>
-                                                   )}
-                                               </div>
 
-                                               {/* Precio */}
-                                               <div className="flex-shrink-0 ml-3 text-right">
-                                                   <div className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
-                                                       {result.price}
-                                                   </div>
-                                                   <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                       {result.type}
-                                                   </div>
-                                               </div>
+                                                       <div className="flex-1 min-w-0">
+                                                           <div className="font-medium text-gray-900 dark:text-white truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors duration-200">
+                                                               {result.title}
+                                                           </div>
+                                                           <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                                               {result.subtitle}
+                                                           </div>
+                                                           {result.details && (
+                                                               <div className="text-xs text-gray-400 dark:text-gray-500 truncate">
+                                                                   {result.details}
+                                                               </div>
+                                                           )}
+                                                       </div>
 
-                                               {/* Flecha */}
-                                               <svg className="flex-shrink-0 w-4 h-4 text-gray-400 dark:text-gray-500 ml-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                                               </svg>
-                                           </a>
-                                       )) : searchQuery.trim() !== '' && (
-                                           <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                               <div className="flex flex-col items-center space-y-2">
-                                                   <svg className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                                   </svg>
-                                                   <span>No se encontraron resultados para "{searchQuery}"</span>
+                                                       <div className="flex-shrink-0 ml-3 text-right">
+                                                           <div className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
+                                                               {result.price}
+                                                           </div>
+                                                           <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                               {result.type}
+                                                           </div>
+                                                       </div>
+
+                                                       <svg className="flex-shrink-0 w-4 h-4 text-gray-400 dark:text-gray-500 ml-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                                       </svg>
+                                                   </a>
+                                               ))}
+                                               <div className="border-t border-gray-200 dark:border-gray-700 p-3">
+                                                   <button
+                                                       onClick={goToAdvancedSearch}
+                                                       className="w-full text-center px-4 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-200 flex items-center justify-center space-x-2"
+                                                   >
+                                                       <span>Ver todos los resultados</span>
+                                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                                       </svg>
+                                                   </button>
                                                </div>
-                                           </div>
+                                           </>
+                                       ) : searchQuery.trim() !== '' && (
+                                           <>
+                                               <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                   <div className="flex flex-col items-center space-y-2">
+                                                       <svg className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                       </svg>
+                                                       <span>No se encontraron resultados para "{searchQuery}"</span>
+                                                   </div>
+                                               </div>
+                                               <div className="border-t border-gray-200 dark:border-gray-700 p-3">
+                                                   <button
+                                                       onClick={goToAdvancedSearch}
+                                                       className="w-full text-center px-4 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-200 flex items-center justify-center space-x-2"
+                                                   >
+                                                       <span>Búsqueda avanzada</span>
+                                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                                       </svg>
+                                                   </button>
+                                               </div>
+                                           </>
                                        )}
                                    </div>
                                </div>
@@ -357,9 +606,11 @@ function Navbar({ user = null }) {
 
                        {user ? (
                            <>
-                               {/* Mensajes */}
-                               <a
-                                   href="/chat"
+                               {/* 🔔 NOTIFICACIONES - INTEGRADO DIRECTAMENTE */}
+                               <NotificationPanel />
+
+                               {/* ICONO DE CHAT */}
+                               <a href="/chat"
                                    className="p-2.5 mx-2 rounded-lg bg-gray-100/70 dark:bg-gray-800/70 text-gray-600 dark:text-gray-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-300"
                                >
                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -367,7 +618,7 @@ function Navbar({ user = null }) {
                                    </svg>
                                </a>
 
-                               {/* User Dropdown */}
+                               {/* DROPDOWN PERFIL */}
                                <div className="relative mx-2" ref={dropdownRef}>
                                    <button
                                        onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -405,10 +656,8 @@ function Navbar({ user = null }) {
                                        </svg>
                                    </button>
 
-                                   {/* Dropdown Menu */}
                                    <div className={`absolute right-0 mt-2 w-72 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 transition-all duration-200 ${dropdownOpen ? 'opacity-100 visible scale-100' : 'opacity-0 invisible scale-95'}`}>
 
-                                       {/* Header */}
                                        <div className="p-4 border-b border-gray-200/50 dark:border-gray-700/50 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-emerald-900/10 dark:to-teal-900/10 rounded-t-xl">
                                            <div className="flex items-center space-x-3">
                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center">
@@ -439,17 +688,16 @@ function Navbar({ user = null }) {
                                            </div>
                                        </div>
 
-                                       {/* Menu Items */}
                                        <div className="py-2">
                                            {[
                                                { href: "/profile", label: "Mi Perfil", icon: "👤" },
                                                ...(user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
-                                               { href: "/properties", label: "Mis Propiedades", icon: "🏠" },
+                                               { href: "/my-properties", label: "Mis Propiedades", icon: "🏠" },
                                                { href: "/chat", label: "Mensajes", icon: "💬" },
+                                               { href: "/notifications", label: "Notificaciones", icon: "🔔" },
                                                { href: "#", label: "Favoritos", icon: "❤️" }
                                            ].map((item, index) => (
-                                               <a
-                                                   key={index}
+                                               <a key={index}
                                                    href={item.href}
                                                    className="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-200"
                                                >
@@ -459,7 +707,6 @@ function Navbar({ user = null }) {
                                            ))}
                                        </div>
 
-                                       {/* Logout */}
                                        <div className="border-t border-gray-200/50 dark:border-gray-700/50">
                                            <form method="POST" action="/logout">
                                                <input type="hidden" name="_token" value={getCSRFToken()} />
@@ -476,16 +723,14 @@ function Navbar({ user = null }) {
                                </div>
                            </>
                        ) : (
-                           /* Auth Buttons */
                            <div className="flex items-center space-x-3">
-                               <a
-                                   href="/login"
+                               <a href="/login"
                                    className="px-4 py-2 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-300 rounded-lg hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20"
                                >
                                    Iniciar Sesión
                                </a>
-                               <a
-                                   href="/register"
+
+                               <a href="/register"
                                    className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
                                >
                                    Regístrate
@@ -493,7 +738,7 @@ function Navbar({ user = null }) {
                            </div>
                        )}
 
-                       {/* Dark Mode Toggle */}
+                       {/* BOTÓN DARK MODE */}
                        <button
                            onClick={toggleDarkMode}
                            className="p-2.5 mx-2 rounded-lg bg-gray-100/70 dark:bg-gray-800/70 text-gray-600 dark:text-gray-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-300"
@@ -509,9 +754,8 @@ function Navbar({ user = null }) {
                        </button>
                    </div>
 
-                   {/* Mobile Menu Button - Solo visible en pantallas pequeñas */}
+                   {/* BOTONES MÓVILES */}
                    <div className="flex items-center xl:hidden space-x-3">
-                       {/* Solo mostrar en mobile/tablet, NO en desktop */}
                        <button
                            onClick={() => setIsSearchOpen(!isSearchOpen)}
                            className="p-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300 xl:hidden"
@@ -534,7 +778,7 @@ function Navbar({ user = null }) {
                </div>
            </div>
 
-           {/* Mobile Search */}
+           {/* BÚSQUEDA MÓVIL */}
            <div className={`xl:hidden transition-all duration-300 ${isSearchOpen ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
                <div className="px-4 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50" ref={searchRef}>
                    <div className="flex items-center bg-gray-100/70 dark:bg-gray-800/70 rounded-lg px-3 py-2">
@@ -545,6 +789,7 @@ function Navbar({ user = null }) {
                            type="text"
                            value={searchQuery}
                            onChange={(e) => setSearchQuery(e.target.value)}
+                           onKeyPress={handleSearchKeyPress}
                            placeholder="Buscar propiedades o usuarios..."
                            className="bg-transparent text-sm text-gray-600 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none w-full"
                        />
@@ -552,8 +797,7 @@ function Navbar({ user = null }) {
                    {searchResults.length > 0 && (
                        <div className="mt-2 bg-white dark:bg-gray-800 backdrop-blur-xl rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                            {searchResults.map((result) => (
-                               <a
-                                   key={result.id}
+                               <a key={result.id}
                                    href={result.url}
                                    className="flex items-center px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-200"
                                    onClick={() => setIsSearchOpen(false)}
@@ -574,16 +818,23 @@ function Navbar({ user = null }) {
                                    </div>
                                </a>
                            ))}
+                           <div className="border-t border-gray-200 dark:border-gray-700 p-2">
+                               <button
+                                   onClick={goToAdvancedSearch}
+                                   className="w-full text-center px-3 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-200"
+                               >
+                                   Ver todos los resultados
+                               </button>
+                           </div>
                        </div>
                    )}
                </div>
            </div>
 
-           {/* Mobile Menu */}
+           {/* MENÚ MÓVIL */}
            <div className={`xl:hidden transition-all duration-300 ease-in-out ${mobileMenuOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
                <div className="px-4 pt-4 pb-6 space-y-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50" ref={mobileMenuRef}>
 
-                   {/* User Info Mobile */}
                    {user && (
                        <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-lg mb-4">
                            <div className="w-10 h-10 rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center">
@@ -609,16 +860,18 @@ function Navbar({ user = null }) {
                        </div>
                    )}
 
-                   {/* Navigation Links */}
                    {[
                        { href: "/properties", label: "Propiedades", icon: "🏠" },
+                       { href: "/search", label: "Búsqueda Avanzada", icon: "🔍" },
                        { href: "/comunidad", label: "Comunidad", icon: "👥" },
                        ...(user && user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
-                       ...(user ? [{ href: "/chat", label: "Mensajes", icon: "💬" }] : []),
-                       { href: "#contacto", label: "Contacto", icon: "📞" }
+                       ...(user ? [
+                           { href: "/chat", label: "Mensajes", icon: "💬" },
+                           { href: "/notifications", label: "Notificaciones", icon: "🔔" }
+                       ] : []),
+                       { href: "/contacto", label: "Contacto", icon: "📞" }
                    ].map((link, index) => (
-                       <a
-                           key={index}
+                       <a key={index}
                            href={link.href}
                            className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
                            onClick={() => setMobileMenuOpen(false)}
@@ -628,19 +881,17 @@ function Navbar({ user = null }) {
                        </a>
                    ))}
 
-                   {/* User Actions Mobile */}
                    {user ? (
                        <div className="pt-3 space-y-2 border-t border-gray-200/50 dark:border-gray-700/50">
-                           <a
-                               href="/profile"
+                           <a href="/profile"
                                className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
                                onClick={() => setMobileMenuOpen(false)}
                            >
                                <span className="text-lg mr-3">👤</span>
                                <span>Mi Perfil</span>
                            </a>
-                           <a
-                               href="#"
+
+                           <a href="#"
                                className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
                                onClick={() => setMobileMenuOpen(false)}
                            >
@@ -649,17 +900,15 @@ function Navbar({ user = null }) {
                            </a>
                        </div>
                    ) : (
-                       /* Auth Buttons Mobile */
                        <div className="pt-3 space-y-3 border-t border-gray-200/50 dark:border-gray-700/50">
-                           <a
-                               href="/login"
+                           <a href="/login"
                                className="block w-full text-center px-4 py-2.5 text-base font-semibold text-gray-700 dark:text-gray-300 border border-emerald-200 dark:border-emerald-700 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-300 dark:hover:border-emerald-600 transition-all duration-300"
                                onClick={() => setMobileMenuOpen(false)}
                            >
                                🔑 Iniciar Sesión
                            </a>
-                           <a
-                               href="/register"
+
+                           <a href="/register"
                                className="block w-full text-center px-4 py-2.5 text-base font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
                                onClick={() => setMobileMenuOpen(false)}
                            >
@@ -668,7 +917,6 @@ function Navbar({ user = null }) {
                        </div>
                    )}
 
-                   {/* Mobile Settings */}
                    <div className="pt-3 border-t border-gray-200/50 dark:border-gray-700/50">
                        <button
                            onClick={toggleDarkMode}
@@ -697,6 +945,7 @@ function Navbar({ user = null }) {
                </div>
            </div>
        </nav>
+       </>
    );
 }
 

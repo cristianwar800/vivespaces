@@ -42,34 +42,6 @@ function Welcome({ user = null }) {
        loadFeaturedProperties();
    }, []);
 
-   // Scroll effects
-   useEffect(() => {
-       const handleScroll = () => {
-           const backToTop = document.getElementById('back-to-top');
-           const scrolled = window.pageYOffset;
-
-           if (backToTop) {
-               if (scrolled > 300) {
-                   backToTop.style.opacity = '1';
-                   backToTop.style.visibility = 'visible';
-               } else {
-                   backToTop.style.opacity = '0';
-                   backToTop.style.visibility = 'hidden';
-               }
-           }
-       };
-
-       window.addEventListener('scroll', handleScroll);
-       return () => window.removeEventListener('scroll', handleScroll);
-   }, []);
-
-   const scrollToTop = () => {
-       window.scrollTo({
-           top: 0,
-           behavior: 'smooth'
-       });
-   };
-
    return (
        <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
            {/* Hero Section */}
@@ -98,56 +70,72 @@ function Welcome({ user = null }) {
                        La mejor selección de propiedades en renta con tecnología de vanguardia y servicio personalizado
                    </p>
 
-                   {/* Search Bar */}
+                   {/* Search Bar - FORMULARIO CORREGIDO */}
                    <div className="search-container glass" style={{
                        maxWidth: '800px',
                        margin: '0 auto',
                        padding: '1.5rem',
                        borderRadius: '1rem'
                    }}>
-                       <form className="search-form" action="/search" method="POST" style={{
+                       <form className="search-form" action="/search" method="GET" style={{
                            display: 'grid',
                            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr auto',
                            gap: '1rem',
                            alignItems: 'end'
                        }}>
-                           <input type="hidden" name="_token" value={document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')} />
-                           <input type="text" name="location" placeholder="¿Dónde quieres vivir?" className="search-input" style={{
-                               width: '100%',
-                               padding: '0.75rem 1rem',
-                               border: '1px solid var(--border-primary)',
-                               borderRadius: '0.5rem',
-                               background: 'var(--bg-primary)',
-                               color: 'var(--text-primary)',
-                               fontSize: '1rem'
-                           }} />
-                           <select name="property_type" className="search-input" style={{
-                               width: '100%',
-                               padding: '0.75rem 1rem',
-                               border: '1px solid var(--border-primary)',
-                               borderRadius: '0.5rem',
-                               background: 'var(--bg-primary)',
-                               color: 'var(--text-primary)',
-                               fontSize: '1rem'
-                           }}>
-                               <option value="">Tipo de propiedad</option>
+                           <input
+                               type="text"
+                               name="q"
+                               placeholder="¿Dónde quieres vivir? Ej: Guadalajara, Centro..."
+                               className="search-input"
+                               style={{
+                                   width: '100%',
+                                   padding: '0.75rem 1rem',
+                                   border: '1px solid var(--border-primary)',
+                                   borderRadius: '0.5rem',
+                                   background: 'var(--bg-primary)',
+                                   color: 'var(--text-primary)',
+                                   fontSize: '1rem'
+                               }}
+                           />
+                           <select
+                               name="property_type"
+                               className="search-input"
+                               style={{
+                                   width: '100%',
+                                   padding: '0.75rem 1rem',
+                                   border: '1px solid var(--border-primary)',
+                                   borderRadius: '0.5rem',
+                                   background: 'var(--bg-primary)',
+                                   color: 'var(--text-primary)',
+                                   fontSize: '1rem'
+                               }}
+                           >
+                               <option value="all">Tipo de propiedad</option>
                                <option value="casa">Casa</option>
                                <option value="departamento">Departamento</option>
                                <option value="estudio">Estudio</option>
+                               <option value="loft">Loft</option>
+                               <option value="penthouse">Penthouse</option>
+                               <option value="habitacion">Habitación</option>
                            </select>
-                           <button type="submit" className="search-btn" style={{
-                               padding: '0.75rem 1.5rem',
-                               background: 'var(--primary)',
-                               color: 'white',
-                               border: 'none',
-                               borderRadius: '0.5rem',
-                               cursor: 'pointer',
-                               fontSize: '1rem',
-                               fontWeight: '600',
-                               transition: 'all 0.3s ease',
-                               whiteSpace: 'nowrap',
-                               gridColumn: isMobile ? '1 / -1' : 'auto'
-                           }}>
+                           <button
+                               type="submit"
+                               className="search-btn"
+                               style={{
+                                   padding: '0.75rem 1.5rem',
+                                   background: 'var(--primary)',
+                                   color: 'white',
+                                   border: 'none',
+                                   borderRadius: '0.5rem',
+                                   cursor: 'pointer',
+                                   fontSize: '1rem',
+                                   fontWeight: '600',
+                                   transition: 'all 0.3s ease',
+                                   whiteSpace: 'nowrap',
+                                   gridColumn: isMobile ? '1 / -1' : 'auto'
+                               }}
+                           >
                                <i className="fas fa-search" style={{ marginRight: 'var(--spacing-sm)' }}></i> Buscar
                            </button>
                        </form>
@@ -280,7 +268,6 @@ function Welcome({ user = null }) {
                        marginBottom: '3rem'
                    }}>
                        {loadingProperties ? (
-                           // Loading state
                            Array.from({ length: 4 }).map((_, index) => (
                                <div key={index} className="property-card animate-fade-scale" style={{animationDelay: `${index * 0.2}s`}}>
                                    <div className="property-image" style={{
@@ -308,7 +295,6 @@ function Welcome({ user = null }) {
                                </div>
                            ))
                        ) : featuredProperties.length > 0 ? (
-                           // Render properties
                            featuredProperties.map((property, index) => (
                                <div key={property.id} className="property-card animate-fade-scale" style={{animationDelay: `${index * 0.2}s`}}>
                                    <div className="property-image">
@@ -366,7 +352,6 @@ function Welcome({ user = null }) {
                                </div>
                            ))
                        ) : (
-                           // No properties state
                            <div style={{
                                gridColumn: '1 / -1',
                                textAlign: 'center',
@@ -570,266 +555,236 @@ function Welcome({ user = null }) {
                        Únete a miles de personas que ya encontraron su lugar perfecto con ViveSpaces
                    </p>
                    <div className="animate-slide-up" style={{
-                            animationDelay: '0.4s',
-                            display: 'flex',
-                            flexDirection: window.innerWidth < 640 ? 'column' : 'row',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '1.5rem',
-                            flexWrap: 'wrap'
-                        }}>
-                            <a href="/register" className="btn btn-primary" style={{
-                                fontSize: 'clamp(1rem, 2.5vw, 1.1rem)',
-                                padding: 'clamp(0.8rem, 2vw, 1.2rem) clamp(2rem, 5vw, 2.5rem)',
-                                textDecoration: 'none',
-                                minWidth: '200px'
-                            }}>
-                                Comenzar ahora <i className="fas fa-rocket" style={{marginLeft: 'var(--spacing-sm)'}}></i>
-                            </a>
-                            <a href="/properties" className="btn btn-secondary" style={{
-                                fontSize: 'clamp(1rem, 2.5vw, 1.125rem)',
-                                textDecoration: 'none',
-                                padding: 'clamp(0.6rem, 1.5vw, 0.75rem) clamp(1.5rem, 4vw, 2rem)',
-                                minWidth: '200px'
-                            }}>
-                                Ver propiedades <i className="fas fa-search" style={{marginLeft: 'var(--spacing-sm)'}}></i>
-                            </a>
-                        </div>
-                    </div>
-                </section>
+                       animationDelay: '0.4s',
+                       display: 'flex',
+                       flexDirection: window.innerWidth < 640 ? 'column' : 'row',
+                       alignItems: 'center',
+                       justifyContent: 'center',
+                       gap: '1.5rem',
+                       flexWrap: 'wrap'
+                   }}>
+                       <a href="/register" className="btn btn-primary" style={{
+                           fontSize: 'clamp(1rem, 2.5vw, 1.1rem)',
+                           padding: 'clamp(0.8rem, 2vw, 1.2rem) clamp(2rem, 5vw, 2.5rem)',
+                           textDecoration: 'none',
+                           minWidth: '200px'
+                       }}>
+                           Comenzar ahora <i className="fas fa-rocket" style={{marginLeft: 'var(--spacing-sm)'}}></i>
+                       </a>
+                       <a href="/properties" className="btn btn-secondary" style={{
+                           fontSize: 'clamp(1rem, 2.5vw, 1.125rem)',
+                           textDecoration: 'none',
+                           padding: 'clamp(0.6rem, 1.5vw, 0.75rem) clamp(1.5rem, 4vw, 2rem)',
+                           minWidth: '200px'
+                       }}>
+                           Ver propiedades <i className="fas fa-search" style={{marginLeft: 'var(--spacing-sm)'}}></i>
+                       </a>
+                   </div>
+               </div>
+           </section>
 
-                {/* Footer */}
-                <footer className="footer" style={{ padding: 'clamp(3rem, 8vw, 4rem) 1rem 2rem' }}>
-                    <div className="container" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-                        <div className="footer-grid" style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                            gap: '2rem 3rem',
-                            marginBottom: '3rem'
-                        }}>
-                            {/* Logo and Info */}
-                            <div style={{ gridColumn: window.innerWidth < 768 ? '1 / -1' : 'span 2' }}>
-                                <a href="/" style={{
-                                    color: 'var(--text-primary)',
-                                    fontFamily: "'Poppins', sans-serif",
-                                    fontSize: 'clamp(1.25rem, 3vw, 1.5rem)',
-                                    fontWeight: 'bold',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    marginBottom: '1.5rem',
-                                    textDecoration: 'none'
-                                }}>
-                                    <i className="fas fa-home" style={{marginRight: 'var(--spacing-sm)', color: 'var(--primary)'}}></i> ViveSpaces
-                                </a>
-                                <p style={{
-                                    color: 'var(--text-tertiary)',
-                                    marginBottom: '1.5rem',
-                                    lineHeight: 1.6,
-                                    maxWidth: '400px'
-                                }}>
-                                    Encuentra tu hogar ideal con nosotros. La mejor selección de propiedades en renta con tecnología de vanguardia.
-                                </p>
-                                <div className="social-links" style={{
-                                    display: 'flex',
-                                    gap: '1rem',
-                                    flexWrap: 'wrap'
-                                }}>
-                                    <a href="#" className="social-link">
-                                        <i className="fab fa-facebook-f"></i>
-                                    </a>
-                                    <a href="#" className="social-link">
-                                        <i className="fab fa-twitter"></i>
-                                    </a>
-                                    <a href="#" className="social-link">
-                                        <i className="fab fa-instagram"></i>
-                                    </a>
-                                    <a href="#" className="social-link">
-                                        <i className="fab fa-linkedin-in"></i>
-                                    </a>
-                                </div>
-                            </div>
+           {/* Footer */}
+           <footer className="footer" style={{ padding: 'clamp(3rem, 8vw, 4rem) 1rem 2rem' }}>
+               <div className="container" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+                   <div className="footer-grid" style={{
+                       display: 'grid',
+                       gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                       gap: '2rem 3rem',
+                       marginBottom: '3rem'
+                   }}>
+                       <div style={{ gridColumn: window.innerWidth < 768 ? '1 / -1' : 'span 2' }}>
+                           <a href="/" style={{
+                               color: 'var(--text-primary)',
+                               fontFamily: "'Poppins', sans-serif",
+                               fontSize: 'clamp(1.25rem, 3vw, 1.5rem)',
+                               fontWeight: 'bold',
+                               display: 'flex',
+                               alignItems: 'center',
+                               marginBottom: '1.5rem',
+                               textDecoration: 'none'
+                           }}>
+                               <i className="fas fa-home" style={{marginRight: 'var(--spacing-sm)', color: 'var(--primary)'}}></i> ViveSpaces
+                           </a>
+                           <p style={{
+                               color: 'var(--text-tertiary)',
+                               marginBottom: '1.5rem',
+                               lineHeight: 1.6,
+                               maxWidth: '400px'
+                           }}>
+                               Encuentra tu hogar ideal con nosotros. La mejor selección de propiedades en renta con tecnología de vanguardia.
+                           </p>
+                           <div className="social-links" style={{
+                               display: 'flex',
+                               gap: '1rem',
+                               flexWrap: 'wrap'
+                           }}>
+                               <a href="#" className="social-link">
+                                   <i className="fab fa-facebook-f"></i>
+                               </a>
+                               <a href="#" className="social-link">
+                                   <i className="fab fa-twitter"></i>
+                               </a>
+                               <a href="#" className="social-link">
+                                   <i className="fab fa-instagram"></i>
+                               </a>
+                               <a href="#" className="social-link">
+                                   <i className="fab fa-linkedin-in"></i>
+                               </a>
+                           </div>
+                       </div>
 
-                            {/* Quick Links */}
-                            <div>
-                                <h3 style={{
-                                    fontSize: 'clamp(1rem, 2.5vw, var(--font-size-lg))',
-                                    fontWeight: 'bold',
-                                    marginBottom: '1.5rem',
-                                    fontFamily: "'Poppins', sans-serif",
-                                    color: 'var(--text-primary)'
-                                }}>
-                                    Enlaces rápidos
-                                </h3>
-                                <ul style={{listStyle: 'none', padding: 0}}>
-                                    <li style={{marginBottom: 'var(--spacing-sm)'}}>
-                                        <a href="/" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Inicio</a>
-                                    </li>
-                                    <li style={{marginBottom: 'var(--spacing-sm)'}}>
-                                        <a href="/properties" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Propiedades</a>
-                                    </li>
-                                    <li style={{marginBottom: 'var(--spacing-sm)'}}>
-                                        <a href="/services" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Servicios</a>
-                                    </li>
-                                    <li style={{marginBottom: 'var(--spacing-sm)'}}>
-                                        <a href="/about" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Sobre nosotros</a>
-                                    </li>
-                                    <li style={{marginBottom: 'var(--spacing-sm)'}}>
-                                        <a href="/contact" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Contacto</a>
-                                    </li>
-                                    <li style={{marginBottom: 'var(--spacing-sm)'}}>
-                                        <a href="/blog" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Blog</a>
-                                    </li>
-                                </ul>
-                            </div>
+                       <div>
+                           <h3 style={{
+                               fontSize: 'clamp(1rem, 2.5vw, var(--font-size-lg))',
+                               fontWeight: 'bold',
+                               marginBottom: '1.5rem',
+                               fontFamily: "'Poppins', sans-serif",
+                               color: 'var(--text-primary)'
+                           }}>
+                               Enlaces rápidos
+                           </h3>
+                           <ul style={{listStyle: 'none', padding: 0}}>
+                               <li style={{marginBottom: 'var(--spacing-sm)'}}>
+                                   <a href="/" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Inicio</a>
+                               </li>
+                               <li style={{marginBottom: 'var(--spacing-sm)'}}>
+                                   <a href="/properties" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Propiedades</a>
+                               </li>
+                               <li style={{marginBottom: 'var(--spacing-sm)'}}>
+                                   <a href="/services" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Servicios</a>
+                               </li>
+                               <li style={{marginBottom: 'var(--spacing-sm)'}}>
+                                   <a href="/about" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Sobre nosotros</a>
+                               </li>
+                               <li style={{marginBottom: 'var(--spacing-sm)'}}>
+                                   <a href="/contact" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Contacto</a>
+                               </li>
+                               <li style={{marginBottom: 'var(--spacing-sm)'}}>
+                                   <a href="/blog" style={{color: 'var(--text-tertiary)', textDecoration: 'none', transition: 'color 0.3s'}}>Blog</a>
+                               </li>
+                           </ul>
+                       </div>
 
-                            {/* Contact Info */}
-                            <div>
-                                <h3 style={{
-                                    fontSize: 'clamp(1rem, 2.5vw, var(--font-size-lg))',
-                                    fontWeight: 'bold',
-                                    marginBottom: '1.5rem',
-                                    fontFamily: "'Poppins', sans-serif",
-                                    color: 'var(--text-primary)'
-                                }}>
-                                    Contacto
-                                </h3>
-                                <ul style={{listStyle: 'none', padding: 0, color: 'var(--text-tertiary)'}}>
-                                    <li style={{display: 'flex', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)'}}>
-                                        <i className="fas fa-envelope" style={{marginTop: '0.25rem', marginRight: '0.75rem', color: 'var(--primary)', flexShrink: 0}}></i>
-                                        <span>hola@vivespaces.com</span>
-                                    </li>
-                                    <li style={{display: 'flex', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)'}}>
-                                        <i className="fas fa-clock" style={{marginTop: '0.25rem', marginRight: '0.75rem', color: 'var(--primary)', flexShrink: 0}}></i>
-                                        <span>Lun - Vie: 9:00 - 18:00<br />Sáb: 10:00 - 16:00</span>
-                                    </li>
-                                </ul>
-                            </div>
+                       <div>
+                           <h3 style={{
+                               fontSize: 'clamp(1rem, 2.5vw, var(--font-size-lg))',
+                               fontWeight: 'bold',
+                               marginBottom: '1.5rem',
+                               fontFamily: "'Poppins', sans-serif",
+                               color: 'var(--text-primary)'
+                           }}>
+                               Contacto
+                           </h3>
+                           <ul style={{listStyle: 'none', padding: 0, color: 'var(--text-tertiary)'}}>
+                               <li style={{display: 'flex', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)'}}>
+                                   <i className="fas fa-envelope" style={{marginTop: '0.25rem', marginRight: '0.75rem', color: 'var(--primary)', flexShrink: 0}}></i>
+                                   <span>hola@vivespaces.com</span>
+                               </li>
+                               <li style={{display: 'flex', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)'}}>
+                                   <i className="fas fa-clock" style={{marginTop: '0.25rem', marginRight: '0.75rem', color: 'var(--primary)', flexShrink: 0}}></i>
+                                   <span>Lun - Vie: 9:00 - 18:00<br />Sáb: 10:00 - 16:00</span>
+                               </li>
+                           </ul>
+                       </div>
 
-                            {/* Newsletter */}
-                            <div>
-                                <h3 style={{
-                                    fontSize: 'clamp(1rem, 2.5vw, var(--font-size-lg))',
-                                    fontWeight: 'bold',
-                                    marginBottom: '1.5rem',
-                                    fontFamily: "'Poppins', sans-serif",
-                                    color: 'var(--text-primary)'
-                                }}>
-                                    Newsletter
-                                </h3>
-                                <p style={{
-                                    color: 'var(--text-tertiary)',
-                                    marginBottom: '1.5rem'
-                                }}>
-                                    Suscríbete para recibir las mejores propiedades y ofertas exclusivas.
-                                </p>
-                                <form style={{display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)'}} action="/newsletter" method="POST">
-                                    <input type="hidden" name="_token" value={document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')} />
-                                    <input
-                                        type="email"
-                                        name="email"
-                                        placeholder="Tu email"
-                                        className="form-input"
-                                        style={{
-                                            width: '100%',
-                                            background: 'var(--bg-tertiary)',
-                                            border: '1px solid var(--border-primary)',
-                                            color: 'var(--text-primary)',
-                                            padding: '0.75rem',
-                                            borderRadius: '0.5rem'
-                                        }}
-                                    />
-                                    <button type="submit" className="btn btn-primary" style={{
-                                        fontSize: 'clamp(0.875rem, 2vw, 1rem)',
-                                        padding: 'clamp(0.6rem, 1.5vw, 0.75rem) clamp(1rem, 3vw, 1.5rem)'
-                                    }}>
-                                        Suscribirse <i className="fas fa-paper-plane" style={{marginLeft: 'var(--spacing-sm)'}}></i>
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
+                       <div>
+                           <h3 style={{
+                               fontSize: 'clamp(1rem, 2.5vw, var(--font-size-lg))',
+                               fontWeight: 'bold',
+                               marginBottom: '1.5rem',
+                               fontFamily: "'Poppins', sans-serif",
+                               color: 'var(--text-primary)'
+                           }}>
+                               Newsletter
+                           </h3>
+                           <p style={{
+                               color: 'var(--text-tertiary)',
+                               marginBottom: '1.5rem'
+                           }}>
+                               Suscríbete para recibir las mejores propiedades y ofertas exclusivas.
+                           </p>
+                           <form style={{display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)'}} action="/newsletter" method="POST">
+                               <input type="hidden" name="_token" value={document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')} />
+                               <input
+                                   type="email"
+                                   name="email"
+                                   placeholder="Tu email"
+                                   className="form-input"
+                                   style={{
+                                       width: '100%',
+                                       background: 'var(--bg-tertiary)',
+                                       border: '1px solid var(--border-primary)',
+                                       color: 'var(--text-primary)',
+                                       padding: '0.75rem',
+                                       borderRadius: '0.5rem'
+                                   }}
+                               />
+                               <button type="submit" className="btn btn-primary" style={{
+                                   fontSize: 'clamp(0.875rem, 2vw, 1rem)',
+                                   padding: 'clamp(0.6rem, 1.5vw, 0.75rem) clamp(1rem, 3vw, 1.5rem)'
+                               }}>
+                                   Suscribirse <i className="fas fa-paper-plane" style={{marginLeft: 'var(--spacing-sm)'}}></i>
+                               </button>
+                           </form>
+                       </div>
+                   </div>
 
-                        <div className="footer-bottom" style={{
-                            borderTop: '1px solid var(--border-primary)',
-                            paddingTop: '2rem',
-                            display: 'flex',
-                            flexDirection: window.innerWidth < 768 ? 'column' : 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: '1rem',
-                            textAlign: window.innerWidth < 768 ? 'center' : 'left'
-                        }}>
-                            <p style={{fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))', color: 'var(--text-tertiary)', margin: 0}}>
-                                © 2024 ViveSpaces. Todos los derechos reservados.
-                            </p>
-                            <div style={{
-                                display: 'flex',
-                                gap: '1.5rem',
-                                flexWrap: 'wrap',
-                                justifyContent: window.innerWidth < 768 ? 'center' : 'flex-end'
-                            }}>
-                                <a href="/terms" style={{
-                                    fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))',
-                                    color: 'var(--text-tertiary)',
-                                    textDecoration: 'none',
-                                    transition: 'color 0.3s'
-                                }}>
-                                    Términos y condiciones
-                                </a>
-                                <a href="/privacy" style={{
-                                    fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))',
-                                    color: 'var(--text-tertiary)',
-                                    textDecoration: 'none',
-                                    transition: 'color 0.3s'
-                                }}>
-                                    Política de privacidad
-                                </a>
-                                <a href="/privacy-notice" style={{
-                                    fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))',
-                                    color: 'var(--text-tertiary)',
-                                    textDecoration: 'none',
-                                    transition: 'color 0.3s'
-                                }}>
-                                    Aviso de privacidad
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </footer>
+                   <div className="footer-bottom" style={{
+                       borderTop: '1px solid var(--border-primary)',
+                       paddingTop: '2rem',
+                       display: 'flex',
+                       flexDirection: window.innerWidth < 768 ? 'column' : 'row',
+                       justifyContent: 'space-between',
+                       alignItems: 'center',
+                       gap: '1rem',
+                       textAlign: window.innerWidth < 768 ? 'center' : 'left'
+                   }}>
+                       <p style={{fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))', color: 'var(--text-tertiary)', margin: 0}}>
+                           © 2024 ViveSpaces. Todos los derechos reservados.
+                       </p>
+                       <div style={{
+                           display: 'flex',
+                           gap: '1.5rem',
+                           flexWrap: 'wrap',
+                           justifyContent: window.innerWidth < 768 ? 'center' : 'flex-end'
+                       }}>
+                           <a href="/terms" style={{
+                               fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))',
+                               color: 'var(--text-tertiary)',
+                               textDecoration: 'none',
+                               transition: 'color 0.3s'
+                           }}>
+                               Términos y condiciones
+                           </a>
+                           <a href="/privacy" style={{
+                               fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))',
+                               color: 'var(--text-tertiary)',
+                               textDecoration: 'none',
+                               transition: 'color 0.3s'
+                           }}>
+                               Política de privacidad
+                           </a>
+                           <a href="/privacy-notice" style={{
+                               fontSize: 'clamp(0.875rem, 2vw, var(--font-size-sm))',
+                               color: 'var(--text-tertiary)',
+                               textDecoration: 'none',
+                               transition: 'color 0.3s'
+                           }}>
+                               Aviso de privacidad
+                           </a>
+                       </div>
+                   </div>
+               </div>
+           </footer>
 
-                {/* Back to Top Button */}
-                <button id="back-to-top" onClick={scrollToTop} style={{
-                    position: 'fixed',
-                    bottom: 'clamp(1rem, 3vw, 1.5rem)',
-                    right: 'clamp(1rem, 3vw, 1.5rem)',
-                    width: 'clamp(3rem, 6vw, 3.5rem)',
-                    height: 'clamp(3rem, 6vw, 3.5rem)',
-                    borderRadius: '50%',
-                    border: 'none',
-                    background: 'var(--primary)',
-                    color: 'white',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 'clamp(1rem, 2vw, 1.25rem)',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    transition: 'all 0.3s ease',
-                    zIndex: 1000,
-                    opacity: 0,
-                    visibility: 'hidden'
-                }}>
-                    <i className="fas fa-arrow-up"></i>
-                </button>
+           <style>{`
+               @keyframes spin {
+                   0% { transform: rotate(0deg); }
+                   100% { transform: rotate(360deg); }
+               }
+           `}</style>
+       </div>
+   );
+}
 
-                {/* Estilos CSS para animaciones */}
-                <style>{`
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                `}</style>
-            </div>
-        );
-     }
-
-     export default Welcome;
+export default Welcome;

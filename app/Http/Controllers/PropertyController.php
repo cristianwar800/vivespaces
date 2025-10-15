@@ -6,8 +6,11 @@ use App\Models\Property;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use App\Models\PropertyImageExtended;
 use Illuminate\Support\Str;
-
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PropertyController extends Controller
 {
@@ -31,6 +34,12 @@ class PropertyController extends Controller
             'area' => 'nullable|integer|min:0|max:2147483647',
             'is_active' => 'boolean',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'images' => 'nullable|array|max:15',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:8192',
+            'room_types' => 'nullable|array',
+            'room_types.*' => 'nullable|string|in:exterior,living_room,kitchen,bedroom,bathroom,other'
         ];
     }
 
@@ -59,6 +68,14 @@ class PropertyController extends Controller
             'image.image' => 'El archivo debe ser una imagen válida.',
             'image.mimes' => 'La imagen debe ser de tipo: jpeg, png, jpg, gif.',
             'image.max' => 'La imagen no puede ser mayor a 5MB.',
+            'latitude.numeric' => 'La latitud debe ser un número válido.',
+            'latitude.between' => 'La latitud debe estar entre -90 y 90.',
+            'longitude.numeric' => 'La longitud debe ser un número válido.',
+            'longitude.between' => 'La longitud debe estar entre -180 y 180.',
+            'images.max' => 'No puedes subir más de 15 imágenes.',
+            'images.*.image' => 'Todos los archivos deben ser imágenes.',
+            'images.*.mimes' => 'Las imágenes deben ser de tipo: jpeg, png, jpg, gif, webp.',
+            'images.*.max' => 'Cada imagen no puede ser mayor a 8MB.'
         ];
     }
 
@@ -81,6 +98,9 @@ class PropertyController extends Controller
             'bathrooms' => 'baños',
             'area' => 'área',
             'image' => 'imagen',
+            'latitude' => 'latitud',
+            'longitude' => 'longitud',
+            'images' => 'imágenes'
         ];
     }
 
@@ -93,20 +113,25 @@ class PropertyController extends Controller
     }
 
     /**
-     * Lista de todas las propiedades activas - ADAPTADO PARA REACT
+     * Lista de todas las propiedades activas
      */
     public function index(Request $request)
     {
-        $query = Property::with('user')->where('is_active', true);
+        $query = Property::with(['user', 'photos'])->where('is_active', true);
 
-        // Filtros de búsqueda (mantenemos la funcionalidad del servidor por si acaso)
+        // Excluir propiedades del usuario actual
+        if (Auth::check()) {
+            $query->where('user_id', '!=', Auth::id());
+        }
+
+        // Filtros de búsqueda
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhere('city', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%");
+                ->orWhere('description', 'like', "%{$search}%")
+                ->orWhere('city', 'like', "%{$search}%")
+                ->orWhere('address', 'like', "%{$search}%");
             });
         }
 
@@ -126,74 +151,100 @@ class PropertyController extends Controller
             $query->where('bedrooms', '>=', $request->bedrooms);
         }
 
-        // Para React, obtenemos todas las propiedades sin paginación para filtrado en cliente
         $properties = $query->latest()->get();
 
-        // Retornar la vista unificada con datos para React
         return view('properties', [
             'properties' => $properties,
-            'currentPage' => 'index'
+            'currentPage' => 'index',
+            'mapboxToken' => config('services.mapbox.access_token')
         ]);
     }
 
     /**
-     * Muestra una propiedad específica - ADAPTADO PARA REACT
+     * Mis propiedades
+     */
+    public function myProperties(Request $request)
+    {
+        if (!Auth::check()) {
+            return redirect()->route('login');
+        }
+
+        $user = Auth::user();
+
+        $query = Property::with(['user', 'photos'])->where('user_id', $user->id);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                ->orWhere('description', 'like', "%{$search}%")
+                ->orWhere('city', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('status')) {
+            if ($request->status === 'active') {
+                $query->where('is_active', true);
+            } elseif ($request->status === 'inactive') {
+                $query->where('is_active', false);
+            }
+        }
+
+        $myProperties = $query->latest()->get();
+
+        return view('properties', [
+            'properties' => $myProperties,
+            'user' => $user,
+            'currentPage' => 'my-properties',
+            'mapboxToken' => config('services.mapbox.access_token')
+        ]);
+    }
+
+    /**
+     * Muestra una propiedad específica
      */
     public function show(Property $property)
     {
-        // Solo mostrar propiedades activas, excepto si es el propietario
         if (!$property->is_active && (!auth()->check() || $property->user_id !== auth()->id())) {
             abort(404, 'Propiedad no encontrada');
         }
 
-        // Cargar relación con usuario para mostrar datos de contacto
-        $property->load('user');
+        $property->load(['user', 'photos']);
 
-        // Retornar la vista unificada con la propiedad específica
         return view('properties', [
             'property' => $property,
-            'currentPage' => 'show'
+            'currentPage' => 'show',
+            'mapboxToken' => config('services.mapbox.access_token')
         ]);
     }
 
     /**
-     * Muestra el formulario para crear una nueva propiedad - ADAPTADO PARA REACT
+     * Muestra el formulario para crear una nueva propiedad
      */
     public function create()
     {
-        // Log para confirmar que llegamos aquí
-        \Log::info('CREATE METHOD REACHED', [
-            'path' => request()->path(),
-            'user' => auth()->id()
-        ]);
-
-        // Verificar autenticación
         if (!auth()->check()) {
             return redirect()->route('login')->with('error', 'Debes iniciar sesión para crear una propiedad.');
         }
 
-        // Retornar la vista unificada para crear
         return view('properties', [
             'properties' => [],
             'property' => null,
             'currentPage' => 'create',
-            'errors' => session()->get('errors', new \Illuminate\Support\MessageBag())
+            'errors' => session()->get('errors', new \Illuminate\Support\MessageBag()),
+            'mapboxToken' => config('services.mapbox.access_token')
         ]);
     }
 
     /**
-     * Almacena una nueva propiedad en la base de datos - MEJORADO PARA AJAX
-     */
-                    /**
-     * Almacena una nueva propiedad en la base de datos - CORREGIDO
+     * STORE MEJORADO - Crea propiedad Y sube imágenes en una sola operación
      */
     public function store(Request $request)
     {
-        // Log para confirmar que llegamos aquí
-        \Log::info('STORE METHOD REACHED', [
-            'path' => request()->path(),
+        Log::info('STORE METHOD - Iniciando', [
             'user' => auth()->id(),
-            'data' => $request->all()
+            'has_images' => $request->hasFile('images'),
+            'images_count' => $request->hasFile('images') ? count($request->file('images')) : 0
         ]);
 
         // Verificar autenticación
@@ -201,17 +252,17 @@ class PropertyController extends Controller
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Debes iniciar sesión para crear una propiedad.',
-                    'errors' => ['auth' => ['Usuario no autenticado']]
+                    'message' => 'Debes iniciar sesión para crear una propiedad.'
                 ], 401);
             }
-            return redirect()->route('login')->with('error', 'Debes iniciar sesión para crear una propiedad.');
+            return redirect()->route('login');
         }
 
-        // Validar request
+        // Validar todo (propiedad + imágenes)
         $validator = $this->validateRequest($request);
+
         if ($validator->fails()) {
-            \Log::error('Validation failed:', $validator->errors()->toArray());
+            Log::error('Validación fallida', $validator->errors()->toArray());
 
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
@@ -223,121 +274,236 @@ class PropertyController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
-        try {
-            $data = $validator->validated();
+        // Usar transacción para asegurar consistencia
+        DB::beginTransaction();
 
-            // Agregar el ID del usuario autenticado
+        try {
+            // 1. CREAR LA PROPIEDAD
+            $data = $validator->validated();
             $data['user_id'] = auth()->id();
 
-            // Convertir a enteros donde sea necesario
-            if (isset($data['bathrooms'])) {
-                $data['bathrooms'] = (int) $data['bathrooms'];
-            }
+            // Convertir tipos de datos
+            $data['bathrooms'] = isset($data['bathrooms']) ? (int)$data['bathrooms'] : null;
+            $data['bedrooms'] = isset($data['bedrooms']) ? (int)$data['bedrooms'] : null;
+            $data['area'] = isset($data['area']) ? (int)$data['area'] : null;
+            $data['is_active'] = $request->boolean('is_active');
 
-            if (isset($data['bedrooms'])) {
-                $data['bedrooms'] = (int) $data['bedrooms'];
-            }
-
-            if (isset($data['area'])) {
-                $data['area'] = (int) $data['area'];
-            }
-
-            // Manejar el checkbox is_active
-            $data['is_active'] = $request->has('is_active') ||
-                                $request->input('is_active') === '1' ||
-                                $request->input('is_active') === 'true' ||
-                                $request->input('is_active') === true;
-
-            // Manejar la subida de imagen
-            if ($request->hasFile('image')) {
-                $imagePath = $request->file('image')->store('properties', 'public');
-                $data['image'] = $imagePath;
-            }
-
-            // Limpiar campos vacíos (convertir strings vacíos a null)
+            // Limpiar campos vacíos
             foreach ($data as $key => $value) {
                 if ($value === '') {
                     $data[$key] = null;
                 }
             }
 
+            // Manejar imagen principal (legacy)
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('properties', 'public');
+                $data['image'] = $imagePath;
+            }
+
             // Crear la propiedad
             $property = Property::create($data);
 
-            \Log::info('Property created successfully:', [
-                'property_id' => $property->id,
-                'user_id' => auth()->id(),
-                'title' => $property->title
-            ]);
+            Log::info('Propiedad creada', ['property_id' => $property->id]);
 
-            // Si es petición AJAX, devolver JSON
+            // 2. PROCESAR MÚLTIPLES IMÁGENES SI EXISTEN
+            $uploadedImages = [];
+            $totalSize = 0;
+            $duplicatesFound = 0;
+            $spaceSaved = 0;
+
+            if ($request->hasFile('images')) {
+                $images = $request->file('images');
+                $roomTypes = $request->input('room_types', []);
+
+                foreach ($images as $index => $image) {
+                    // Generar hash para deduplicación
+                    $fileHash = sha1_file($image->getRealPath());
+                    $fileSize = $image->getSize();
+                    $totalSize += $fileSize;
+
+                    // Buscar duplicados
+                    $existingImage = PropertyImageExtended::where('file_hash', $fileHash)
+                        ->where('is_duplicate', false)
+                        ->first();
+
+                    if ($existingImage) {
+                        // Imagen duplicada - crear referencia
+                        $duplicatesFound++;
+                        $spaceSaved += $fileSize;
+
+                        Log::info('Imagen duplicada detectada', [
+                            'hash' => $fileHash,
+                            'original_id' => $existingImage->id
+                        ]);
+
+                        $imageRecord = PropertyImageExtended::create([
+                            'property_id' => $property->id,
+                            'original_filename' => $image->getClientOriginalName(),
+                            'stored_filename' => $existingImage->stored_filename,
+                            'path' => $existingImage->path,
+                            'mime_type' => $existingImage->mime_type,
+                            'size' => $fileSize,
+                            'width' => $existingImage->width,
+                            'height' => $existingImage->height,
+                            'file_hash' => $fileHash,
+                            'is_duplicate' => true,
+                            'original_file_path' => $existingImage->path,
+                            'room_type' => $roomTypes[$index] ?? 'other',
+                            'sort_order' => $index,
+                            'is_primary' => $index === 0 && !$property->image,
+                            'disk' => 'public',
+                            'uploaded_by' => auth()->id()
+                        ]);
+
+                        // Incrementar contador en imagen original
+                        $existingImage->increment('duplicate_count');
+
+                    } else {
+                        // Imagen nueva - guardar archivo
+                        $storedPath = $image->store('property_images', 'public');
+
+                        // Obtener dimensiones de la imagen
+                        list($width, $height) = getimagesize($image->getRealPath());
+
+                        $imageRecord = PropertyImageExtended::create([
+                            'property_id' => $property->id,
+                            'original_filename' => $image->getClientOriginalName(),
+                            'stored_filename' => basename($storedPath),
+                            'path' => $storedPath,
+                            'mime_type' => $image->getMimeType(),
+                            'size' => $fileSize,
+                            'width' => $width,
+                            'height' => $height,
+                            'file_hash' => $fileHash,
+                            'is_duplicate' => false,
+                            'duplicate_count' => 0,
+                            'room_type' => $roomTypes[$index] ?? 'other',
+                            'sort_order' => $index,
+                            'is_primary' => $index === 0 && !$property->image,
+                            'disk' => 'public',
+                            'uploaded_by' => auth()->id()
+                        ]);
+
+                        Log::info('Nueva imagen guardada', [
+                            'id' => $imageRecord->id,
+                            'path' => $storedPath
+                        ]);
+                    }
+
+                    $uploadedImages[] = $imageRecord;
+                }
+
+                Log::info('Proceso de imágenes completado', [
+                    'total_images' => count($uploadedImages),
+                    'duplicates' => $duplicatesFound,
+                    'space_saved_mb' => round($spaceSaved / 1024 / 1024, 2)
+                ]);
+            }
+
+            DB::commit();
+
+            // Cargar relaciones para la respuesta
+            $property->load(['user', 'photos']);
+
+            // Preparar respuesta
             if ($request->expectsJson() || $request->ajax()) {
-                return response()->json([
+                $response = [
                     'success' => true,
                     'message' => '¡Propiedad creada exitosamente!',
-                    'property' => $property,
+                    'property' => [
+                        'id' => $property->id,
+                        'title' => $property->title,
+                        'description' => $property->description,
+                        'address' => $property->address,
+                        'city' => $property->city,
+                        'state' => $property->state,
+                        'country' => $property->country,
+                        'postal_code' => $property->postal_code,
+                        'price' => $property->price,
+                        'type' => $property->type,
+                        'bedrooms' => $property->bedrooms,
+                        'bathrooms' => $property->bathrooms,
+                        'area' => $property->area,
+                        'is_active' => $property->is_active,
+                        'latitude' => $property->latitude,
+                        'longitude' => $property->longitude,
+                        'image' => $property->image,
+                        'user_id' => $property->user_id,
+                        'photos_count' => count($uploadedImages)
+                    ],
+                    'images' => [
+                        'uploaded' => count($uploadedImages),
+                        'duplicates' => $duplicatesFound,
+                        'space_saved_mb' => round($spaceSaved / 1024 / 1024, 2)
+                    ],
                     'redirect' => route('properties')
-                ]);
+                ];
+
+                // Mensaje adicional si se encontraron duplicados
+                if ($duplicatesFound > 0) {
+                    $response['message'] .= " Se reutilizaron $duplicatesFound imágenes duplicadas, ahorrando " . round($spaceSaved / 1024 / 1024, 2) . "MB.";
+                }
+
+                return response()->json($response);
             }
 
             return redirect()->route('properties')
                 ->with('success', '¡Propiedad creada exitosamente!');
 
         } catch (\Exception $e) {
-            \Log::error('Error creating property:', [
+            DB::rollBack();
+
+            Log::error('Error creando propiedad', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'trace' => $e->getTraceAsString()
             ]);
 
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error al crear la propiedad: ' . $e->getMessage(),
-                    'errors' => ['general' => ['Error interno del servidor']]
+                    'message' => 'Error al crear la propiedad: ' . $e->getMessage()
                 ], 500);
             }
 
             return back()->withInput()
-                ->withErrors(['error' => 'Error al crear la propiedad. Por favor, intenta de nuevo.']);
+                ->withErrors(['error' => 'Error al crear la propiedad: ' . $e->getMessage()]);
         }
     }
+
     /**
-     * Muestra el formulario para editar una propiedad - ADAPTADO PARA REACT
+     * Muestra el formulario para editar una propiedad
      */
     public function edit(Property $property)
     {
-        // Verificar que el usuario sea el propietario
         if ($property->user_id !== auth()->id()) {
             abort(403, 'No tienes permisos para editar esta propiedad.');
         }
 
-        // Retornar la vista unificada para editar
         return view('properties', [
             'property' => $property,
-            'currentPage' => 'edit'
+            'currentPage' => 'edit',
+            'mapboxToken' => config('services.mapbox.access_token')
         ]);
     }
 
     /**
-     * Actualiza una propiedad existente - MEJORADO PARA AJAX
+     * UPDATE MEJORADO - Actualiza propiedad Y maneja imágenes
      */
     public function update(Request $request, Property $property)
     {
-        // Verificar que el usuario sea el propietario
         if ($property->user_id !== auth()->id()) {
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No tienes permisos para editar esta propiedad.',
-                    'errors' => ['auth' => ['Permisos insuficientes']]
+                    'message' => 'No tienes permisos para editar esta propiedad.'
                 ], 403);
             }
-            abort(403, 'No tienes permisos para editar esta propiedad.');
+            abort(403);
         }
 
-        // Validar request
         $validator = $this->validateRequest($request);
+
         if ($validator->fails()) {
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
@@ -349,44 +515,103 @@ class PropertyController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
+        DB::beginTransaction();
+
         try {
+            // Actualizar propiedad
             $data = $validator->validated();
 
-            // Convertir a enteros
-            if (isset($data['bathrooms'])) {
-                $data['bathrooms'] = (int) $data['bathrooms'];
+            $data['bathrooms'] = isset($data['bathrooms']) ? (int)$data['bathrooms'] : null;
+            $data['bedrooms'] = isset($data['bedrooms']) ? (int)$data['bedrooms'] : null;
+            $data['area'] = isset($data['area']) ? (int)$data['area'] : null;
+            $data['is_active'] = $request->boolean('is_active');
+
+            foreach ($data as $key => $value) {
+                if ($value === '') {
+                    $data[$key] = null;
+                }
             }
 
-            if (isset($data['bedrooms'])) {
-                $data['bedrooms'] = (int) $data['bedrooms'];
-            }
-
-            if (isset($data['area'])) {
-                $data['area'] = (int) $data['area'];
-            }
-
-            // Manejar el checkbox is_active
-            $data['is_active'] = $request->has('is_active') || $request->input('is_active') === '1' || $request->input('is_active') === 'true';
-
-            // Manejar la subida de nueva imagen
             if ($request->hasFile('image')) {
-                // Eliminar imagen anterior si existe
                 if ($property->image) {
                     Storage::disk('public')->delete($property->image);
                 }
-
-                $imagePath = $request->file('image')->store('properties', 'public');
-                $data['image'] = $imagePath;
+                $data['image'] = $request->file('image')->store('properties', 'public');
             }
 
             $property->update($data);
 
-            // Si es petición AJAX, devolver JSON
+            // Procesar nuevas imágenes si existen
+            if ($request->hasFile('images')) {
+                $images = $request->file('images');
+                $roomTypes = $request->input('room_types', []);
+
+                // Obtener el último sort_order
+                $lastSortOrder = PropertyImageExtended::where('property_id', $property->id)
+                    ->max('sort_order') ?? -1;
+
+                foreach ($images as $index => $image) {
+                    $fileHash = sha1_file($image->getRealPath());
+                    $fileSize = $image->getSize();
+
+                    $existingImage = PropertyImageExtended::where('file_hash', $fileHash)
+                        ->where('is_duplicate', false)
+                        ->first();
+
+                    if ($existingImage) {
+                        PropertyImageExtended::create([
+                            'property_id' => $property->id,
+                            'original_filename' => $image->getClientOriginalName(),
+                            'stored_filename' => $existingImage->stored_filename,
+                            'path' => $existingImage->path,
+                            'mime_type' => $existingImage->mime_type,
+                            'size' => $fileSize,
+                            'width' => $existingImage->width,
+                            'height' => $existingImage->height,
+                            'file_hash' => $fileHash,
+                            'is_duplicate' => true,
+                            'original_file_path' => $existingImage->path,
+                            'room_type' => $roomTypes[$index] ?? 'other',
+                            'sort_order' => $lastSortOrder + $index + 1,
+                            'is_primary' => false,
+                            'disk' => 'public',
+                            'uploaded_by' => auth()->id()
+                        ]);
+
+                        $existingImage->increment('duplicate_count');
+                    } else {
+                        $storedPath = $image->store('property_images', 'public');
+                        list($width, $height) = getimagesize($image->getRealPath());
+
+                        PropertyImageExtended::create([
+                            'property_id' => $property->id,
+                            'original_filename' => $image->getClientOriginalName(),
+                            'stored_filename' => basename($storedPath),
+                            'path' => $storedPath,
+                            'mime_type' => $image->getMimeType(),
+                            'size' => $fileSize,
+                            'width' => $width,
+                            'height' => $height,
+                            'file_hash' => $fileHash,
+                            'is_duplicate' => false,
+                            'duplicate_count' => 0,
+                            'room_type' => $roomTypes[$index] ?? 'other',
+                            'sort_order' => $lastSortOrder + $index + 1,
+                            'is_primary' => false,
+                            'disk' => 'public',
+                            'uploaded_by' => auth()->id()
+                        ]);
+                    }
+                }
+            }
+
+            DB::commit();
+
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => true,
                     'message' => '¡Propiedad actualizada exitosamente!',
-                    'property' => $property->fresh(),
+                    'property' => $property->fresh()->load('photos'),
                     'redirect' => route('properties')
                 ]);
             }
@@ -395,45 +620,55 @@ class PropertyController extends Controller
                 ->with('success', '¡Propiedad actualizada exitosamente!');
 
         } catch (\Exception $e) {
+            DB::rollBack();
+
+            Log::error('Error actualizando propiedad', [
+                'error' => $e->getMessage(),
+                'property_id' => $property->id
+            ]);
+
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error al actualizar la propiedad. Por favor, intenta de nuevo.',
-                    'errors' => ['general' => ['Error interno del servidor']]
+                    'message' => 'Error al actualizar la propiedad.'
                 ], 500);
             }
 
             return back()->withInput()
-                ->withErrors(['error' => 'Error al actualizar la propiedad. Por favor, intenta de nuevo.']);
+                ->withErrors(['error' => 'Error al actualizar la propiedad.']);
         }
     }
 
     /**
-     * Elimina una propiedad - MEJORADO PARA AJAX
+     * Elimina una propiedad
      */
     public function destroy(Request $request, Property $property)
     {
-        // Verificar que el usuario sea el propietario
         if ($property->user_id !== auth()->id()) {
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No tienes permisos para eliminar esta propiedad.',
-                    'errors' => ['auth' => ['Permisos insuficientes']]
+                    'message' => 'No tienes permisos para eliminar esta propiedad.'
                 ], 403);
             }
-            abort(403, 'No tienes permisos para eliminar esta propiedad.');
+            abort(403);
         }
 
         try {
-            // Eliminar imagen si existe
+            // Eliminar imagen principal si existe
             if ($property->image) {
                 Storage::disk('public')->delete($property->image);
             }
 
+            // Eliminar imágenes adicionales
+            foreach ($property->photos as $photo) {
+                if (!$photo->is_duplicate) {
+                    Storage::disk('public')->delete($photo->path);
+                }
+            }
+
             $property->delete();
 
-            // Si es petición AJAX, devolver JSON
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => true,
@@ -449,17 +684,173 @@ class PropertyController extends Controller
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error al eliminar la propiedad. Por favor, intenta de nuevo.',
-                    'errors' => ['general' => ['Error interno del servidor']]
+                    'message' => 'Error al eliminar la propiedad.'
                 ], 500);
             }
 
-            return back()->withErrors(['error' => 'Error al eliminar la propiedad. Por favor, intenta de nuevo.']);
+            return back()->withErrors(['error' => 'Error al eliminar la propiedad.']);
         }
     }
 
+    /**
+     * Obtener imágenes de una propiedad
+     */
+    public function getImages($propertyId)
+    {
+        $property = Property::findOrFail($propertyId);
 
+        $images = PropertyImageExtended::where('property_id', $propertyId)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function($image) {
+                return [
+                    'id' => $image->id,
+                    'url' => $image->url,
+                    'filename' => $image->original_filename,
+                    'room_type' => $image->room_type,
+                    'is_primary' => $image->is_primary,
+                    'is_duplicate' => $image->is_duplicate,
+                    'size_mb' => round($image->size / 1024 / 1024, 2),
+                    'sort_order' => $image->sort_order
+                ];
+            });
 
+        return response()->json([
+            'success' => true,
+            'property_title' => $property->title,
+            'images' => $images,
+            'total_images' => $images->count(),
+            'primary_image' => $images->firstWhere('is_primary', true)
+        ]);
+    }
+
+    /**
+     * Eliminar imagen específica
+     */
+    public function deleteImage(Request $request, $propertyId, $imageId)
+    {
+        $property = Property::findOrFail($propertyId);
+
+        if ($property->user_id !== auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No tienes permisos'
+            ], 403);
+        }
+
+        $image = PropertyImageExtended::where('property_id', $propertyId)
+            ->where('id', $imageId)
+            ->firstOrFail();
+
+        try {
+            $wasPrimary = $image->is_primary;
+
+            if ($image->is_duplicate) {
+                $originalImage = PropertyImageExtended::where('file_hash', $image->file_hash)
+                    ->where('is_duplicate', false)
+                    ->first();
+
+                if ($originalImage) {
+                    $originalImage->decrement('duplicate_count');
+                }
+
+                $image->delete();
+
+            } else {
+                $duplicatesCount = PropertyImageExtended::where('file_hash', $image->file_hash)
+                    ->where('is_duplicate', true)
+                    ->count();
+
+                if ($duplicatesCount > 0) {
+                    $firstDuplicate = PropertyImageExtended::where('file_hash', $image->file_hash)
+                        ->where('is_duplicate', true)
+                        ->first();
+
+                    $firstDuplicate->update([
+                        'is_duplicate' => false,
+                        'duplicate_count' => $duplicatesCount - 1
+                    ]);
+                } else {
+                    Storage::disk('public')->delete($image->path);
+                }
+
+                $image->delete();
+            }
+
+            if ($wasPrimary) {
+                $newPrimary = PropertyImageExtended::where('property_id', $propertyId)
+                    ->orderBy('sort_order')
+                    ->first();
+
+                if ($newPrimary) {
+                    $newPrimary->update(['is_primary' => true]);
+                }
+            }
+
+            $remainingImages = PropertyImageExtended::where('property_id', $propertyId)
+                ->orderBy('sort_order')
+                ->get();
+
+            foreach ($remainingImages as $index => $img) {
+                $img->update(['sort_order' => $index]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Imagen eliminada exitosamente',
+                'remaining_images' => $remainingImages->count()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error deleting image: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar la imagen'
+            ], 500);
+        }
+    }
+
+    /**
+     * Establecer imagen principal
+     */
+    public function setPrimaryImage(Request $request, $propertyId, $imageId)
+    {
+        $property = Property::findOrFail($propertyId);
+
+        if ($property->user_id !== auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No tienes permisos'
+            ], 403);
+        }
+
+        try {
+            PropertyImageExtended::where('property_id', $propertyId)
+                ->update(['is_primary' => false]);
+
+            $image = PropertyImageExtended::where('property_id', $propertyId)
+                ->where('id', $imageId)
+                ->firstOrFail();
+
+            $image->update(['is_primary' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Imagen principal actualizada'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al establecer imagen principal'
+            ], 500);
+        }
+    }
+
+    /**
+     * Buscar propiedades
+     */
     public function searchProperties(Request $request)
     {
         $request->validate([
@@ -479,7 +870,7 @@ class PropertyController extends Controller
         }
 
         try {
-            $searchQuery = Property::with(['user:id,name,last_name'])
+            $searchQuery = Property::with(['user:id,name,last_name', 'photos'])
                 ->where('is_active', true)
                 ->where(function($q) use ($query) {
                     $searchTerm = '%' . $query . '%';
@@ -540,10 +931,9 @@ class PropertyController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Error en búsqueda de propiedades:', [
+            Log::error('Error en búsqueda de propiedades:', [
                 'error' => $e->getMessage(),
-                'query' => $query,
-                'trace' => $e->getTraceAsString()
+                'query' => $query
             ]);
 
             return response()->json([
@@ -556,7 +946,7 @@ class PropertyController extends Controller
     }
 
     /**
-     * Formatear detalles de la propiedad para mostrar
+     * Formatear detalles de la propiedad
      */
     private function formatPropertyDetails($property)
     {
@@ -580,4 +970,112 @@ class PropertyController extends Controller
 
         return implode(' • ', $details);
     }
+
+
+            /**
+ * Buscar propiedades cercanas basadas en coordenadas
+ */
+       public function searchNearby(Request $request)
+{
+    try {
+        $validated = $request->validate([
+            'lng' => 'required|numeric|between:-180,180',
+            'lat' => 'required|numeric|between:-90,90',
+            'radius' => 'nullable|numeric|min:0.1|max:50'
+        ]);
+
+        $lng = $validated['lng'];
+        $lat = $validated['lat'];
+        $radius = $validated['radius'] ?? 3; // Cambié de 2 a 3km
+
+        Log::info('🔍 BÚSQUEDA', [
+            'lat' => $lat,
+            'lng' => $lng,
+            'radio_km' => $radius
+        ]);
+
+        $properties = Property::selectRaw("
+                id,
+                title,
+                address,
+                city,
+                state,
+                price,
+                type,
+                bedrooms,
+                bathrooms,
+                area,
+                latitude,
+                longitude,
+                image,
+                user_id,
+                (
+                    6371 * acos(
+                        cos(radians(?)) * cos(radians(latitude)) *
+                        cos(radians(longitude) - radians(?)) +
+                        sin(radians(?)) * sin(radians(latitude))
+                    )
+                ) AS distance
+            ", [$lat, $lng, $lat])
+            ->where('is_active', true)
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->where('latitude', '!=', 0)
+            ->where('longitude', '!=', 0)
+            ->whereBetween('latitude', [14, 33])
+            ->whereBetween('longitude', [-118, -86])
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance', 'asc')
+            // ->distinct() // ← QUITA ESTO
+            ->limit(20)
+            ->with('user:id,name,last_name')
+            ->get();
+
+        Log::info('✅ Encontradas: ' . $properties->count());
+
+        $formattedProperties = $properties->map(function($property) {
+            return [
+                'id' => $property->id,
+                'title' => $property->title,
+                'address' => $property->address,
+                'city' => $property->city,
+                'state' => $property->state,
+                'price' => $property->price,
+                'type' => $property->type,
+                'bedrooms' => $property->bedrooms,
+                'bathrooms' => $property->bathrooms,
+                'area' => $property->area,
+                'latitude' => (float) $property->latitude,
+                'longitude' => (float) $property->longitude,
+                'distance' => round($property->distance, 2),
+                'image' => $property->image ? asset('storage/' . $property->image) : null,
+                'user' => $property->user
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'properties' => $formattedProperties,
+            'count' => $formattedProperties->count(),
+            'search_center' => [
+                'lat' => $lat,
+                'lng' => $lng
+            ],
+            'radius_km' => $radius
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('❌ ERROR', [
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al buscar propiedades',
+            'properties' => []
+        ], 500);
+    }
+}
+
+
 }
