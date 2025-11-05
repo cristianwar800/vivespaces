@@ -208,7 +208,7 @@ function Welcome({ user = null }) {
                </div>
            </section>
 
-           {/* Map Section */}
+           {/* Map Section - REACTIVADO */}
            <section className="section" style={{background: 'var(--bg-primary)', padding: 'clamp(3rem, 8vw, 6rem) 1rem'}}>
                <div className="container" style={{ maxWidth: '1200px', margin: '0 auto' }}>
                    <h2 className="section-title font-display" style={{

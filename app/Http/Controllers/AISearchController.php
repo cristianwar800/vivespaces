@@ -8,11 +8,22 @@ use Illuminate\Support\Facades\Log;
 
 class AISearchController extends Controller
 {
-    private function getAiApiUrl()
+        private function getAiApiUrl()
     {
-        return 'http://localhost:8001';
+        // Detectar si estamos dentro de Kubernetes
+        if (env('KUBERNETES_SERVICE_HOST')) {
+            // Usar servicio interno de Kubernetes
+            return 'http://ai-service-internal.vivespaces-ai.svc.cluster.local:8001';
+        }
+        
+        // Intentar usar host.docker.internal (funciona en Docker Desktop)
+        if (gethostbyname('host.docker.internal') !== 'host.docker.internal') {
+            return 'http://host.docker.internal:30801';
+        }
+        
+        // Fallback para desarrollo local
+        return 'http://localhost:30801';
     }
-
     /**
      * 🔥 Calcular delay óptimo según contexto
      */

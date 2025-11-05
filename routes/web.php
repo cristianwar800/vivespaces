@@ -16,6 +16,7 @@ use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Http;
 use App\Http\Controllers\ChatBotController;
 use App\Http\Controllers\ContactoController;
+use App\Http\Controllers\UserRatingController;
 use Inertia\Inertia;
 
 /*
@@ -36,15 +37,24 @@ Route::get('/', function () {
 // Propiedades públicas (solo lectura)
 Route::get('/properties', [PropertyController::class, 'index'])->name('properties');
 
-// Verificación de email (público)
-Route::prefix('email')->group(function () {
-    Route::post('/send-verification', [EmailVerificationController::class, 'sendVerificationCode'])->name('email.send-verification');
-    Route::post('/verify-code', [EmailVerificationController::class, 'verifyCode'])->name('email.verify-code');
-    Route::get('/verification-status', [EmailVerificationController::class, 'getVerificationStatus'])->name('email.verification-status');
-    Route::get('/verify-email', function () {
-        return view('email');
-    })->name('email.verification');
-});
+// ==========================================
+// ✉️ VERIFICACIÓN DE EMAIL (Público)
+// ==========================================
+
+// Vista de verificación de email
+Route::get('/verify-email', function () {
+    return view('email');
+})->name('verify.email');
+
+// API endpoints de verificación (sin prefix)
+Route::post('/send-verification', [EmailVerificationController::class, 'sendVerificationCode'])
+    ->name('verification.send');
+
+Route::post('/verify-code', [EmailVerificationController::class, 'verifyCode'])
+    ->name('verification.verify');
+
+Route::get('/verification/status', [EmailVerificationController::class, 'getVerificationStatus'])
+    ->name('verification.status');
 
 // ==========================================
 // 👤 RUTAS DE AUTENTICACIÓN (Solo invitados)
@@ -106,6 +116,10 @@ Route::middleware('auth')->group(function () {
     // ✅ Verificación de Identidad
     // ----------------
     Route::prefix('verification')->group(function () {
+        // 🔥 NUEVO: Endpoint de configuración (para que el frontend sepa qué está habilitado)
+        Route::get('/config', [VerificationController::class, 'getVerificationConfig'])
+            ->name('verification.config');
+
         // Verificación con fotos
         Route::get('/identity', [PhotoComparisonController::class, 'index'])->name('photo.verification');
         Route::post('/photos', [PhotoComparisonController::class, 'verifyPhotos'])->name('photo.verify');
@@ -118,7 +132,33 @@ Route::middleware('auth')->group(function () {
         Route::post('/complete', [VerificationController::class, 'verifyComplete']);
         Route::get('/documents/supported', [VerificationController::class, 'getSupportedDocuments']);
 
-        // Vista de prueba
+        // 🔥 VERIFICACIÓN FACIAL - Vista de prueba
+        Route::get('/face-test', [VerificationController::class, 'showFaceTest'])->name('verification.face.test');
+        
+        // 🔥 NUEVA RUTA: Verificación facial con Verify API (threshold 85%)
+        Route::post('/face-verify', [VerificationController::class, 'verifyFaceTest'])
+            ->name('verification.face-verify');
+        
+        // 🔥 Detección en tiempo real (para el frontend)
+        Route::post('/detect-faces-realtime', [VerificationController::class, 'detectFacesRealTime'])
+            ->name('detect.faces.realtime');
+        
+        // 🔥 ========================================
+        // 🔥 NUEVAS RUTAS DE PERSISTENCIA
+        // 🔥 ========================================
+        Route::post('/start-session', [VerificationController::class, 'startVerificationSession'])
+            ->name('verification.start-session');
+        Route::post('/save-progress', [VerificationController::class, 'saveStepProgress'])
+            ->name('verification.save-progress');
+        Route::get('/progress', [VerificationController::class, 'getVerificationProgress'])
+            ->name('verification.progress');
+             Route::post('/validate-document', [VerificationController::class, 'validateDocument'])
+        ->name('verification.validate-document');
+        Route::post('/finalize', [VerificationController::class, 'finalizeVerification'])
+        ->name('verification.finalize');
+
+        
+        // Vista de prueba (AL FINAL)
         Route::get('/test', function () {
             return view('test-verification');
         });
@@ -138,6 +178,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/{propertyId}/{userId}/messages', [MessageController::class, 'getMessages']);
         Route::get('/{conversationId}/messages', [MessageController::class, 'getMessagesByConversationId']);
         Route::post('/{conversationId}/mark-read', [MessageController::class, 'markMessagesAsRead']);
+        Route::delete('/{conversationId}', [MessageController::class, 'deleteConversation']);
     });
 
     // Mensajes
@@ -227,6 +268,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/{userId}/reset-password', [AdminController::class, 'resetUserPassword'])->name('admin.users.reset-password');
             Route::patch('/{userId}/change-role', [AdminController::class, 'changeUserRole'])->name('admin.users.change-role');
             Route::delete('/{userId}', [AdminController::class, 'deleteUser'])->name('admin.users.delete');
+            Route::patch('/{userId}/revoke-verification', [AdminController::class, 'revokeVerification'])->name('admin.users.revoke-verification'); // ✅ CORREGIDO
+
         });
 
         // Gestión de propiedades desde admin
@@ -313,16 +356,11 @@ Route::post('/api/ai/track', [AISearchController::class, 'trackSearch']);
 // Ruta para procesar recomendaciones (después de 2 minutos)
 Route::post('/search/process-recommendations', [AISearchController::class, 'processRecommendations']);
 
-
-
-
 // ==========================================
 // 🔌 API ROUTES CON AUTENTICACIÓN
 // ==========================================
 
-
 Route::get('/test-notification', [NotificationController::class, 'createTestNotification']);
-
 
 Route::prefix('api')->middleware('auth')->group(function () {
 
@@ -336,6 +374,18 @@ Route::prefix('api')->middleware('auth')->group(function () {
         ]);
     });
 
+    // 🔥 VERIFICACIÓN FACIAL CON RECOGNITION API (threshold 80%)
+    Route::post('face-verify-recognition', [VerificationController::class, 'verifyFaceWithRecognition'])
+        ->name('api.face.verify.recognition');
+
+    // 🔥 VERIFICACIÓN FACIAL CON VERIFY API (threshold 80% - RECOMENDADO)
+    Route::post('face-verify', [VerificationController::class, 'verifyFaceTest'])
+        ->name('api.face.verify');
+
+    // 🔥 NUEVO: Endpoint de configuración de verificación (también disponible vía API)
+    Route::get('verification/config', [VerificationController::class, 'getVerificationConfig'])
+        ->name('api.verification.config');
+
     // ----------------
     // 💬 Chat API
     // ----------------
@@ -344,6 +394,7 @@ Route::prefix('api')->middleware('auth')->group(function () {
         Route::get('/', [MessageController::class, 'getConversations']);
         Route::get('/{conversationId}/messages', [MessageController::class, 'getMessagesByConversationId']);
         Route::post('/{conversationId}/mark-read', [MessageController::class, 'markMessagesAsRead']);
+        Route::delete('/{conversationId}', [MessageController::class, 'deleteConversation']);
         Route::get('/debug', function() {
             $user = auth()->user();
             $conversations = $user->getConversationsWith();
@@ -357,6 +408,35 @@ Route::prefix('api')->middleware('auth')->group(function () {
     });
 
     Route::post('/messages', [MessageController::class, 'store']);
+
+    // ----------------
+    // ⭐ CALIFICACIONES DE USUARIOS
+    // ----------------
+    Route::prefix('ratings')->group(function () {
+        // Verificar si puede calificar
+        Route::post('/can-rate', [UserRatingController::class, 'canRate']);
+        
+        // Guardar o actualizar calificación
+        Route::post('/', [UserRatingController::class, 'store']);
+        
+        // Verificar si debe mostrar el prompt de calificación
+        Route::post('/should-show-prompt', [UserRatingController::class, 'shouldShowRatingPrompt']);
+        
+        // Detectar palabras clave en mensajes
+        Route::post('/detect-keywords', [UserRatingController::class, 'detectRatingKeywords']);
+        
+        // Contador de mensajes en conversación
+        Route::get('/messages/count/{propertyId}/{userId}', [UserRatingController::class, 'getConversationMessageCount']);
+        
+        // Obtener estadísticas de un usuario
+        Route::get('/user/{userId}/stats', [UserRatingController::class, 'getUserStats']);
+        
+        // Obtener todas las calificaciones de un usuario
+        Route::get('/user/{userId}', [UserRatingController::class, 'getUserRatings']);
+        
+        // Eliminar una calificación
+        Route::delete('/{ratingId}', [UserRatingController::class, 'destroy']);
+    });
 
     // ----------------
     // 👥 Comunidad API
@@ -445,9 +525,6 @@ Route::prefix('ai')->group(function () {
     Route::post('/initialize', [AISearchController::class, 'initialize']);
 
 }); // FIN Route::prefix('ai')
-
-
-
 
 Route::post('/notifications/delete-all', function() {
     try {
@@ -593,6 +670,65 @@ if (app()->environment(['local', 'staging'])) {
             ->name('api.chatbot.welcome');
     });
 
+    Route::get('/face-service', function() {
+        $apiKey = config('services.compreface.api_key');
+        $baseUrl = config('services.compreface.base_url');
+        
+        // Test de configuración básica
+        $config = [
+            'api_key_configured' => !empty($apiKey),
+            'api_key_length' => strlen($apiKey ?? ''),
+            'api_key_preview' => substr($apiKey ?? '', 0, 8) . '...' . substr($apiKey ?? '', -4),
+            'base_url' => $baseUrl
+        ];
+        
+        // Test con Recognition API
+        try {
+            $testImage = imagecreatetruecolor(100, 100);
+            ob_start();
+            imagejpeg($testImage);
+            $imageData = ob_get_contents();
+            ob_end_clean();
+            imagedestroy($testImage);
+            
+            // Test de detección
+            $response = Http::timeout(10)
+                ->withHeaders(['x-api-key' => $apiKey])
+                ->attach('file', $imageData, 'test.jpg')
+                ->post("{$baseUrl}/api/v1/detection/detect");
+            
+            if ($response->successful()) {
+                $connection = [
+                    'status' => 'Conectado ✅',
+                    'message' => 'CompreFace Recognition API funcionando',
+                    'response_code' => $response->status(),
+                    'test_endpoint' => '/api/v1/detection/detect',
+                    'api_type' => 'Recognition API'
+                ];
+            } else {
+                $connection = [
+                    'status' => 'Error ❌',
+                    'message' => 'CompreFace respondió con error',
+                    'response_code' => $response->status(),
+                    'response_body' => $response->json()
+                ];
+            }
+        } catch (\Exception $e) {
+            $connection = [
+                'status' => 'Error ❌',
+                'message' => 'No se pudo conectar a CompreFace',
+                'error' => $e->getMessage()
+            ];
+        }
+        
+        return response()->json([
+            'service' => 'FaceService con Recognition API ✅',
+            'configuration' => $config,
+            'connection' => $connection,
+            'ready' => $connection['status'] === 'Conectado ✅' ? 'Listo para usar 🚀' : 'Revisar configuración ⚠️'
+        ]);
+    });
+
     Route::get('/search', function () {
         return view('search');
     })->name('search');
@@ -605,5 +741,16 @@ if (app()->environment(['local', 'staging'])) {
     Route::get('/recomendador', function () {
         return view('fastapi-recomendador');
     })->name('recomendador');
+
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/verification/identity', function () {
+            return view('verification-identity');
+        })->name('verification.identity');
+    });
+
+    // borrar
+    Route::get('/test-face-detection', function() {
+        return view('test-face-detection');
+    });
 
 } // FIN if (app()->environment(['local', 'staging']))

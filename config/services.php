@@ -6,12 +6,6 @@ return [
     |--------------------------------------------------------------------------
     | Third Party Services
     |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
     */
 
     'postmark' => [
@@ -36,16 +30,35 @@ return [
     ],
 
     'ocr_space' => [
-    'api_key' => env('OCR_SPACE_API_KEY'),
-    'base_url' => 'https://api.ocr.space/parse/image',
-    'timeout' => 30,
-    'default_language' => 'spa',
-    'ocr_engine' => 2,
+        'api_key' => env('OCR_SPACE_API_KEY'),
+        'base_url' => 'https://api.ocr.space/parse/image',
+        'timeout' => 30,
+        'default_language' => 'spa',
+        'ocr_engine' => 2,
     ],
 
     'mapbox' => [
         'access_token' => env('MAPBOX_ACCESS_TOKEN'),
         'base_url' => 'https://api.mapbox.com',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | CompreFace Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuración para el servicio de reconocimiento facial CompreFace.
+    | Solo utiliza Recognition API para verificación biométrica robusta.
+    |
+    */
+
+    'compreface' => [
+        'enabled' => env('COMPREFACE_ENABLED', true),
+        'api_url' => env('COMPREFACE_API_URL', 'http://localhost:8002'),
+        'base_url' => env('COMPREFACE_API_URL', 'http://localhost:8002'),
+        'api_key' => env('COMPREFACE_API_KEY'),
+        'threshold' => env('COMPREFACE_THRESHOLD', 85),
+        'face_collection' => env('COMPREFACE_FACE_COLLECTION', 'main'),
+    ],  
 
 ];

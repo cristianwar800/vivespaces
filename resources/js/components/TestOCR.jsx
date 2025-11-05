@@ -1,933 +1,936 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
-// --- Configuración de Documentos CORREGIDA ---
-const DOCUMENT_TYPES = {
-    identity: {
-        name: 'Documento de Identidad',
-        icon: '🆔',
-        description: 'INE o Pasaporte Mexicano (elige uno)',
-        formats: ['JPG', 'PNG', 'WEBP'],
-        maxSize: '10MB',
-        color: 'emerald',
-        required: true,
-        options: [
-            { value: 'ine', label: 'Credencial INE', icon: '🆔' },
-            { value: 'pasaporte', label: 'Pasaporte Mexicano', icon: '📘' }
-        ]
-    },
-    comprobante: {
-        name: 'Comprobante de Domicilio',
-        icon: '🧾',
-        description: 'Recibo de servicios (máx. 4 meses)',
-        formats: ['JPG', 'PNG', 'PDF'],
-        maxSize: '10MB',
-        color: 'purple',
-        required: false
-    }
-};
+function TestOCR({ onComplete }) {
+    const [selfieFile, setSelfieFile] = useState(null);
+    const [selfiePreview, setSelfiePreview] = useState(null);
+    const [ineFile, setIneFile] = useState(null);
+    const [inePreview, setInePreview] = useState(null);
+    const [result, setResult] = useState(null);
+    const [processing, setProcessing] = useState(false);
+    const [showCamera, setShowCamera] = useState(true);
+    const [cameraStream, setCameraStream] = useState(null);
+    const [cameraActive, setCameraActive] = useState(false);
+    const [error, setError] = useState(null);
+    
+    const [faceEnabled, setFaceEnabled] = useState(false);
+    const [configLoading, setConfigLoading] = useState(true);
 
-const DOCUMENT_STATUS = {
-    PENDING: 'pending',
-    UPLOADING: 'uploading',
-    PROCESSING: 'processing',
-    VALIDATED: 'validated',
-    REJECTED: 'rejected',
-    ERROR: 'error'
-};
+    const videoRef = useRef(null);
+    const canvasRef = useRef(null);
+    const selfieInputRef = useRef(null);
+    const ineInputRef = useRef(null);
 
-// --- Componentes de UI ---
-const Icon = ({ path, className = "w-6 h-6" }) => (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={path} />
-    </svg>
-);
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                console.log('🔧 Cargando configuración de verificación...');
+                
+                const response = await fetch('/api/verification/config', {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    }
+                });
 
-const Header = () => (
-    <div className="text-center mb-12">
-        <div className="relative inline-flex items-center justify-center w-20 h-20 mb-6">
-            <div className="absolute inset-0 bg-gradient-to-r from-violet-400 via-purple-500 to-indigo-500 rounded-full animate-pulse shadow-xl blur-lg"></div>
-            <div className="relative w-16 h-16 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
-                <Icon path="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" className="w-8 h-8 text-white" />
-            </div>
-        </div>
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">
-            Verificación de Documentos
-        </h1>
-        <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-            Sistema de validación inteligente para documentos oficiales con tecnología OCR avanzada
-        </p>
-    </div>
-);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ Configuración cargada:', data);
+                    
+                    setFaceEnabled(data.data?.face_verification_enabled || false);
+                    
+                    if (!data.data?.face_verification_enabled) {
+                        console.log('⚠️ Face ID deshabilitado - Solo se mostrará verificación de documentos');
+                    }
+                } else {
+                    console.warn('⚠️ No se pudo cargar configuración, usando valores por defecto');
+                    setFaceEnabled(false);
+                }
+            } catch (error) {
+                console.error('❌ Error cargando configuración:', error);
+                setFaceEnabled(false);
+            } finally {
+                setConfigLoading(false);
+            }
+        };
 
-const DocumentCard = ({
-    type,
-    config,
-    status,
-    file,
-    result,
-    selectedDocumentType,
-    onFileSelect,
-    onProcess,
-    onRemove,
-    onDocumentTypeChange,
-    processing
-}) => {
-    const fileInputRef = useRef(null);
-    const [dragActive, setDragActive] = useState(false);
-    const [preview, setPreview] = useState(null);
+        loadConfig();
+    }, []);
 
-    const colorClasses = {
-        emerald: {
-            bg: 'from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20',
-            border: 'border-emerald-200 dark:border-emerald-700',
-            button: 'bg-emerald-600 hover:bg-emerald-700',
-            icon: 'bg-emerald-500',
-            text: 'text-emerald-700 dark:text-emerald-300'
-        },
-        purple: {
-            bg: 'from-purple-50 to-violet-50 dark:from-purple-900/20 dark:to-violet-900/20',
-            border: 'border-purple-200 dark:border-purple-700',
-            button: 'bg-purple-600 hover:bg-purple-700',
-            icon: 'bg-purple-500',
-            text: 'text-purple-700 dark:text-purple-300'
-        }
+    const preprocessImage = async (canvas) => {
+        return new Promise((resolve) => {
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            let totalBrightness = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                totalBrightness += brightness;
+            }
+            const avgBrightness = totalBrightness / (data.length / 4);
+
+            console.log('📊 Brillo promedio original:', avgBrightness.toFixed(2));
+
+            const targetBrightness = 140;
+            const adjustment = (targetBrightness - avgBrightness) * 0.5;
+
+            if (Math.abs(adjustment) > 10) {
+                console.log('💡 Ajustando brillo en:', adjustment.toFixed(2));
+                for (let i = 0; i < data.length; i += 4) {
+                    data[i] = Math.min(255, Math.max(0, data[i] + adjustment));
+                    data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + adjustment));
+                    data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + adjustment));
+                }
+            }
+
+            const contrast = 1.15;
+            for (let i = 0; i < data.length; i += 4) {
+                data[i] = Math.min(255, Math.max(0, (data[i] - 128) * contrast + 128));
+                data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - 128) * contrast + 128));
+                data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - 128) * contrast + 128));
+            }
+
+            const tempData = new Uint8ClampedArray(data);
+            for (let y = 1; y < canvas.height - 1; y++) {
+                for (let x = 1; x < canvas.width - 1; x++) {
+                    const idx = (y * canvas.width + x) * 4;
+                    const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                    
+                    if (brightness < 50) {
+                        const neighbors = [
+                            ((y-1) * canvas.width + x) * 4,
+                            ((y+1) * canvas.width + x) * 4,
+                            (y * canvas.width + (x-1)) * 4,
+                            (y * canvas.width + (x+1)) * 4
+                        ];
+                        
+                        for (let c = 0; c < 3; c++) {
+                            let sum = data[idx + c];
+                            neighbors.forEach(n => sum += data[n + c]);
+                            tempData[idx + c] = sum / 5;
+                        }
+                    }
+                }
+            }
+            
+            for (let i = 0; i < data.length; i++) {
+                data[i] = tempData[i];
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            console.log('✅ Preprocesamiento completado');
+            resolve();
+        });
     };
 
-    const colors = colorClasses[config.color];
+    const preprocessUploadedImage = async (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const img = new Image();
+                img.onload = async () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    
+                    ctx.drawImage(img, 0, 0);
+                    await preprocessImage(canvas);
+                    
+                    canvas.toBlob((blob) => {
+                        const enhancedFile = new File([blob], file.name, { type: 'image/jpeg' });
+                        resolve({
+                            file: enhancedFile,
+                            preview: canvas.toDataURL('image/jpeg', 0.92)
+                        });
+                    }, 'image/jpeg', 0.92);
+                };
+                img.src = e.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    };
 
-    const handleFileSelect = useCallback((selectedFile) => {
-        if (!selectedFile) return;
-
-        // Para documentos de identidad, verificar que se haya seleccionado el tipo
-        if (type === 'identity' && !selectedDocumentType) {
-            alert('Por favor selecciona si vas a subir INE o Pasaporte antes de continuar');
-            return;
-        }
-
-        // Validación de tipos de archivo
-        const isValidType = selectedFile.type.startsWith('image/') ||
-                           selectedFile.type === 'application/pdf' ||
-                           config.formats.some(format =>
-                               selectedFile.name.toLowerCase().endsWith('.' + format.toLowerCase())
-                           );
-
-        if (!isValidType) {
-            alert(`Formato no soportado. Usa: ${config.formats.join(', ')}`);
-            return;
-        }
-
-        // Validación de tamaño
-        const maxSizeBytes = 10 * 1024 * 1024; // 10MB
-        const minSizeBytes = 1024; // 1KB mínimo
-
-        if (selectedFile.size > maxSizeBytes) {
-            alert(`El archivo es demasiado grande. Máximo ${config.maxSize}.`);
-            return;
-        }
-
-        if (selectedFile.size < minSizeBytes) {
-            if (confirm('El archivo parece muy pequeño. ¿Estás seguro de que es un documento válido?')) {
-                // Continuar
-            } else {
-                return;
+    const startCamera = useCallback(async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    facingMode: 'user',
+                    aspectRatio: { ideal: 16/9 },
+                    frameRate: { ideal: 30 }
+                }
+            });
+            
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                setCameraStream(stream);
+                setCameraActive(true);
+                setError(null);
             }
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => setPreview(e.target.result);
-        reader.readAsDataURL(selectedFile);
-
-        onFileSelect(type, selectedFile);
-    }, [config.maxSize, config.formats, onFileSelect, type, selectedDocumentType]);
-
-    const handleDrag = useCallback((e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.type === "dragenter" || e.type === "dragover") {
-            setDragActive(true);
-        } else if (e.type === "dragleave") {
-            setDragActive(false);
+        } catch (error) {
+            console.error('Error al acceder a la cámara:', error);
+            setError('No se pudo acceder a la cámara. Verifica los permisos del navegador.');
         }
     }, []);
 
-    const handleDrop = useCallback((e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleFileSelect(e.dataTransfer.files[0]);
+    const stopCamera = useCallback(() => {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            setCameraStream(null);
+            setCameraActive(false);
         }
-    }, [handleFileSelect]);
+    }, [cameraStream]);
 
-    const getStatusDisplay = () => {
-        switch (status) {
-            case DOCUMENT_STATUS.PENDING:
-                return { icon: '⏳', text: 'Pendiente', color: 'text-gray-500' };
-            case DOCUMENT_STATUS.UPLOADING:
-                return { icon: '📤', text: 'Subiendo...', color: 'text-blue-500' };
-            case DOCUMENT_STATUS.PROCESSING:
-                return { icon: '🔄', text: 'Procesando...', color: 'text-yellow-500' };
-            case DOCUMENT_STATUS.VALIDATED:
-                return { icon: '✅', text: 'Validado', color: 'text-green-500' };
-            case DOCUMENT_STATUS.REJECTED:
-                return { icon: '❌', text: 'Rechazado', color: 'text-red-500' };
-            case DOCUMENT_STATUS.ERROR:
-                return { icon: '⚠️', text: 'Error', color: 'text-red-500' };
-            default:
-                return { icon: '⏳', text: 'Pendiente', color: 'text-gray-500' };
+    const captureSelfie = useCallback(async () => {
+        if (!videoRef.current || !canvasRef.current) return;
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        context.save();
+        context.scale(-1, 1);
+        context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+        context.restore();
+
+        console.log('🎨 Aplicando mejoras de imagen...');
+        await preprocessImage(canvas);
+
+        canvas.toBlob((blob) => {
+            const file = new File([blob], 'selfie_enhanced.jpg', { type: 'image/jpeg' });
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+            
+            setSelfieFile(file);
+            setSelfiePreview(dataUrl);
+            stopCamera();
+            setError(null);
+            
+            console.log('✅ Selfie capturada y mejorada');
+        }, 'image/jpeg', 0.95);
+    }, [stopCamera]);
+
+    const handleFileSelect = async (file, type) => {
+        if (!file) return;
+
+        const maxSize = 10 * 1024 * 1024;
+        if (file.size > maxSize) {
+            setError('El archivo es demasiado grande. Máximo 10MB.');
+            return;
+        }
+
+        try {
+            if (type === 'selfie') {
+                console.log('📸 Mejorando selfie subida...');
+                const enhanced = await preprocessUploadedImage(file);
+                setSelfieFile(enhanced.file);
+                setSelfiePreview(enhanced.preview);
+                setError(null);
+                console.log('✅ Selfie mejorada');
+            } else {
+                console.log('🪪 Mejorando foto de INE...');
+                const enhanced = await preprocessUploadedImage(file);
+                setIneFile(enhanced.file);
+                setInePreview(enhanced.preview);
+                setError(null);
+                console.log('✅ INE mejorada');
+            }
+        } catch (err) {
+            console.error('Error mejorando imagen:', err);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                if (type === 'selfie') {
+                    setSelfieFile(file);
+                    setSelfiePreview(e.target.result);
+                } else {
+                    setIneFile(file);
+                    setInePreview(e.target.result);
+                }
+                setError(null);
+            };
+            reader.readAsDataURL(file);
         }
     };
 
-    const statusDisplay = getStatusDisplay();
+    const handleVerify = async () => {
+        if (faceEnabled && (!selfieFile || !ineFile)) {
+            setError('Debes subir ambas fotos para continuar');
+            return;
+        }
 
-    return (
-        <div className={`bg-gradient-to-br ${colors.bg} rounded-xl border-2 ${colors.border} p-6 transition-all duration-300 hover:shadow-lg`}>
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                    <div className={`w-12 h-12 ${colors.icon} rounded-lg flex items-center justify-center shadow-sm`}>
-                        <span className="text-2xl">{config.icon}</span>
-                    </div>
-                    <div>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                            {config.name}
-                            {config.required && <span className="text-red-500 ml-1">*</span>}
-                        </h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{config.description}</p>
-                    </div>
+        if (!faceEnabled && !ineFile) {
+            setError('Debes subir tu documento de identidad');
+            return;
+        }
+
+        setProcessing(true);
+        setResult(null);
+        setError(null);
+
+        try {
+            const formData = new FormData();
+
+            if (faceEnabled) {
+                if (selfiePreview) {
+                    formData.append('selfie_data', selfiePreview);
+                    console.log('📤 Usando selfie desde preview (base64)');
+                } else {
+                    console.log('📤 Convirtiendo selfie a base64...');
+                    const reader = new FileReader();
+                    const base64Promise = new Promise((resolve, reject) => {
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(selfieFile);
+                    });
+                    const selfieBase64 = await base64Promise;
+                    formData.append('selfie_data', selfieBase64);
+                    console.log('✅ Selfie convertida a base64');
+                }
+                formData.append('ine', ineFile);
+                console.log('🚀 Enviando verificación facial con Verify API (threshold 80%)...');
+            } else {
+                formData.append('document', ineFile);
+                formData.append('document_type', 'ine');
+                console.log('🚀 Enviando verificación de documento (solo OCR)...');
+            }
+
+            const endpoint = faceEnabled ? '/api/face-verify' : '/verification/document';
+            
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData
+            });
+
+            console.log('📡 Response status:', response.status);
+
+            const text = await response.text();
+            console.log('📄 Response text (primeros 500 caracteres):', text.substring(0, 500));
+
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                console.error('❌ Error parseando JSON:', e);
+                console.error('📄 Texto completo recibido:', text);
+                throw new Error('La respuesta del servidor no es JSON válido. Verifica la consola para más detalles.');
+            }
+
+            console.log('✅ Data recibida:', data);
+
+            setResult(data);
+
+            if (data.success && onComplete) {
+                setTimeout(() => {
+                    onComplete(data);
+                }, 3000);
+            }
+
+        } catch (error) {
+            console.error('❌ Error:', error);
+            setError(error.message || 'Error de conexión. Intenta nuevamente.');
+            setResult({
+                success: false,
+                error: error.message || 'Error de conexión'
+            });
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    if (configLoading) {
+        return (
+            <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-lg text-gray-600 dark:text-gray-300">Cargando configuración...</p>
                 </div>
-                <div className={`flex items-center space-x-2 ${statusDisplay.color} font-medium`}>
-                    <span>{statusDisplay.icon}</span>
-                    <span className="text-sm">{statusDisplay.text}</span>
+            </div>
+        );
+    }
+
+    // 🔥 RETURN SIN LAYOUT - SOLO CONTENIDO
+    return (
+        <>
+            {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-6 py-4 rounded-xl flex items-start space-x-3 mb-6">
+                    <svg className="w-6 h-6 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                        <p className="font-semibold mb-1">Error</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                    <button
+                        onClick={() => setError(null)}
+                        className="ml-auto text-red-500 hover:text-red-700"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            )}
+
+            <div className={`grid ${faceEnabled ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 max-w-2xl mx-auto'} gap-8 mb-8`}>
+                
+                {faceEnabled && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center space-x-3 mb-6">
+                            <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-rose-600 rounded-xl flex items-center justify-center shadow-lg">
+                                <span className="text-2xl">📸</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Tu Selfie</h2>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">Toma una foto o sube una imagen</p>
+                            </div>
+                        </div>
+
+                        {!selfiePreview && (
+                            <div className="flex space-x-3 mb-6">
+                                <button
+                                    onClick={() => {
+                                        setShowCamera(true);
+                                        stopCamera();
+                                    }}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all ${
+                                        showCamera
+                                            ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg scale-105'
+                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    📸 Tomar foto
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowCamera(false);
+                                        stopCamera();
+                                    }}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all ${
+                                        !showCamera
+                                            ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg scale-105'
+                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    📤 Subir foto
+                                </button>
+                            </div>
+                        )}
+
+                        {showCamera && !selfiePreview && (
+                            <div className="space-y-4">
+                                <div className="relative bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 rounded-2xl overflow-hidden shadow-2xl aspect-video">
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        playsInline
+                                        muted
+                                        className="w-full h-full object-cover transform scale-x-[-1]"
+                                        style={{
+                                            filter: cameraActive ? 'brightness(1.1) contrast(1.05)' : 'brightness(0.3)'
+                                        }}
+                                    ></video>
+
+                                    {cameraActive && (
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <div className="relative">
+                                                <div className="w-48 h-60 border-4 border-pink-500/60 rounded-full animate-pulse"></div>
+                                                <div className="absolute inset-0 w-48 h-60 border-4 border-pink-400/30 rounded-full animate-ping"></div>
+                                                
+                                                <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-2">
+                                                    <div className="w-3 h-3 bg-pink-500 rounded-full"></div>
+                                                </div>
+                                                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-2">
+                                                    <div className="w-3 h-3 bg-pink-500 rounded-full"></div>
+                                                </div>
+                                                
+                                                <div className="absolute -bottom-20 left-1/2 transform -translate-x-1/2 w-64 text-center">
+                                                    <p className="text-white text-sm font-bold bg-pink-600/90 px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm">
+                                                        Centra tu rostro en el óvalo
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!cameraActive && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                                            <div className="text-center">
+                                                <div className="w-20 h-20 bg-pink-500/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                                                    <svg className="w-10 h-10 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                    </svg>
+                                                </div>
+                                                <p className="text-white text-lg font-bold mb-2">Cámara desactivada</p>
+                                                <p className="text-gray-300 text-sm">Presiona "Iniciar Cámara" para comenzar</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center space-x-4 px-4">
+                                        {!cameraActive ? (
+                                            <button
+                                                onClick={startCamera}
+                                                className="group relative bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white font-bold py-4 px-8 rounded-xl shadow-2xl transition-all hover:scale-105 flex items-center space-x-3"
+                                            >
+                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                </svg>
+                                                <span>Iniciar Cámara</span>
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={captureSelfie}
+                                                    className="group relative p-6 rounded-full shadow-2xl transition-all flex items-center justify-center bg-white hover:bg-gray-100 text-gray-900 hover:scale-110"
+                                                    title="Capturar foto"
+                                                >
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-rose-500 rounded-full animate-pulse opacity-30"></div>
+                                                    <svg className="w-10 h-10 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    </svg>
+                                                </button>
+
+                                                <button
+                                                    onClick={stopCamera}
+                                                    className="bg-red-500/80 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all hover:scale-105 backdrop-blur-sm"
+                                                    title="Detener cámara"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {cameraActive && (
+                                        <>
+                                            <div className="absolute top-4 left-4 flex items-center space-x-2 bg-green-500/90 text-white px-3 py-1.5 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm animate-fade-in">
+                                                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                                                <span>EN VIVO</span>
+                                            </div>
+                                            <div className="absolute top-4 right-4 bg-black/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold backdrop-blur-sm">
+                                                HD • 1080p
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-pink-50 dark:bg-pink-900/20 p-3 rounded-lg border border-pink-200 dark:border-pink-800">
+                                        <div className="flex items-start space-x-2">
+                                            <span className="text-pink-600 dark:text-pink-400">💡</span>
+                                            <div className="text-xs">
+                                                <p className="font-semibold text-pink-800 dark:text-pink-300">Iluminación</p>
+                                                <p className="text-pink-700 dark:text-pink-400">Luz frontal uniforme</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-pink-50 dark:bg-pink-900/20 p-3 rounded-lg border border-pink-200 dark:border-pink-800">
+                                        <div className="flex items-start space-x-2">
+                                            <span className="text-pink-600 dark:text-pink-400">👤</span>
+                                            <div className="text-xs">
+                                                <p className="font-semibold text-pink-800 dark:text-pink-300">Solo tú</p>
+                                                <p className="text-pink-700 dark:text-pink-400">Sin otras personas</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                                        <div className="flex items-start space-x-2">
+                                            <span className="text-red-600 dark:text-red-400">⚠️</span>
+                                            <div className="text-xs">
+                                                <p className="font-semibold text-red-800 dark:text-red-300">Threshold 80%</p>
+                                                <p className="text-red-700 dark:text-red-400">Sin excepciones</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                                        <div className="flex items-start space-x-2">
+                                            <span className="text-blue-600 dark:text-blue-400">🔐</span>
+                                            <div className="text-xs">
+                                                <p className="font-semibold text-blue-800 dark:text-blue-300">Verify API</p>
+                                                <p className="text-blue-700 dark:text-blue-400">Verificación directa</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {!showCamera && !selfiePreview && (
+                            <div 
+                                className="border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-pink-400 dark:hover:border-pink-500 rounded-2xl p-12 text-center cursor-pointer transition-all hover:bg-pink-50/50 dark:hover:bg-pink-900/10"
+                                onClick={() => selfieInputRef.current?.click()}
+                            >
+                                <input
+                                    ref={selfieInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleFileSelect(e.target.files[0], 'selfie')}
+                                    className="hidden"
+                                />
+                                <div className="space-y-4">
+                                    <div className="w-20 h-20 bg-pink-500 rounded-full flex items-center justify-center mx-auto shadow-lg">
+                                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <p className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                                            Arrastra tu selfie aquí
+                                        </p>
+                                        <p className="text-gray-600 dark:text-gray-400 text-sm">
+                                            o haz clic para seleccionar
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                                            JPG, PNG • Hasta 10MB
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {selfiePreview && (
+                            <div className="relative group">
+                                <img
+                                    src={selfiePreview}
+                                    alt="Selfie"
+                                    className="w-full rounded-2xl shadow-xl border-2 border-gray-200 dark:border-gray-700"
+                                />
+                                <div className="absolute top-3 right-3 flex space-x-2">
+                                    <button
+                                        onClick={() => {
+                                            setSelfieFile(null);
+                                            setSelfiePreview(null);
+                                            setResult(null);
+                                            if (showCamera) startCamera();
+                                        }}
+                                        className="bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white p-3 rounded-xl shadow-lg transition-all hover:scale-105"
+                                        title="Retomar foto"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div className="absolute bottom-3 left-3 bg-green-500/90 text-white px-3 py-1.5 rounded-lg text-sm font-bold backdrop-blur-sm flex items-center space-x-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span>Foto mejorada con IA</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center space-x-3 mb-6">
+                        <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <span className="text-2xl">🆔</span>
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Tu INE</h2>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Documento oficial de identidad</p>
+                        </div>
+                    </div>
+
+                    {!inePreview ? (
+                        <div 
+                            className="border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-emerald-400 dark:hover:border-emerald-500 rounded-2xl p-12 text-center cursor-pointer transition-all hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 min-h-[400px] flex items-center justify-center"
+                            onClick={() => ineInputRef.current?.click()}
+                        >
+                            <input
+                                ref={ineInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleFileSelect(e.target.files[0], 'ine')}
+                                className="hidden"
+                            />
+                            <div className="space-y-4">
+                                <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-lg">
+                                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                                        Sube tu INE
+                                    </p>
+                                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                                        Arrastra o haz clic para seleccionar
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                                        JPG, PNG • Hasta 10MB
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="relative group">
+                            <img
+                                src={inePreview}
+                                alt="INE"
+                                className="w-full rounded-2xl shadow-xl border-2 border-gray-200 dark:border-gray-700"
+                            />
+                            <div className="absolute top-3 right-3">
+                                <button
+                                    onClick={() => {
+                                        setIneFile(null);
+                                        setInePreview(null);
+                                        setResult(null);
+                                    }}
+                                    className="bg-red-500 hover:bg-red-600 text-white p-3 rounded-xl shadow-lg transition-all hover:scale-105"
+                                    title="Eliminar"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="absolute bottom-3 left-3 bg-emerald-500/90 text-white px-3 py-1.5 rounded-lg text-sm font-bold backdrop-blur-sm flex items-center space-x-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>INE mejorada</span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800">
+                        <h3 className="font-bold text-yellow-800 dark:text-yellow-300 mb-2 flex items-center space-x-2">
+                            <span>💡</span>
+                            <span>Consejos para mejor resultado</span>
+                        </h3>
+                        <ul className="space-y-1.5 text-sm text-yellow-700 dark:text-yellow-400">
+                            <li className="flex items-start space-x-2">
+                                <span className="text-yellow-500 mt-0.5">•</span>
+                                <span>Usa buena iluminación (luz natural preferible)</span>
+                            </li>
+                            <li className="flex items-start space-x-2">
+                                <span className="text-yellow-500 mt-0.5">•</span>
+                                <span>Asegúrate de que todo el documento sea visible</span>
+                            </li>
+                            <li className="flex items-start space-x-2">
+                                <span className="text-yellow-500 mt-0.5">•</span>
+                                <span>Evita reflejos y sombras en la foto</span>
+                            </li>
+                            <li className="flex items-start space-x-2">
+                                <span className="text-yellow-500 mt-0.5">•</span>
+                                <span>La foto debe estar enfocada y nítida</span>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 
-            {/* Selector de tipo de documento (solo para identidad) */}
-            {type === 'identity' && !file && (
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Tipo de documento de identidad:
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                        {config.options.map(option => (
-                            <button
-                                key={option.value}
-                                onClick={() => onDocumentTypeChange(option.value)}
-                                className={`p-3 border-2 rounded-lg text-center transition-all ${
-                                    selectedDocumentType === option.value
-                                        ? `${colors.border} ${colors.bg} border-solid`
-                                        : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
-                                }`}
-                            >
-                                <div className="text-2xl mb-1">{option.icon}</div>
-                                <div className="text-sm font-medium">{option.label}</div>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Tipo seleccionado (cuando ya hay archivo) */}
-            {type === 'identity' && file && selectedDocumentType && (
-                <div className="mb-4 p-3 bg-white/50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center space-x-2">
-                        <span className="text-xl">
-                            {config.options.find(opt => opt.value === selectedDocumentType)?.icon}
-                        </span>
-                        <span className="font-medium text-gray-900 dark:text-white">
-                            {config.options.find(opt => opt.value === selectedDocumentType)?.label}
-                        </span>
-                        <button
-                            onClick={() => {
-                                onDocumentTypeChange(null);
-                                onRemove(type);
-                            }}
-                            className="ml-auto text-gray-400 hover:text-red-500 p-1"
-                        >
-                            <Icon path="M6 18L18 6M6 6l12 12" className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Content Area */}
-            {!file ? (
-                // Upload Area
-                <div
-                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all duration-300 ${
-                        dragActive
-                            ? `${colors.border} bg-white/50 dark:bg-gray-800/50 scale-105`
-                            : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
-                    } ${type === 'identity' && !selectedDocumentType ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    onDragEnter={handleDrag}
-                    onDragLeave={handleDrag}
-                    onDragOver={handleDrag}
-                    onDrop={handleDrop}
-                    onClick={() => {
-                        if (type === 'identity' && !selectedDocumentType) {
-                            alert('Selecciona primero el tipo de documento (INE o Pasaporte)');
-                            return;
-                        }
-                        fileInputRef.current?.click();
-                    }}
+            {ineFile && !result && (faceEnabled ? selfieFile : true) && (
+                <button
+                    onClick={handleVerify}
+                    disabled={processing}
+                    className="w-full bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-700 hover:via-purple-700 hover:to-indigo-700 text-white font-bold py-5 px-8 rounded-2xl shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-[1.02] flex items-center justify-center space-x-3 mt-8"
                 >
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*,application/pdf"
-                        onChange={(e) => handleFileSelect(e.target.files[0])}
-                        className="hidden"
-                    />
-                    <div className="space-y-3">
-                        <div className={`w-16 h-16 ${colors.icon} rounded-full flex items-center justify-center mx-auto shadow-sm`}>
-                            <Icon path="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" className="w-8 h-8 text-white" />
-                        </div>
-                        <div>
-                            <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                                {dragActive ? 'Suelta el archivo aquí' :
-                                 type === 'identity' && !selectedDocumentType ? 'Selecciona tipo primero' :
-                                 'Subir documento'}
-                            </p>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                                {config.formats.join(', ')} • Hasta {config.maxSize}
-                            </p>
-                            {type === 'identity' && selectedDocumentType && (
-                                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                                    {config.options.find(opt => opt.value === selectedDocumentType)?.label} seleccionado
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                // File Preview & Actions
-                <div className="space-y-4">
-                    {/* File Info */}
-                    <div className="flex items-center justify-between p-4 bg-white/50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center space-x-3">
-                            <div className={`w-10 h-10 ${colors.icon} rounded-lg flex items-center justify-center`}>
-                                <Icon path="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white truncate max-w-[200px]" title={file.name}>
-                                    {file.name}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                    {(file.size / (1024 * 1024)).toFixed(2)} MB
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => onRemove(type)}
-                            className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                        >
-                            <Icon path="M6 18L18 6M6 6l12 12" className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    {/* Preview */}
-                    {preview && (
-                        <div className="relative">
-                            <img
-                                src={preview}
-                                alt="Preview"
-                                className="w-full max-h-48 object-contain bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
-                            />
-                        </div>
+                    {processing ? (
+                        <>
+                            <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-lg">
+                                {faceEnabled ? 'Verificando con threshold 80%...' : 'Verificando documento...'}
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            <span className="text-lg">
+                                {faceEnabled ? '🔐 Verificar (Threshold 80%)' : '✅ Verificar Documento'}
+                            </span>
+                        </>
                     )}
+                </button>
+            )}
 
-                    {/* Processing Indicator */}
-                    {status === DOCUMENT_STATUS.PROCESSING && (
-                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
-                            <div className="flex items-center space-x-3">
-                                <div className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
-                                <span className="text-yellow-700 dark:text-yellow-300 font-medium">
-                                    Analizando documento...
-                                </span>
+            {result && (
+                <div className={`mt-8 p-8 rounded-2xl border-2 shadow-2xl ${
+                    result.success
+                        ? 'bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-300 dark:border-green-700'
+                        : 'bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 border-red-300 dark:border-red-700'
+                }`}>
+                    {result.success ? (
+                        <div className="text-center">
+                            <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                </svg>
                             </div>
-                        </div>
-                    )}
+                            <h3 className="text-3xl font-bold text-green-800 dark:text-green-300 mb-3">
+                                ✅ {faceEnabled ? '¡Rostros Verificados!' : '¡Documento Verificado!'}
+                            </h3>
+                            <p className="text-lg text-green-700 dark:text-green-400 mb-6">
+                                {result.message}
+                            </p>
 
-                    {/* Results */}
-                    {result && (
-                        <div className={`p-4 rounded-lg border ${
-                            result.success
-                                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
-                                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
-                        }`}>
-                            {result.success ? (
-                                <div>
-                                    <div className="flex items-center space-x-2 mb-2">
-                                        <Icon path="M5 13l4 4L19 7" className="w-5 h-5 text-green-600" />
-                                        <span className="font-semibold text-green-700 dark:text-green-300">
-                                            Documento validado
-                                        </span>
-                                    </div>
-                                    <p className="text-sm text-green-600 dark:text-green-400">
-                                        Confianza: {result.data?.confidence || 0}%
-                                    </p>
-                                    {result.data?.document_type && (
-                                        <p className="text-xs text-green-500 mt-1">
-                                            Tipo detectado: {result.data.document_type}
+                            {faceEnabled && result.similarity_percentage && (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Similitud</p>
+                                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                            {result.similarity_percentage}%
                                         </p>
-                                    )}
-                                </div>
-                            ) : (
-                                <div>
-                                    <div className="flex items-center space-x-2 mb-2">
-                                        <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5 text-red-600" />
-                                        <span className="font-semibold text-red-700 dark:text-red-300">
-                                            Documento rechazado
-                                        </span>
                                     </div>
-                                    <p className="text-sm text-red-600 dark:text-red-400">
-                                        {result.message || 'Error en la validación'}
-                                    </p>
-                                    {result.suggestions && result.suggestions.length > 0 && (
-                                        <div className="mt-2">
-                                            <p className="text-xs text-red-500 font-medium">Sugerencias:</p>
-                                            <ul className="text-xs text-red-500 mt-1 space-y-1">
-                                                {result.suggestions.map((suggestion, index) => (
-                                                    <li key={index}>• {suggestion}</li>
-                                                ))}
-                                            </ul>
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Threshold</p>
+                                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                            {result.threshold_used}%
+                                        </p>
+                                    </div>
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Confianza</p>
+                                        <p className="text-2xl font-bold text-green-600 dark:text-green-400 capitalize">
+                                            {result.confidence_level}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!faceEnabled && result.data && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                    {result.data.confidence !== undefined && (
+                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Confianza OCR</p>
+                                            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                                {Math.round(result.data.confidence)}%
+                                            </p>
+                                        </div>
+                                    )}
+                                    {result.data.critical_elements_found !== undefined && (
+                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Elementos</p>
+                                            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                                {result.data.critical_elements_found}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {result.data.quality_score !== undefined && (
+                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Calidad</p>
+                                            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                                {Math.round(result.data.quality_score)}%
+                                            </p>
+                                        </div>
+                                    )}
+                                    {result.data.patterns_detected !== undefined && (
+                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Patrones</p>
+                                            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                                {result.data.patterns_detected}
+                                            </p>
                                         </div>
                                     )}
                                 </div>
                             )}
-                        </div>
-                    )}
 
-                    {/* Action Buttons */}
-                    <div className="flex space-x-3">
-                        {status === DOCUMENT_STATUS.PENDING && (
-                            <button
-                                onClick={() => onProcess(type)}
-                                disabled={processing}
-                                className={`flex-1 ${colors.button} text-white font-semibold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2`}
-                            >
-                                <Icon path="M13 10V3L4 14h7v7l9-11h-7z" className="w-4 h-4" />
-                                <span>Validar documento</span>
-                            </button>
-                        )}
-
-                        {(status === DOCUMENT_STATUS.REJECTED || status === DOCUMENT_STATUS.ERROR) && (
-                            <button
-                                onClick={() => onProcess(type)}
-                                disabled={processing}
-                                className={`flex-1 ${colors.button} text-white font-semibold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2`}
-                            >
-                                <Icon path="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" className="w-4 h-4" />
-                                <span>Reintentar</span>
-                            </button>
-                        )}
-
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="px-4 py-3 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                        >
-                            Cambiar
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-const ProgressOverview = ({ documentStates, selectedDocumentType }) => {
-    const totalRequired = 1; // Solo necesitamos identidad (INE o Pasaporte)
-    const hasIdentity = documentStates.identity.status === DOCUMENT_STATUS.VALIDATED;
-    const hasComprobante = documentStates.comprobante.status === DOCUMENT_STATUS.VALIDATED;
-
-    const validatedCount = (hasIdentity ? 1 : 0) + (hasComprobante ? 1 : 0);
-    const processingCount = Object.values(documentStates).filter(state => state.status === DOCUMENT_STATUS.PROCESSING).length;
-    const uploadedCount = Object.values(documentStates).filter(state => state.file).length;
-
-    const progress = hasIdentity ? 100 : 0; // Solo necesitamos identidad
-    const canComplete = hasIdentity;
-
-    return (
-        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-xl border border-white/20 dark:border-gray-700/50 p-6 mb-8">
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    Progreso de Verificación
-                </h2>
-                <div className="flex items-center space-x-4 text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">
-                        {hasIdentity ? 'Listo' : 'Pendiente'}
-                    </span>
-                    <span className={`font-semibold ${canComplete ? 'text-green-600' : 'text-orange-600'}`}>
-                        {Math.round(progress)}%
-                    </span>
-                </div>
-            </div>
-
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-4">
-                <div
-                    className="h-3 bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500 rounded-full transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                ></div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{uploadedCount}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">Subidos</div>
-                </div>
-                <div className="text-center">
-                    <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{processingCount}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">Procesando</div>
-                </div>
-                <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">{validatedCount}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">Validados</div>
-                </div>
-            </div>
-
-            {/* Estado actual */}
-            {!hasIdentity ? (
-                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-700">
-                    <div className="flex items-center space-x-3">
-                        <Icon path="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-6 h-6 text-orange-600" />
-                        <div>
-                            <p className="font-semibold text-orange-700 dark:text-orange-300">
-                                Documento de identidad requerido
-                            </p>
-                            <p className="text-sm text-orange-600 dark:text-orange-400">
-                                Sube y valida tu INE o Pasaporte para continuar
-                                {selectedDocumentType && ` (${selectedDocumentType.toUpperCase()} seleccionado)`}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
-                    <div className="flex items-center space-x-3">
-                        <Icon path="M5 13l4 4L19 7" className="w-6 h-6 text-green-600" />
-                        <div>
-                            <p className="font-semibold text-green-700 dark:text-green-300">
-                                Verificación lista para completar
-                            </p>
-                            <p className="text-sm text-green-600 dark:text-green-400">
-                                Ya puedes completar el proceso de verificación
-                                {hasComprobante && ' (incluye comprobante de domicilio)'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-const CompletionModal = ({ isOpen, onClose, onComplete, documentStates, selectedDocumentType }) => {
-    if (!isOpen) return null;
-
-    const hasIdentity = documentStates.identity.status === DOCUMENT_STATUS.VALIDATED;
-    const hasComprobante = documentStates.comprobante.status === DOCUMENT_STATUS.VALIDATED;
-
-    return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-                <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Icon path="M5 13l4 4L19 7" className="w-8 h-8 text-white" />
-                    </div>
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                        Completar Verificación
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400">
-                        Documentos validados exitosamente
-                    </p>
-                </div>
-
-                <div className="space-y-3 mb-6">
-                    {hasIdentity && (
-                        <div className="flex items-center space-x-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                            <span className="text-2xl">
-                                {selectedDocumentType === 'ine' ? '🆔' : '📘'}
-                            </span>
-                            <span className="font-medium text-gray-900 dark:text-white">
-                                {selectedDocumentType === 'ine' ? 'Credencial INE' : 'Pasaporte Mexicano'}
-                            </span>
-                            <Icon path="M5 13l4 4L19 7" className="w-5 h-5 text-green-600 ml-auto" />
-                        </div>
-                    )}
-                    {hasComprobante && (
-                        <div className="flex items-center space-x-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                            <span className="text-2xl">🧾</span>
-                                <span className="font-medium text-gray-900 dark:text-white">
-                                Comprobante de Domicilio
-                            </span>
-                            <Icon path="M5 13l4 4L19 7" className="w-5 h-5 text-green-600 ml-auto" />
-                        </div>
-                    )}
-                </div>
-
-                <div className="flex space-x-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={onComplete}
-                        className="flex-1 px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-colors font-semibold"
-                    >
-                        Completar
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- Componente Principal ---
-function EnhancedDocumentVerification() {
-    const [documentStates, setDocumentStates] = useState(() => {
-        const initialStates = {};
-        Object.keys(DOCUMENT_TYPES).forEach(type => {
-            initialStates[type] = {
-                file: null,
-                status: DOCUMENT_STATUS.PENDING,
-                result: null,
-                processing: false
-            };
-        });
-        return initialStates;
-    });
-
-    const [selectedDocumentType, setSelectedDocumentType] = useState(null); // 'ine' o 'pasaporte'
-    const [globalProcessing, setGlobalProcessing] = useState(false);
-    const [showCompletionModal, setShowCompletionModal] = useState(false);
-
-    const updateDocumentState = (type, updates) => {
-        setDocumentStates(prev => ({
-            ...prev,
-            [type]: { ...prev[type], ...updates }
-        }));
-    };
-
-    const handleFileSelect = (type, file) => {
-        updateDocumentState(type, {
-            file,
-            status: DOCUMENT_STATUS.PENDING,
-            result: null
-        });
-    };
-
-    const handleRemoveFile = (type) => {
-        updateDocumentState(type, {
-            file: null,
-            status: DOCUMENT_STATUS.PENDING,
-            result: null
-        });
-
-        // Si es documento de identidad, limpiar también el tipo seleccionado
-        if (type === 'identity') {
-            setSelectedDocumentType(null);
-        }
-    };
-
-    const handleDocumentTypeChange = (docType) => {
-        setSelectedDocumentType(docType);
-        // Si ya había un archivo, limpiarlo porque cambió el tipo
-        if (documentStates.identity.file) {
-            updateDocumentState('identity', {
-                file: null,
-                status: DOCUMENT_STATUS.PENDING,
-                result: null
-            });
-        }
-    };
-
-    const handleProcessDocument = async (type) => {
-        const documentState = documentStates[type];
-        if (!documentState.file) return;
-
-        // Para documentos de identidad, verificar que se haya seleccionado el tipo
-        if (type === 'identity' && !selectedDocumentType) {
-            alert('Error: No se ha seleccionado el tipo de documento de identidad');
-            return;
-        }
-
-        setGlobalProcessing(true);
-        updateDocumentState(type, {
-            status: DOCUMENT_STATUS.PROCESSING,
-            processing: true
-        });
-
-        try {
-            const formData = new FormData();
-            formData.append('document', documentState.file);
-
-            // Para identidad, usar el tipo específico seleccionado (ine o pasaporte)
-            const documentTypeForAPI = type === 'identity' ? selectedDocumentType : type;
-            formData.append('document_type', documentTypeForAPI);
-
-            const response = await fetch('/verification/document', {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                },
-                body: formData
-            });
-
-            let result;
-            const contentType = response.headers.get('content-type');
-
-            if (contentType && contentType.includes('application/json')) {
-                result = await response.json();
-            } else {
-                const textResponse = await response.text();
-                console.error('Respuesta no JSON del servidor:', textResponse);
-
-                result = {
-                    success: false,
-                    message: 'Error del servidor. La respuesta no es válida.',
-                    error: 'INVALID_SERVER_RESPONSE'
-                };
-            }
-
-            updateDocumentState(type, {
-                status: result.success ? DOCUMENT_STATUS.VALIDATED : DOCUMENT_STATUS.REJECTED,
-                result,
-                processing: false
-            });
-
-        } catch (error) {
-            console.error('Error procesando documento:', error);
-            updateDocumentState(type, {
-                status: DOCUMENT_STATUS.ERROR,
-                result: {
-                    success: false,
-                    message: 'Error de conexión: ' + error.message,
-                    suggestions: [
-                        'Verifica tu conexión a internet',
-                        'Intenta nuevamente en unos momentos',
-                        'Si el problema persiste, contacta soporte'
-                    ]
-                },
-                processing: false
-            });
-        } finally {
-            setGlobalProcessing(false);
-        }
-    };
-
-    const handleCompleteVerification = async () => {
-        const hasIdentity = documentStates.identity.status === DOCUMENT_STATUS.VALIDATED;
-        const hasComprobante = documentStates.comprobante.status === DOCUMENT_STATUS.VALIDATED;
-
-        if (!hasIdentity) {
-            alert('Error: Necesitas validar un documento de identidad primero');
-            return;
-        }
-
-        try {
-            const formData = new FormData();
-
-            // Agregar documento de identidad con el nombre correcto
-            if (selectedDocumentType === 'ine') {
-                formData.append('ine_document', documentStates.identity.file);
-            } else if (selectedDocumentType === 'pasaporte') {
-                formData.append('passport_document', documentStates.identity.file);
-            }
-
-            // Agregar comprobante si existe
-            if (hasComprobante) {
-                formData.append('address_proof', documentStates.comprobante.file);
-            }
-
-            // Nota: La selfie sería requerida según tu backend, por ahora omitida
-            // formData.append('selfie', selfieFile);
-
-            const response = await fetch('/verification/complete', {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                },
-                body: formData
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                alert('¡Verificación completada exitosamente!');
-                // Redirect o actualizar UI
-                window.location.href = '/dashboard';
-            } else {
-                alert('Error en la verificación completa: ' + result.message);
-            }
-
-        } catch (error) {
-            alert('Error de conexión: ' + error.message);
-        } finally {
-            setShowCompletionModal(false);
-        }
-    };
-
-    const hasValidatedIdentity = documentStates.identity.status === DOCUMENT_STATUS.VALIDATED;
-    const canComplete = hasValidatedIdentity;
-
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-violet-50 via-indigo-50 to-cyan-50 dark:from-gray-900 dark:via-violet-900/20 dark:to-indigo-900/20 pt-20 pb-12">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-                <Header />
-
-                <ProgressOverview
-                    documentStates={documentStates}
-                    selectedDocumentType={selectedDocumentType}
-                />
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    {Object.entries(DOCUMENT_TYPES).map(([type, config]) => (
-                        <DocumentCard
-                            key={type}
-                            type={type}
-                            config={config}
-                            status={documentStates[type].status}
-                            file={documentStates[type].file}
-                            result={documentStates[type].result}
-                            selectedDocumentType={type === 'identity' ? selectedDocumentType : null}
-                            onFileSelect={handleFileSelect}
-                            onProcess={handleProcessDocument}
-                            onRemove={handleRemoveFile}
-                            onDocumentTypeChange={type === 'identity' ? handleDocumentTypeChange : null}
-                            processing={documentStates[type].processing || globalProcessing}
-                        />
-                    ))}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                    <button
-                        onClick={() => setShowCompletionModal(true)}
-                        disabled={!canComplete || globalProcessing}
-                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 disabled:cursor-not-allowed flex items-center justify-center space-x-3 shadow-lg hover:shadow-green-500/30 transform hover:scale-105 active:scale-100 disabled:transform-none"
-                    >
-                        <Icon path="M5 13l4 4L19 7" className="w-5 h-5" />
-                        <span>Completar Verificación</span>
-                        {hasValidatedIdentity && (
-                            <span className="bg-white/20 px-2 py-1 rounded-full text-xs">
-                                {selectedDocumentType?.toUpperCase()} validado
-                            </span>
-                        )}
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            Object.keys(documentStates).forEach(type => {
-                                if (documentStates[type].status === DOCUMENT_STATUS.REJECTED ||
-                                    documentStates[type].status === DOCUMENT_STATUS.ERROR) {
-                                    handleProcessDocument(type);
-                                }
-                            });
-                        }}
-                        disabled={globalProcessing || !Object.values(documentStates).some(state =>
-                            state.status === DOCUMENT_STATUS.REJECTED || state.status === DOCUMENT_STATUS.ERROR
-                        )}
-                        className="px-6 py-4 border-2 border-orange-400 dark:border-orange-500 text-orange-600 dark:text-orange-400 font-bold rounded-xl hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-                    >
-                        <Icon path="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" className="w-5 h-5" />
-                        <span>Reintentar Rechazados</span>
-                    </button>
-                </div>
-
-                {/* Instructions Panel - ACTUALIZADO */}
-                <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-xl border border-white/20 dark:border-gray-700/50 p-6">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                        <Icon path="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-5 h-5 mr-2" />
-                        Instrucciones de Verificación
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-3">Documentos Requeridos</h4>
-                            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-red-500">•</span>
-                                    <span><strong>Documento de Identidad:</strong> INE o Pasaporte (obligatorio - elige uno)</span>
-                                </li>
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-purple-500">•</span>
-                                    <span><strong>Comprobante:</strong> Servicios max. 4 meses (opcional)</span>
-                                </li>
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-green-500">•</span>
-                                    <span>Solo necesitas UN documento de identidad, no ambos</span>
-                                </li>
-                            </ul>
-                        </div>
-
-                        <div>
-                            <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-3">Proceso Simplificado</h4>
-                            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-blue-500">1.</span>
-                                    <span>Selecciona INE o Pasaporte</span>
-                                </li>
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-blue-500">2.</span>
-                                    <span>Sube la foto del documento</span>
-                                </li>
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-blue-500">3.</span>
-                                    <span>Valida el documento</span>
-                                </li>
-                                <li className="flex items-center space-x-2">
-                                    <span className="text-green-500">4.</span>
-                                    <span>¡Completa la verificación!</span>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
-                        <div className="flex items-start space-x-3">
-                            <Icon path="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                            <div className="text-sm">
-                                <p className="font-semibold text-blue-800 dark:text-blue-200 mb-1">
-                                    Política de Privacidad
+                            <div className="mt-6 p-4 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                                <p className="text-sm text-green-700 dark:text-green-300 font-semibold">
+                                    {faceEnabled 
+                                        ? '🔐 Algoritmo: Verify API con threshold estricto de 80%'
+                                        : '✅ Verificación completada con todas las validaciones'
+                                    }
                                 </p>
-                                <p className="text-blue-700 dark:text-blue-300">
-                                    Todos los documentos son procesados únicamente en memoria para verificación.
-                                    No se almacenan datos personales. El proceso es completamente seguro y confidencial.
-                                </p>
+                                {faceEnabled && (
+                                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                                        Sin ajustes por lentes o iluminación
+                                    </p>
+                                )}
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="text-center">
+                            <div className="w-20 h-20 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                            <h3 className="text-3xl font-bold text-red-800 dark:text-red-300 mb-3">
+                                ❌ Verificación Fallida
+                            </h3>
+                            <p className="text-lg text-red-700 dark:text-red-400 mb-6">
+                                {result.error || result.message}
+                            </p>
+                            
+                            {result.similarity_percentage && (
+                                <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 inline-block">
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Similitud detectada</p>
+                                    <p className="text-3xl font-bold text-red-600 dark:text-red-400">
+                                        {result.similarity_percentage}%
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                        (Requerido: {result.threshold_used || 80}%+)
+                                    </p>
+                                </div>
+                            )}
+
+                            {result.code && (
+                                <div className="mb-4 inline-block bg-red-100 dark:bg-red-900/30 px-4 py-2 rounded-lg">
+                                    <p className="text-sm font-mono text-red-700 dark:text-red-400">
+                                        Código: {result.code}
+                                    </p>
+                                </div>
+                            )}
+
+                            {result.suggestions && result.suggestions.length > 0 && (
+                                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-red-200 dark:border-red-800 text-left">
+                                    <p className="font-bold text-red-800 dark:text-red-300 mb-3 flex items-center space-x-2">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span>Sugerencias para mejorar:</span>
+                                    </p>
+                                    <ul className="space-y-2 text-red-700 dark:text-red-400">
+                                        {result.suggestions.map((s, i) => (
+                                            <li key={i} className="flex items-start space-x-2">
+                                                <span className="text-red-500 mt-1">•</span>
+                                                <span>{s}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {result.detailed_reasons && result.detailed_reasons.length > 0 && (
+                                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-red-200 dark:border-red-800 text-left mt-4">
+                                    <p className="font-bold text-red-800 dark:text-red-300 mb-3">
+                                        📋 Razones detalladas:
+                                    </p>
+                                    <ul className="space-y-2 text-red-700 dark:text-red-400 text-sm">
+                                        {result.detailed_reasons.map((reason, i) => (
+                                            <li key={i} className="flex items-start space-x-2">
+                                                <span className="text-red-500 mt-1">•</span>
+                                                <span>{reason}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
-
-                {/* Completion Modal */}
-                <CompletionModal
-                    isOpen={showCompletionModal}
-                    onClose={() => setShowCompletionModal(false)}
-                    onComplete={handleCompleteVerification}
-                    documentStates={documentStates}
-                    selectedDocumentType={selectedDocumentType}
-                />
-
-                {/* Debug Panel (desarrollo) */}
-                {process.env.NODE_ENV === 'development' && (
-                    <div className="mt-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-2">
-                            Debug - Estado de Documentos
-                        </h4>
-                        <pre className="text-xs text-gray-600 dark:text-gray-400 overflow-auto">
-                            {JSON.stringify({
-                                documentStates,
-                                selectedDocumentType,
-                                canComplete
-                            }, null, 2)}
-                        </pre>
-                    </div>
-                )}
-            </div>
-        </div>
+            )}
+        </>
     );
 }
 
-export default EnhancedDocumentVerification;
+export default TestOCR;

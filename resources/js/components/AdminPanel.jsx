@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+
 const AdminPanel = ({ user }) => {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [dashboardData, setDashboardData] = useState(null);
@@ -11,18 +12,27 @@ const AdminPanel = ({ user }) => {
   const [editingProperty, setEditingProperty] = useState(null);
   const [viewingPhotos, setViewingPhotos] = useState(null);
 
-
   const [searchTerm, setSearchTerm] = useState('');
-const [filterStatus, setFilterStatus] = useState('all');
-const [sortBy, setSortBy] = useState('newest');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
 
-  // Nuevos estados para estadísticas avanzadas
+  // Estados para estadísticas avanzadas
   const [analytics, setAnalytics] = useState(null);
   const [userStats, setUserStats] = useState(null);
   const [propertyStats, setPropertyStats] = useState(null);
   const [messageStats, setMessageStats] = useState(null);
   const [systemStats, setSystemStats] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
+
+  // Estados para TestAI
+  const [aiConfig, setAiConfig] = useState(null);
+  const [aiConnectionStatus, setAiConnectionStatus] = useState('checking');
+  const [aiLoading, setAiLoading] = useState({});
+  const [aiResults, setAiResults] = useState({});
+  const [mlQuery, setMlQuery] = useState('');
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState('ensemble');
+  const [mlResult, setMlResult] = useState(null);
+  const [mlLoading, setMlLoading] = useState(false);
 
   // Componentes auxiliares
   const Notification = ({ message, type, onClose }) => (
@@ -256,7 +266,6 @@ const [sortBy, setSortBy] = useState('newest');
     );
   };
 
-  // Componente para KPI mejorados con datos reales
   const KPICard = ({ title, value, change, changeType, icon, color, description }) => (
     <div className={`bg-gradient-to-br ${color} p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-white transform hover:-translate-y-1`}>
       <div className="flex items-center justify-between mb-4">
@@ -284,7 +293,6 @@ const [sortBy, setSortBy] = useState('newest');
     </div>
   );
 
-  // Componente de gráfico de actividad
   const ActivityChart = ({ data }) => {
     if (!data || !Array.isArray(data)) return null;
 
@@ -308,7 +316,7 @@ const [sortBy, setSortBy] = useState('newest');
     );
   };
 
-  // Funciones de datos
+  // Funciones de API general
   const fetchDashboardData = async () => {
     setLoading(true);
     setError(null);
@@ -476,6 +484,238 @@ const [sortBy, setSortBy] = useState('newest');
       setError('Error de conexión al servidor');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Funciones de AI/FastAPI
+  const makeAiApiCall = async (url, options = {}) => {
+    console.log('🌐 Iniciando llamada a:', url);
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+    const timeoutId = setTimeout(() => {
+      throw new Error('Timeout: La API no respondió en 30 segundos');
+    }, 30000);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...options.headers,
+        },
+        credentials: 'same-origin',
+        ...options,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('❌ Error en makeAiApiCall:', error);
+      throw error;
+    }
+  };
+
+  const checkAiConnection = async () => {
+    console.log('🔍 Verificando conexión a FastAPI...');
+    setAiConnectionStatus('checking');
+    try {
+      const data = await makeAiApiCall('/ai/health');
+      if (data.success && data.ai_status === 'connected') {
+        setAiConnectionStatus('connected');
+      } else {
+        setAiConnectionStatus('disconnected');
+      }
+    } catch (error) {
+      console.error('❌ Error en checkAiConnection:', error);
+      setAiConnectionStatus('disconnected');
+    }
+  };
+
+  const testAiConnection = async () => {
+    setAiLoading(prev => ({ ...prev, connection: true }));
+    try {
+      const data = await makeAiApiCall('/ai/health');
+      setAiResults(prev => ({
+        ...prev,
+        connection: {
+          success: true,
+          message: '✅ FastAPI conectado',
+          data: data
+        }
+      }));
+      setAiConnectionStatus('connected');
+      showNotification('FastAPI conectado correctamente', 'success');
+    } catch (error) {
+      setAiResults(prev => ({
+        ...prev,
+        connection: {
+          success: false,
+          message: '❌ Error de conexión',
+          error: error.message
+        }
+      }));
+      setAiConnectionStatus('disconnected');
+      showNotification('Error al conectar con FastAPI', 'error');
+    }
+    setAiLoading(prev => ({ ...prev, connection: false }));
+  };
+
+  const testAiTracking = async () => {
+    setAiLoading(prev => ({ ...prev, tracking: true }));
+    try {
+      const searchData = {
+        user_id: user?.id || 1,
+        session_id: `test-${Date.now()}`,
+        search_query: 'casa en guadalajara con piscina',
+        search_type: 'property',
+        filters: { location: 'guadalajara', type: 'casa' },
+        results_count: 25
+      };
+
+      const data = await makeAiApiCall('/ai/track', {
+        method: 'POST',
+        body: JSON.stringify(searchData)
+      });
+
+      setAiResults(prev => ({
+        ...prev,
+        tracking: {
+          success: true,
+          message: '✅ Tracking funcionando',
+          data: data
+        }
+      }));
+      showNotification('Tracking guardado correctamente', 'success');
+    } catch (error) {
+      setAiResults(prev => ({
+        ...prev,
+        tracking: {
+          success: false,
+          message: '❌ Error en tracking',
+          error: error.message
+        }
+      }));
+      showNotification('Error en tracking', 'error');
+    }
+    setAiLoading(prev => ({ ...prev, tracking: false }));
+  };
+
+  const testAiMLEndpoints = async () => {
+    setAiLoading(prev => ({ ...prev, ml: true }));
+    try {
+      const data = await makeAiApiCall('/ai/ml-test');
+      setAiResults(prev => ({
+        ...prev,
+        ml: {
+          success: true,
+          message: '✅ Algoritmos ML funcionando',
+          data: data
+        }
+      }));
+      showNotification('Algoritmos ML verificados', 'success');
+    } catch (error) {
+      setAiResults(prev => ({
+        ...prev,
+        ml: {
+          success: false,
+          message: '❌ Error en algoritmos ML',
+          error: error.message
+        }
+      }));
+      showNotification('Error en algoritmos ML', 'error');
+    }
+    setAiLoading(prev => ({ ...prev, ml: false }));
+  };
+
+  const testAiAlgorithm = async () => {
+    if (!mlQuery.trim()) {
+      showNotification('Por favor escribe una búsqueda', 'error');
+      return;
+    }
+
+    setMlLoading(true);
+    setMlResult(null);
+
+    try {
+      const endpoints = {
+        naive_bayes: '/ai/classify/quick',
+        knn: '/ai/similar',
+        mlp: '/ai/predict/complex',
+        ensemble: '/ai/predict/ensemble',
+        compare: '/ai/compare'
+      };
+
+      const endpoint = endpoints[selectedAlgorithm];
+      const payload = selectedAlgorithm === 'knn' || selectedAlgorithm === 'compare'
+        ? { query: mlQuery, n_similar: 5 }
+        : { query: mlQuery };
+
+      const data = await makeAiApiCall(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      setMlResult(data);
+      showNotification('Algoritmo ejecutado correctamente', 'success');
+    } catch (error) {
+      setMlResult({
+        success: false,
+        error: error.message
+      });
+      showNotification('Error ejecutando algoritmo', 'error');
+    }
+    setMlLoading(false);
+  };
+
+  const loadAiConfig = () => {
+    const configElement = document.getElementById('ai-config');
+    if (configElement) {
+      try {
+        const data = JSON.parse(configElement.textContent || configElement.innerText);
+        setAiConfig(data);
+      } catch (e) {
+        console.error('❌ Error cargando configuración AI:', e);
+      }
+    } else {
+      setAiConfig({
+        algorithms: {
+          naive_bayes: {
+            icon: '🎯',
+            name: 'Naive Bayes',
+            description: 'Clasificación rápida'
+          },
+          knn: {
+            icon: '🔍',
+            name: 'KNN',
+            description: 'Búsqueda por similitud'
+          },
+          mlp: {
+            icon: '🧠',
+            name: 'MLP',
+            description: 'Red neuronal'
+          },
+          ensemble: {
+            icon: '🎭',
+            name: 'Ensemble',
+            description: 'Combinación de modelos'
+          }
+        },
+        testQueries: [
+          'casa venta zapopan',
+          'departamento renta guadalajara',
+          'oficina comercial centro',
+          'terreno industrial'
+        ]
+      });
     }
   };
 
@@ -652,6 +892,44 @@ const [sortBy, setSortBy] = useState('newest');
     );
   };
 
+  const revokeVerification = async (userId, userName) => {
+    showConfirmModal(
+      'Revocar Verificación de Identidad',
+      `¿Estás seguro de que quieres revocar la verificación de identidad de ${userName}? El usuario tendrá que volver a pasar el proceso de verificación.`,
+      async () => {
+        try {
+          const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+          const response = await fetch(`/admin/users/${userId}/revoke-verification`, {
+            method: 'PATCH',
+            headers: {
+              'X-CSRF-TOKEN': csrfToken,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+              reason: 'Revocado manualmente desde panel de administración'
+            })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            showNotification(data.message, 'success');
+            fetchUsers();
+          } else {
+            showNotification(data.error || 'Error al revocar verificación', 'error');
+          }
+        } catch (err) {
+          console.error('Error revoking verification:', err);
+          showNotification('Error de conexión', 'error');
+        }
+      },
+      'warning',
+      'Revocar Verificación'
+    );
+  };
+
   // Funciones de acciones de propiedades
   const togglePropertyActive = async (propertyId, currentActive) => {
     const action = currentActive ? 'desactivar' : 'activar';
@@ -755,7 +1033,7 @@ const [sortBy, setSortBy] = useState('newest');
     }
   };
 
-  // UseEffect para cargar datos automáticamente
+  // UseEffect para cargar datos
   useEffect(() => {
     if (activeSection === 'dashboard') {
       fetchDashboardData();
@@ -764,7 +1042,6 @@ const [sortBy, setSortBy] = useState('newest');
       fetchSystemAnalytics();
       fetchRecentActivity();
 
-      // Auto-refresh cada 30 segundos para datos en tiempo real
       const interval = setInterval(() => {
         fetchSystemAnalytics();
         fetchRecentActivity();
@@ -775,35 +1052,36 @@ const [sortBy, setSortBy] = useState('newest');
       fetchUsers();
     } else if (activeSection === 'properties') {
       fetchProperties();
+    } else if (activeSection === 'ai-test') {
+      loadAiConfig();
+      checkAiConnection();
     }
   }, [activeSection]);
 
+  const filteredProperties = useMemo(() => {
+    let filtered = properties.filter(property => {
+      const matchesSearch = property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (property.city && property.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                           (property.owner && property.owner.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // Función para filtrar y ordenar propiedades
-const filteredProperties = useMemo(() => {
-  let filtered = properties.filter(property => {
-    const matchesSearch = property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (property.city && property.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (property.owner && property.owner.toLowerCase().includes(searchTerm.toLowerCase()));
+      const matchesStatus = filterStatus === 'all' ||
+                           (filterStatus === 'active' && property.is_active) ||
+                           (filterStatus === 'inactive' && !property.is_active);
 
-    const matchesStatus = filterStatus === 'all' ||
-                         (filterStatus === 'active' && property.is_active) ||
-                         (filterStatus === 'inactive' && !property.is_active);
+      return matchesSearch && matchesStatus;
+    });
 
-    return matchesSearch && matchesStatus;
-  });
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'price-high': return (b.price || 0) - (a.price || 0);
+        case 'price-low': return (a.price || 0) - (b.price || 0);
+        case 'oldest': return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        default: return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      }
+    });
 
-  filtered.sort((a, b) => {
-    switch (sortBy) {
-      case 'price-high': return (b.price || 0) - (a.price || 0);
-      case 'price-low': return (a.price || 0) - (b.price || 0);
-      case 'oldest': return new Date(a.created_at || 0) - new Date(b.created_at || 0);
-      default: return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-    }
-  });
-
-  return filtered;
-}, [properties, searchTerm, filterStatus, sortBy]);
+    return filtered;
+  }, [properties, searchTerm, filterStatus, sortBy]);
 
   // Verificación de permisos
   if (!user || user.role !== 'admin') {
@@ -826,7 +1104,7 @@ const filteredProperties = useMemo(() => {
     );
   }
 
-  // Dashboard mejorado con datos reales
+  // Dashboard section
   const dashboardSection = (
     <div className="p-6 sm:p-8">
       <div className="flex justify-between items-center mb-8">
@@ -870,8 +1148,6 @@ const filteredProperties = useMemo(() => {
 
       {dashboardData && !loading && (
         <>
-          {/* KPIs con datos reales */}
-          {/* KPIs actualizados con estadísticas de verificación */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
             <KPICard
               title="Total Usuarios"
@@ -887,14 +1163,13 @@ const filteredProperties = useMemo(() => {
               }
             />
 
-            {/* Nueva KPI para verificación OCR */}
             <KPICard
-              title="Verificados OCR"
+              title="Identidades Verificadas"
               value={userStats?.verified_count || 0}
-              change={userStats?.verification_rate ? `${userStats.verification_rate}% del total` : 'OCR Inactivo'}
+              change={userStats?.verification_rate ? `${userStats.verification_rate}% del total` : null}
               changeType="increase"
               color="from-emerald-500 via-emerald-600 to-emerald-700"
-              description={`${userStats?.pending_verification || 0} pendientes`}
+              description={`${userStats?.pending_verification || 0} sin verificar`}
               icon={
                 <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -902,7 +1177,6 @@ const filteredProperties = useMemo(() => {
               }
             />
 
-            {/* Resto de KPIs existentes */}
             <KPICard
               title="Propiedades"
               value={propertyStats?.total || dashboardData.stats?.properties?.total || 0}
@@ -947,9 +1221,7 @@ const filteredProperties = useMemo(() => {
             />
           </div>
 
-          {/* Gráficos con datos reales */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-            {/* Análisis de usuarios */}
             <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white">Análisis de Usuarios</h3>
@@ -989,13 +1261,11 @@ const filteredProperties = useMemo(() => {
                 </div>
               </div>
 
-              {/* Gráfico de actividad */}
               {analytics?.user_activity && (
                 <ActivityChart data={analytics.user_activity} />
               )}
             </div>
 
-            {/* Métricas del sistema */}
             <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Sistema en Tiempo Real</h3>
 
@@ -1057,7 +1327,6 @@ const filteredProperties = useMemo(() => {
             </div>
           </div>
 
-          {/* Actividad reciente con datos reales */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
               <div className="flex items-center justify-between mb-6">
@@ -1119,7 +1388,6 @@ const filteredProperties = useMemo(() => {
               </div>
             </div>
 
-            {/* Estadísticas de propiedades */}
             <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Propiedades Destacadas</h3>
 
@@ -1201,7 +1469,6 @@ const filteredProperties = useMemo(() => {
             </div>
           </div>
 
-          {/* Tablas con datos reales - Usuarios Recientes */}
           {dashboardData?.recent_users && dashboardData.recent_users.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden mb-8 border border-gray-100 dark:border-gray-700">
               <div className="px-8 py-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
@@ -1297,7 +1564,6 @@ const filteredProperties = useMemo(() => {
             </div>
           )}
 
-          {/* Tablas con datos reales - Propiedades Recientes */}
           {dashboardData?.recent_properties && dashboardData.recent_properties.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700">
               <div className="px-8 py-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
@@ -1386,7 +1652,7 @@ const filteredProperties = useMemo(() => {
     </div>
   );
 
-  // Sección de usuarios
+  // Users Section
   const usersSection = (
     <div className="p-6 sm:p-8">
       <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">Gestión de Usuarios</h2>
@@ -1415,7 +1681,7 @@ const filteredProperties = useMemo(() => {
                   <th className="p-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Email</th>
                   <th className="p-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Rol</th>
                   <th className="p-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Estado</th>
-                  <th className="p-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Verificación OCR</th>
+                  <th className="p-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Verificación de Identidad</th>
                   <th className="p-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Acciones</th>
                 </tr>
               </thead>
@@ -1460,14 +1726,14 @@ const filteredProperties = useMemo(() => {
                               <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                               </svg>
-                              Verificado
+                              Identidad Verificada
                             </>
                           ) : (
                             <>
                               <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                               </svg>
-                              No Verificado
+                              Sin Verificar
                             </>
                           )}
                         </span>
@@ -1496,14 +1762,13 @@ const filteredProperties = useMemo(() => {
                         >
                           Reset Password
                         </button>
-                        {/* Botón para revocar verificación OCR */}
                         {userItem.is_identity_verified && (
                           <button
                             onClick={() => revokeVerification(userItem.id, userItem.name)}
                             className="px-3 py-1 text-xs font-medium text-orange-600 hover:text-orange-700 dark:hover:text-orange-400 bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded transition-colors"
-                            title="Revocar verificación OCR"
+                            title="Revocar verificación de identidad"
                           >
-                            Revocar Verificación
+                            Revocar Identidad
                           </button>
                         )}
                         <button
@@ -1530,45 +1795,7 @@ const filteredProperties = useMemo(() => {
     </div>
   );
 
-  const revokeVerification = async (userId, userName) => {
-    showConfirmModal(
-      'Revocar Verificación OCR',
-      `¿Estás seguro de que quieres revocar la verificación de identidad de ${userName}? El usuario tendrá que volver a pasar el proceso de verificación OCR.`,
-      async () => {
-        try {
-          const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-
-          const response = await fetch(`/admin/users/${userId}/revoke-verification`, {
-            method: 'PATCH',
-            headers: {
-              'X-CSRF-TOKEN': csrfToken,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: JSON.stringify({
-              reason: 'Revocado manualmente desde panel de administración'
-            })
-          });
-
-          const data = await response.json();
-
-          if (response.ok) {
-            showNotification(data.message, 'success');
-            fetchUsers();
-          } else {
-            showNotification(data.error || 'Error al revocar verificación', 'error');
-          }
-        } catch (err) {
-          console.error('Error revoking verification:', err);
-          showNotification('Error de conexión', 'error');
-        }
-      },
-      'warning',
-      'Revocar Verificación'
-    );
-  };
-
-  // Sección de propiedades
+  // Properties Section
   const propertiesSection = (
     <div className="p-6 sm:p-8">
       <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">Gestión de Propiedades</h2>
@@ -1587,208 +1814,195 @@ const filteredProperties = useMemo(() => {
         </div>
       )}
 
-                    {!loading && (
-  <>
-    {/* Header con buscador y filtros */}
-    <div className="bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-gray-800 dark:to-gray-700 rounded-xl p-6 mb-8 border border-emerald-100 dark:border-gray-600">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        {/* Buscador */}
-        <div className="relative flex-1 max-w-md">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          <input
-            type="text"
-            placeholder="Buscar por título, ciudad o propietario..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="block w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
-          />
-        </div>
-
-        {/* Filtros */}
-        <div className="flex flex-wrap gap-3">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="all">Todos los estados</option>
-            <option value="active">Solo activas</option>
-            <option value="inactive">Solo inactivas</option>
-          </select>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="newest">Más recientes</option>
-            <option value="oldest">Más antiguas</option>
-            <option value="price-high">Precio mayor</option>
-            <option value="price-low">Precio menor</option>
-          </select>
-
-          <div className="flex items-center px-4 py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600">
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              {filteredProperties.length} de {properties.length}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {/* Grid de propiedades */}
-    {filteredProperties.length > 0 ? (
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredProperties.map((property, index) => (
-          <div key={property.id || index} className="group bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-2xl hover:scale-[1.02] transition-all duration-300">
-            {/* Header con foto */}
-            <div className="relative overflow-hidden">
-              {property.photos && property.photos.length > 0 ? (
-                <img
-                  src={property.photos[0].thumbnail || property.photos[0].url}
-                  alt={property.title}
-                  className="w-full h-48 object-cover cursor-pointer group-hover:scale-110 transition-transform duration-300"
-                  onClick={() => setViewingPhotos(property)}
-                  onError={(e) => {
-                    e.target.src = '/images/no-image-placeholder.png';
-                  }}
-                />
-              ) : (
-                <div
-                  className="w-full h-48 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 flex items-center justify-center cursor-pointer group-hover:from-gray-300 transition-all duration-300"
-                  onClick={() => setViewingPhotos(property)}
-                >
-                  <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      {!loading && (
+        <>
+          <div className="bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-gray-800 dark:to-gray-700 rounded-xl p-6 mb-8 border border-emerald-100 dark:border-gray-600">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="relative flex-1 max-w-md">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
-              )}
-
-              {/* Badge de estado */}
-              <div className="absolute top-3 right-3">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm shadow-lg ${
-                  property.is_active
-                    ? 'bg-green-100/90 text-green-800 dark:bg-green-900/50 dark:text-green-300'
-                    : 'bg-red-100/90 text-red-800 dark:bg-red-900/50 dark:text-red-300'
-                }`}>
-                  {property.is_active ? 'Activa' : 'Inactiva'}
-                </span>
+                <input
+                  type="text"
+                  placeholder="Buscar por título, ciudad o propietario..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="block w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+                />
               </div>
 
-              {/* Contador de fotos */}
-              {property.photos && property.photos.length > 1 && (
-                <div className="absolute top-3 left-3">
-                  <span className="bg-black/70 text-white px-2 py-1 rounded-lg text-xs font-medium backdrop-blur-sm">
-                    +{property.photos.length - 1} fotos
+              <div className="flex flex-wrap gap-3">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="all">Todos los estados</option>
+                  <option value="active">Solo activas</option>
+                  <option value="inactive">Solo inactivas</option>
+                </select>
+
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="newest">Más recientes</option>
+                  <option value="oldest">Más antiguas</option>
+                  <option value="price-high">Precio mayor</option>
+                  <option value="price-low">Precio menor</option>
+                </select>
+
+                <div className="flex items-center px-4 py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600">
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    {filteredProperties.length} de {properties.length}
                   </span>
                 </div>
-              )}
-            </div>
-
-            {/* Contenido */}
-            <div className="p-5">
-              {/* Título y precio */}
-              <div className="mb-4">
-                <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2 line-clamp-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                  {property.title}
-                </h3>
-                <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent">
-                  ${typeof property.price === 'number' ? property.price.toLocaleString() : property.price}
-                </div>
-              </div>
-
-              {/* Detalles */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <div className="text-blue-600 dark:text-blue-400 font-bold text-lg">{property.bedrooms || 0}</div>
-                  <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">Habitaciones</div>
-                </div>
-                <div className="text-center p-3 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                  <div className="text-emerald-600 dark:text-emerald-400 font-bold text-lg">{property.bathrooms || 0}</div>
-                  <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Baños</div>
-                </div>
-                <div className="text-center p-3 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <div className="text-purple-600 dark:text-purple-400 font-bold text-lg">{property.area || 'N/A'}</div>
-                  <div className="text-xs text-purple-600 dark:text-purple-400 font-medium">m²</div>
-                </div>
-              </div>
-
-              {/* Ubicación */}
-              <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div className="flex items-center text-sm font-medium text-gray-900 dark:text-white mb-1">
-                  <svg className="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {property.city || 'N/A'}
-                </div>
-                <div className="text-xs text-gray-500 truncate pl-6">{property.address || 'Sin dirección'}</div>
-              </div>
-
-              {/* Propietario */}
-              <div className="mb-4 text-sm bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 p-3 rounded-lg">
-                <span className="text-gray-500">Propietario: </span>
-                <span className="text-gray-900 dark:text-white font-semibold">{property.owner}</span>
-              </div>
-
-              {/* Acciones */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setViewingPhotos(property)}
-                  className="flex items-center justify-center px-3 py-2 text-xs font-medium text-purple-600 hover:text-white bg-purple-50 hover:bg-purple-600 dark:bg-purple-900/20 dark:hover:bg-purple-600 rounded-lg transition-all duration-200 border border-purple-200 hover:border-purple-600"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Fotos
-                </button>
-                <button
-                  onClick={() => setEditingProperty(property)}
-                  className="flex items-center justify-center px-3 py-2 text-xs font-medium text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 dark:bg-blue-900/20 dark:hover:bg-blue-600 rounded-lg transition-all duration-200 border border-blue-200 hover:border-blue-600"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  Editar
-                </button>
-                <button
-                  onClick={() => togglePropertyActive(property.id, property.is_active)}
-                  className="flex items-center justify-center px-3 py-2 text-xs font-medium text-yellow-600 hover:text-white bg-yellow-50 hover:bg-yellow-600 dark:bg-yellow-900/20 dark:hover:bg-yellow-600 rounded-lg transition-all duration-200 border border-yellow-200 hover:border-yellow-600"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  {property.is_active ? 'Desactivar' : 'Activar'}
-                </button>
-                <button
-                  onClick={() => deleteProperty(property.id)}
-                  className="flex items-center justify-center px-3 py-2 text-xs font-medium text-red-600 hover:text-white bg-red-50 hover:bg-red-600 dark:bg-red-900/20 dark:hover:bg-red-600 rounded-lg transition-all duration-200 border border-red-200 hover:border-red-600"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Eliminar
-                </button>
               </div>
             </div>
           </div>
-        ))}
-      </div>
-    ) : (
-      <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
-        <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.156 0-4.115-.663-5.75-1.709M6 18L4 16v-1a8 8 0 1116 0v1l-2 2-1.5-1.5" />
-        </svg>
-        <p className="text-gray-500 text-lg">No se encontraron propiedades</p>
-        <p className="text-gray-400 text-sm mt-2">Intenta ajustar los filtros de búsqueda</p>
-      </div>
-    )}
-  </>
-)}
+
+          {filteredProperties.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredProperties.map((property, index) => (
+                <div key={property.id || index} className="group bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-2xl hover:scale-[1.02] transition-all duration-300">
+                  <div className="relative overflow-hidden">
+                    {property.photos && property.photos.length > 0 ? (
+                      <img
+                        src={property.photos[0].thumbnail || property.photos[0].url}
+                        alt={property.title}
+                        className="w-full h-48 object-cover cursor-pointer group-hover:scale-110 transition-transform duration-300"
+                        onClick={() => setViewingPhotos(property)}
+                        onError={(e) => {
+                          e.target.src = '/images/no-image-placeholder.png';
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-48 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 flex items-center justify-center cursor-pointer group-hover:from-gray-300 transition-all duration-300"
+                        onClick={() => setViewingPhotos(property)}
+                      >
+                        <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    )}
+
+                    <div className="absolute top-3 right-3">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm shadow-lg ${
+                        property.is_active
+                          ? 'bg-green-100/90 text-green-800 dark:bg-green-900/50 dark:text-green-300'
+                          : 'bg-red-100/90 text-red-800 dark:bg-red-900/50 dark:text-red-300'
+                      }`}>
+                        {property.is_active ? 'Activa' : 'Inactiva'}
+                      </span>
+                    </div>
+
+                    {property.photos && property.photos.length > 1 && (
+                      <div className="absolute top-3 left-3">
+                        <span className="bg-black/70 text-white px-2 py-1 rounded-lg text-xs font-medium backdrop-blur-sm">
+                          +{property.photos.length - 1} fotos
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-5">
+                    <div className="mb-4">
+                      <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2 line-clamp-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                        {property.title}
+                      </h3>
+                      <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent">
+                        ${typeof property.price === 'number' ? property.price.toLocaleString() : property.price}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <div className="text-blue-600 dark:text-blue-400 font-bold text-lg">{property.bedrooms || 0}</div>
+                        <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">Habitaciones</div>
+                      </div>
+                      <div className="text-center p-3 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                        <div className="text-emerald-600 dark:text-emerald-400 font-bold text-lg">{property.bathrooms || 0}</div>
+                        <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Baños</div>
+                      </div>
+                      <div className="text-center p-3 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                        <div className="text-purple-600 dark:text-purple-400 font-bold text-lg">{property.area || 'N/A'}</div>
+                        <div className="text-xs text-purple-600 dark:text-purple-400 font-medium">m²</div>
+                      </div>
+                    </div>
+
+                    <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className="flex items-center text-sm font-medium text-gray-900 dark:text-white mb-1">
+                        <svg className="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {property.city || 'N/A'}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate pl-6">{property.address || 'Sin dirección'}</div>
+                    </div>
+
+                    <div className="mb-4 text-sm bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 p-3 rounded-lg">
+                      <span className="text-gray-500">Propietario: </span>
+                      <span className="text-gray-900 dark:text-white font-semibold">{property.owner}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setViewingPhotos(property)}
+                        className="flex items-center justify-center px-3 py-2 text-xs font-medium text-purple-600 hover:text-white bg-purple-50 hover:bg-purple-600 dark:bg-purple-900/20 dark:hover:bg-purple-600 rounded-lg transition-all duration-200 border border-purple-200 hover:border-purple-600"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Fotos
+                      </button>
+                      <button
+                        onClick={() => setEditingProperty(property)}
+                        className="flex items-center justify-center px-3 py-2 text-xs font-medium text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 dark:bg-blue-900/20 dark:hover:bg-blue-600 rounded-lg transition-all duration-200 border border-blue-200 hover:border-blue-600"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => togglePropertyActive(property.id, property.is_active)}
+                        className="flex items-center justify-center px-3 py-2 text-xs font-medium text-yellow-600 hover:text-white bg-yellow-50 hover:bg-yellow-600 dark:bg-yellow-900/20 dark:hover:bg-yellow-600 rounded-lg transition-all duration-200 border border-yellow-200 hover:border-yellow-600"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        {property.is_active ? 'Desactivar' : 'Activar'}
+                      </button>
+                      <button
+                        onClick={() => deleteProperty(property.id)}
+                        className="flex items-center justify-center px-3 py-2 text-xs font-medium text-red-600 hover:text-white bg-red-50 hover:bg-red-600 dark:bg-red-900/20 dark:hover:bg-red-600 rounded-lg transition-all duration-200 border border-red-200 hover:border-red-600"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
+              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.156 0-4.115-.663-5.75-1.709M6 18L4 16v-1a8 8 0 1116 0v1l-2 2-1.5-1.5" />
+              </svg>
+              <p className="text-gray-500 text-lg">No se encontraron propiedades</p>
+              <p className="text-gray-400 text-sm mt-2">Intenta ajustar los filtros de búsqueda</p>
+            </div>
+          )}
+        </>
+      )}
 
       {!loading && properties.length === 0 && !error && (
         <div className="text-center py-8">
@@ -1798,122 +2012,257 @@ const filteredProperties = useMemo(() => {
     </div>
   );
 
-  // Sección de configuración
-  const settingsSection = (
+  // AI Test Section  
+  const aiTestSection = (
     <div className="p-6 sm:p-8">
-      <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">Configuración</h2>
-      <p className="text-gray-600 dark:text-gray-300 mb-6">Personaliza las configuraciones del sistema.</p>
+      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-8 mb-8">
+        <h2 className="text-4xl font-bold text-white mb-2">
+          🤖 ViveSpaces AI - Sistema de Pruebas
+        </h2>
+        <p className="text-emerald-100">
+          Prueba los 3 algoritmos de Machine Learning y verifica la conexión con FastAPI
+        </p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Configuración del sistema */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Sistema</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Modo de mantenimiento
-              </label>
-              <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                <option value="disabled">Desactivado</option>
-                <option value="enabled">Activado</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Límite de registros por día
-              </label>
-              <input
-                type="number"
-                defaultValue="100"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Configuración de notificaciones */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notificaciones</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Nuevos usuarios</span>
-              <input type="checkbox" defaultChecked className="rounded" />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Nuevas propiedades</span>
-              <input type="checkbox" defaultChecked className="rounded" />
-            </div>
-            <div className="flex items-center justify-between">
-  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Reportes de errores</span>
-  <input type="checkbox" defaultChecked className="rounded" />
-    </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Alertas de seguridad</span>
-              <input type="checkbox" defaultChecked className="rounded" />
-            </div>
-          </div>
-        </div>
-
-        {/* Configuración de emails */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Configuración de Email</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Servidor SMTP
-              </label>
-              <input
-                type="text"
-                placeholder="smtp.gmail.com"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Puerto
-              </label>
-              <input
-                type="number"
-                placeholder="587"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Configuración de citas */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Sistema de Citas</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Activar sistema de citas</span>
-              <input type="checkbox" defaultChecked className="rounded" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Duración máxima de cita (horas)
-              </label>
-              <input
-                type="number"
-                defaultValue="2"
-                min="1"
-                max="8"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Requerir verificación para citas</span>
-              <input type="checkbox" defaultChecked className="rounded" />
-            </div>
-          </div>
+        <div className="mt-4 inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-full px-4 py-2">
+          <div className={`w-3 h-3 rounded-full ${
+            aiConnectionStatus === 'connected' ? 'bg-green-400 animate-pulse' :
+            aiConnectionStatus === 'disconnected' ? 'bg-red-400' :
+            'bg-yellow-400 animate-pulse'
+          }`}></div>
+          <span className="text-white font-medium">
+            {aiConnectionStatus === 'connected' ? 'API Conectada' :
+             aiConnectionStatus === 'disconnected' ? 'API Desconectada' :
+             'Verificando...'}
+          </span>
         </div>
       </div>
 
-      <div className="mt-8 flex justify-end">
-        <button className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-          Guardar Configuración
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+          <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">
+            🔌 Conexión
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+            Verificar que FastAPI esté corriendo
+          </p>
+          <button
+            onClick={testAiConnection}
+            disabled={aiLoading.connection}
+            className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+          >
+            {aiLoading.connection ? '⏳ Probando...' : '🚀 Probar Conexión'}
+          </button>
+
+          {aiResults.connection && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              aiResults.connection.success
+                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200'
+            }`}>
+              <div className="font-medium">{aiResults.connection.message}</div>
+              {aiResults.connection.data && (
+                <pre className="mt-2 text-xs overflow-auto max-h-32">
+                  {JSON.stringify(aiResults.connection.data, null, 2)}
+                </pre>
+              )}
+              {aiResults.connection.error && (
+                <pre className="mt-2 text-xs">
+                  {aiResults.connection.error}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+          <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">
+            📊 Tracking
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+            Guardar eventos de búsqueda
+          </p>
+          <button
+            onClick={testAiTracking}
+            disabled={aiLoading.tracking || aiConnectionStatus !== 'connected'}
+            className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+          >
+            {aiLoading.tracking ? '⏳ Enviando...' : '📤 Enviar Búsqueda'}
+          </button>
+
+          {aiResults.tracking && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              aiResults.tracking.success
+                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200'
+            }`}>
+              <div className="font-medium">{aiResults.tracking.message}</div>
+              {aiResults.tracking.error && (
+                <pre className="mt-2 text-xs">
+                  {aiResults.tracking.error}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+          <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">
+            🧠 Algoritmos ML
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+            Verificar que los algoritmos funcionen
+          </p>
+          <button
+            onClick={testAiMLEndpoints}
+            disabled={aiLoading.ml || aiConnectionStatus !== 'connected'}
+            className="w-full bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+          >
+            {aiLoading.ml ? '⏳ Probando...' : '🧪 Test Algoritmos'}
+          </button>
+
+          {aiResults.ml && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              aiResults.ml.success
+                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200'
+            }`}>
+              <div className="font-medium">{aiResults.ml.message}</div>
+              {aiResults.ml.error && (
+                <pre className="mt-2 text-xs">
+                  {aiResults.ml.error}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8">
+        {aiConfig && (
+          <>
+            <div className="mb-6">
+              <label className="block text-lg font-bold text-gray-900 dark:text-white mb-3">
+                Selecciona el Algoritmo:
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.entries(aiConfig.algorithms).map(([key, algo]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedAlgorithm(key)}
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      selectedAlgorithm === key
+                        ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 shadow-lg scale-105'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">{algo.icon}</div>
+                    <div className="font-bold text-sm text-gray-900 dark:text-white">{algo.name}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{algo.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Escribe tu búsqueda:
+              </label>
+              <input
+                type="text"
+                value={mlQuery}
+                onChange={(e) => setMlQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && testAiAlgorithm()}
+                placeholder="Ej: casa venta zapopan con piscina"
+                className="w-full px-4 py-3 text-lg border-2 border-gray-300 dark:border-gray-700 rounded-lg focus:border-emerald-500 focus:outline-none dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Ejemplos rápidos:
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {aiConfig.testQueries.map((example, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setMlQuery(example)}
+                    className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded-full transition-colors text-gray-700 dark:text-gray-300"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={testAiAlgorithm}
+              disabled={mlLoading || !mlQuery.trim() || aiConnectionStatus !== 'connected'}
+              className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-lg rounded-xl hover:from-emerald-700 hover:to-teal-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl"
+            >
+              {mlLoading ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Analizando con {aiConfig.algorithms[selectedAlgorithm]?.name}...
+                </span>
+              ) : (
+                `🔍 Buscar con ${aiConfig.algorithms[selectedAlgorithm]?.name}`
+              )}
+            </button>
+
+            {mlResult && (
+              <div className="mt-8">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                  📊 Resultados de {aiConfig.algorithms[selectedAlgorithm]?.name}:
+                </h3>
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/10 dark:to-teal-900/10 rounded-xl p-6 border-2 border-emerald-200 dark:border-emerald-800">
+                  <pre className="text-sm overflow-auto max-h-96 bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    {JSON.stringify(mlResult, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+          📝 Información del Sistema
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <h4 className="font-semibold text-gray-700 dark:text-gray-300">Estado API:</h4>
+            <p className={`font-bold ${
+              aiConnectionStatus === 'connected' ? 'text-green-600' :
+              aiConnectionStatus === 'disconnected' ? 'text-red-600' : 'text-yellow-600'
+            }`}>
+              {aiConnectionStatus === 'connected' ? '✅ Conectada' :
+               aiConnectionStatus === 'disconnected' ? '❌ Desconectada' :
+               '⏳ Verificando...'}
+            </p>
+          </div>
+          <div>
+            <h4 className="font-semibold text-gray-700 dark:text-gray-300">Usuario:</h4>
+            <p className="text-gray-600 dark:text-gray-400">
+              {user ? `${user.name} (#${user.id})` : 'No autenticado'}
+            </p>
+          </div>
+          <div>
+            <h4 className="font-semibold text-gray-700 dark:text-gray-300">Tests Completados:</h4>
+            <p className="text-gray-600 dark:text-gray-400">
+              {Object.keys(aiResults).length} / 3
+            </p>
+          </div>
+          <div>
+            <h4 className="font-semibold text-gray-700 dark:text-gray-300">Algoritmos:</h4>
+            <p className="text-gray-600 dark:text-gray-400">
+              4 disponibles
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1923,7 +2272,7 @@ const filteredProperties = useMemo(() => {
     dashboard: dashboardSection,
     users: usersSection,
     properties: propertiesSection,
-    settings: settingsSection,
+    'ai-test': aiTestSection,
   };
 
   return (
@@ -2055,17 +2404,16 @@ const filteredProperties = useMemo(() => {
             </li>
 
             <li
-              className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 ${activeSection === 'settings'
+              className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 ${activeSection === 'ai-test'
                   ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
-              onClick={() => setActiveSection('settings')}
+              onClick={() => setActiveSection('ai-test')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
-              Configuración
+              Test AI / FastAPI
             </li>
 
             <li className="flex items-center gap-3 p-3 rounded-lg cursor-pointer text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200">

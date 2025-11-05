@@ -36,7 +36,7 @@ class OCRService
             'max_width' => 1400,
             'max_height' => 1800,
             'quality' => 85,
-            'engine' => '3'
+            'engine' => '2'
         ]
     ];
 
@@ -140,6 +140,268 @@ class OCRService
             ]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * 🆕 Validar que el nombre del documento coincida con el usuario
+     */
+    public function validateNameMatch($extractedText, $userName)
+    {
+        $extractedText = strtoupper($this->removeAccents($extractedText));
+        $userName = strtoupper($this->removeAccents($userName));
+        
+        Log::info('🔍 Comparando nombres', [
+            'user_name' => $userName,
+            'extracted_text_preview' => substr($extractedText, 0, 200)
+        ]);
+
+        // Dividir nombre del usuario en palabras
+        $userWords = preg_split('/\s+/', trim($userName));
+        $matchedWords = 0;
+        $totalWords = count($userWords);
+        $foundWords = [];
+
+        foreach ($userWords as $word) {
+            if (strlen($word) < 3) continue; // Ignorar palabras muy cortas como "DE", "LA"
+            
+            // Buscar la palabra completa o con variaciones
+            if (strpos($extractedText, $word) !== false) {
+                $matchedWords++;
+                $foundWords[] = $word;
+                Log::info("✓ Palabra encontrada: {$word}");
+            } else {
+                Log::warning("✗ Palabra NO encontrada: {$word}");
+            }
+        }
+
+        $matchPercentage = $totalWords > 0 ? ($matchedWords / $totalWords) * 100 : 0;
+
+        Log::info('📊 Resultado comparación de nombres', [
+            'matched_words' => $matchedWords,
+            'total_words' => $totalWords,
+            'match_percentage' => round($matchPercentage, 2),
+            'found_words' => $foundWords
+        ]);
+
+        return [
+            'matches' => $matchPercentage >= 70, // Al menos 70% de coincidencia
+            'match_percentage' => round($matchPercentage, 2),
+            'matched_words' => $matchedWords,
+            'total_words' => $totalWords,
+            'found_words' => $foundWords
+        ];
+    }
+
+    /**
+     * 🆕 Remover acentos para mejor comparación
+     */
+    private function removeAccents($string)
+    {
+        $unwanted = [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
+            'Ñ' => 'N', 'ñ' => 'n', 'Ü' => 'U', 'ü' => 'u'
+        ];
+        
+        return strtr($string, $unwanted);
+    }
+
+    /**
+     * 🆕 Validar que el documento sea reciente (2024-2025)
+     */
+    public function validateDocumentRecency($text, $documentType)
+    {
+        $currentYear = date('Y'); // 2025
+        $allowedYears = [$currentYear - 1, $currentYear, $currentYear + 1]; // 2024, 2025, 2026
+
+        $foundYears = [];
+        
+        // Buscar años en formato 4 dígitos
+        if (preg_match_all('/\b(20\d{2})\b/', $text, $matches)) {
+            foreach ($matches[1] as $year) {
+                $year = intval($year);
+                if ($year >= 2020 && $year <= 2035) {
+                    $foundYears[] = $year;
+                }
+            }
+        }
+
+        Log::info('📅 Validando vigencia del documento', [
+            'document_type' => $documentType,
+            'found_years' => $foundYears,
+            'allowed_years' => $allowedYears,
+            'current_year' => $currentYear
+        ]);
+
+        // Para INE: debe tener año de vigencia 2024 o superior
+        if ($documentType === 'ine') {
+            // La INE muestra año de vigencia (cuando expira)
+            $validYears = array_filter($foundYears, function($year) use ($currentYear) {
+                return $year >= $currentYear; // Vigente si expira en 2025 o después
+            });
+
+            if (!empty($validYears)) {
+                $latestYear = max($validYears);
+                Log::info("✅ INE vigente encontrada, expira: {$latestYear}");
+                return [
+                    'is_recent' => true,
+                    'year_found' => $latestYear,
+                    'message' => "INE vigente hasta {$latestYear}"
+                ];
+            }
+            
+            return [
+                'is_recent' => false,
+                'year_found' => $foundYears[0] ?? null,
+                'message' => 'La INE debe estar vigente (no vencida)',
+                'suggestion' => 'Tu INE parece estar vencida. Necesitas renovarla.'
+            ];
+        }
+
+        // Para Pasaporte: similar validación
+        if ($documentType === 'pasaporte') {
+            // El pasaporte muestra fecha de expedición y vencimiento
+            $validYears = array_filter($foundYears, function($year) use ($currentYear) {
+                return $year >= $currentYear - 5 && $year <= $currentYear + 10;
+            });
+
+            if (!empty($validYears)) {
+                $latestYear = max($validYears);
+                Log::info("✅ Pasaporte vigente encontrado, expira: {$latestYear}");
+                return [
+                    'is_recent' => true,
+                    'year_found' => $latestYear,
+                    'message' => "Pasaporte vigente hasta {$latestYear}"
+                ];
+            }
+            
+            return [
+                'is_recent' => false,
+                'year_found' => null,
+                'message' => 'El pasaporte debe estar vigente',
+                'suggestion' => 'Tu pasaporte parece estar vencido o próximo a vencer.'
+            ];
+        }
+
+        // Para comprobante: máximo 4 meses
+        if ($documentType === 'comprobante') {
+            return $this->validateBillRecency($text);
+        }
+
+        return ['is_recent' => true, 'message' => 'Validación no requerida'];
+    }
+
+    /**
+     * 🆕 Validar que el comprobante sea reciente (máximo 4 meses)
+     */
+    private function validateBillRecency($text)
+    {
+        $currentYear = date('Y');
+        $currentMonth = date('m');
+        $currentDate = new \DateTime();
+
+        Log::info('📅 Validando fecha del comprobante', [
+            'current_date' => $currentDate->format('Y-m-d')
+        ]);
+
+        // Buscar fechas en diferentes formatos
+        $datePatterns = [
+            '/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/',  // DD/MM/YYYY o DD-MM-YYYY
+            '/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/',  // YYYY/MM/DD o YYYY-MM-DD
+            '/(\d{1,2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)[A-Z]*\s+(\d{4})/i' // DD MES YYYY
+        ];
+
+        $foundDates = [];
+
+        foreach ($datePatterns as $pattern) {
+            if (preg_match_all($pattern, $text, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    if (count($match) === 4) {
+                        if (preg_match('/^\d{4}/', $match[0])) {
+                            // Formato YYYY-MM-DD
+                            $year = intval($match[1]);
+                            $month = intval($match[2]);
+                            $day = intval($match[3]);
+                        } elseif (preg_match('/[A-Z]+/', $match[2])) {
+                            // Formato DD MES YYYY
+                            $day = intval($match[1]);
+                            $monthNames = [
+                                'ENE' => 1, 'FEB' => 2, 'MAR' => 3, 'ABR' => 4,
+                                'MAY' => 5, 'JUN' => 6, 'JUL' => 7, 'AGO' => 8,
+                                'SEP' => 9, 'OCT' => 10, 'NOV' => 11, 'DIC' => 12
+                            ];
+                            $monthStr = strtoupper(substr($match[2], 0, 3));
+                            $month = $monthNames[$monthStr] ?? 0;
+                            $year = intval($match[3]);
+                        } else {
+                            // Formato DD/MM/YYYY
+                            $day = intval($match[1]);
+                            $month = intval($match[2]);
+                            $year = intval($match[3]);
+                        }
+
+                        if (checkdate($month, $day, $year)) {
+                            $foundDates[] = [
+                                'year' => $year,
+                                'month' => $month,
+                                'day' => $day,
+                                'date_string' => sprintf('%04d-%02d-%02d', $year, $month, $day)
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        if (empty($foundDates)) {
+            return [
+                'is_recent' => false,
+                'message' => 'No se pudo detectar la fecha del comprobante',
+                'suggestion' => 'Asegúrate de que la fecha sea claramente visible'
+            ];
+        }
+
+        // Buscar la fecha más reciente encontrada
+        usort($foundDates, function($a, $b) {
+            return strcmp($b['date_string'], $a['date_string']);
+        });
+
+        $mostRecentDate = $foundDates[0];
+        $billDate = new \DateTime($mostRecentDate['date_string']);
+        $interval = $currentDate->diff($billDate);
+        $monthsDiff = ($interval->y * 12) + $interval->m;
+
+        Log::info('📊 Análisis de fecha del comprobante', [
+            'found_date' => $mostRecentDate['date_string'],
+            'months_difference' => $monthsDiff,
+            'is_in_future' => $billDate > $currentDate
+        ]);
+
+        if ($billDate > $currentDate) {
+            return [
+                'is_recent' => false,
+                'date_found' => $mostRecentDate['date_string'],
+                'message' => 'La fecha del comprobante está en el futuro',
+                'suggestion' => 'Verifica que la fecha sea correcta'
+            ];
+        }
+
+        if ($monthsDiff <= 4) {
+            return [
+                'is_recent' => true,
+                'date_found' => $mostRecentDate['date_string'],
+                'months_old' => $monthsDiff,
+                'message' => "Comprobante válido ({$monthsDiff} meses de antigüedad)"
+            ];
+        }
+
+        return [
+            'is_recent' => false,
+            'date_found' => $mostRecentDate['date_string'],
+            'months_old' => $monthsDiff,
+            'message' => "El comprobante es muy antiguo ({$monthsDiff} meses)",
+            'suggestion' => 'El comprobante debe tener máximo 4 meses de antigüedad'
+        ];
     }
 
     /**

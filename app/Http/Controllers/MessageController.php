@@ -9,12 +9,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class MessageController extends Controller
 {
     public function __construct()
     {
-        // NO DESCOMENTAR ESTE MIDDELWARE PORQUE NO CARGAN LOS MENSAJES $this->middleware('auth');
+        // NO DESCOMENTAR ESTE MIDDELWARE PORQUE NO CARGAN LOS MENSAJES
     }
 
     // Mostrar todas las conversaciones del usuario
@@ -56,7 +57,6 @@ class MessageController extends Controller
 
         $otherUser->avatar_url = $otherUser->avatar_url;
 
-
         // Verificar permisos
         if (!Auth::user()->canContactProperty($propertyId) && $property->user_id !== Auth::id()) {
             abort(403, 'No tienes permiso para ver esta conversación');
@@ -78,8 +78,6 @@ class MessageController extends Controller
         return view('messages.show', compact('property', 'otherUser', 'messages'));
     }
 
-    // ✅ MÉTODO STORE CORREGIDO
-    // En app/Http/Controllers/MessageController.php - REEMPLAZAR método store COMPLETO
     public function store(Request $request)
     {
         \Log::info('🚀🚀🚀 CÓDIGO NUEVO EJECUTÁNDOSE - VERSIÓN ACTUALIZADA 🚀🚀🚀');
@@ -104,7 +102,6 @@ class MessageController extends Controller
             'property_id' => 'required|exists:properties,id',
             'receiver_id' => 'required|exists:users,id',
             'message' => 'nullable|string|max:1000',
-            // ✅ AGREGADO MÁS TIPOS DE AUDIO
             'file' => 'nullable|file|max:10240|mimes:jpeg,png,jpg,gif,webp,pdf,txt,doc,docx,mp3,wav,ogg,webm,mp4,aac,m4a,flac',
             'reply_to_id' => 'nullable|exists:messages,id',
             'type' => 'nullable|in:text,image,file,voice,location',
@@ -129,7 +126,6 @@ class MessageController extends Controller
             ], 422);
         }
 
-        // ✅ VERIFICACIÓN ACTUALIZADA: mensaje O archivo O ubicación
         if (empty($request->message) && !$request->hasFile('file') && $request->type !== 'location') {
             return response()->json([
                 'success' => false,
@@ -141,7 +137,6 @@ class MessageController extends Controller
         try {
             $property = Property::findOrFail($request->property_id);
 
-            // Verificar permisos básicos
             if ($request->receiver_id == Auth::id()) {
                 return response()->json([
                     'success' => false,
@@ -199,34 +194,28 @@ class MessageController extends Controller
                     'size' => $file->getSize()
                 ]);
 
-                // ✅ DETECCIÓN MEJORADA DE TIPO DE ARCHIVO
                 if (str_starts_with($file->getMimeType(), 'image/')) {
                     $messageData['type'] = 'image';
                     \Log::info('🖼️ Detectado como imagen');
                 }
-                // ✅ MEJORA: Detectar audio por extensión Y mime-type
                 elseif (
                     str_starts_with($file->getMimeType(), 'audio/') ||
-                    $file->getMimeType() === 'video/webm' ||  // ✅ CLAVE: webm puede ser audio
+                    $file->getMimeType() === 'video/webm' ||
                     in_array(strtolower($file->getExtension()), ['mp3', 'wav', 'ogg', 'webm', 'm4a', 'aac', 'flac']) ||
-                    $file->getClientOriginalName() === 'voice-message.webm'  // ✅ DETECTAR POR NOMBRE
+                    $file->getClientOriginalName() === 'voice-message.webm'
                 ) {
                     $messageData['type'] = 'voice';
                     \Log::info('🎵 Detectado como audio/voz');
 
-                    // ✅ OBTENER DURACIÓN DEL AUDIO CON getID3
                     try {
                         \Log::info('🎵 Analizando audio con getID3...');
                         \Log::info('📁 Archivo a analizar: ' . $fullPath);
-                        \Log::info('🔍 Mime type: ' . $file->getMimeType());
-                        \Log::info('📝 Nombre original: ' . $file->getClientOriginalName());
 
                         $getID3 = new \getID3;
                         $fileInfo = $getID3->analyze($fullPath);
 
                         \Log::info('📊 Información completa del archivo:', $fileInfo);
 
-                        // ✅ OBTENER DURACIÓN DEL AUDIO CON getID3
                         if (isset($fileInfo['playtime_seconds'])) {
                             $duration = round($fileInfo['playtime_seconds']);
                             $messageData['duration'] = $duration;
@@ -238,9 +227,7 @@ class MessageController extends Controller
                         } else {
                             \Log::warning('⚠️ No se encontró playtime_seconds en fileInfo');
 
-                            // ✅ FALLBACK: Calcular duración aproximada para WebM
                             if ($file->getMimeType() === 'video/webm' && isset($fileInfo['filesize'])) {
-                                // Aproximación: 1 segundo por cada 8KB para audio WebM
                                 $estimatedDuration = max(1, round($fileInfo['filesize'] / 8192));
                                 $messageData['duration'] = $estimatedDuration;
 
@@ -252,7 +239,7 @@ class MessageController extends Controller
                                 \Log::info('🔍 Claves disponibles en fileInfo: ' . implode(', ', array_keys($fileInfo)));
                             }
                         }
-                        // Información adicional del audio
+
                         if (isset($fileInfo['audio'])) {
                             $audioInfo = [
                                 'bitrate' => $fileInfo['audio']['bitrate'] ?? null,
@@ -263,7 +250,6 @@ class MessageController extends Controller
                             $messageData['metadata'] = $audioInfo;
                             \Log::info('🎵 Info del audio:', $audioInfo);
                         } elseif (isset($fileInfo['video'])) {
-                            // Para archivos webm que pueden tener info en 'video'
                             $audioInfo = [
                                 'bitrate' => $fileInfo['video']['bitrate'] ?? null,
                                 'resolution' => ($fileInfo['video']['resolution_x'] ?? '') . 'x' . ($fileInfo['video']['resolution_y'] ?? ''),
@@ -278,9 +264,8 @@ class MessageController extends Controller
                         \Log::error('💥 Error al analizar audio con getID3: ' . $e->getMessage());
                         \Log::error('📍 Stack trace: ' . $e->getTraceAsString());
 
-                        // Fallback: duración por defecto para webm
                         if ($file->getMimeType() === 'video/webm' || $file->getClientOriginalName() === 'voice-message.webm') {
-                            $messageData['duration'] = 10; // 10 segundos por defecto
+                            $messageData['duration'] = 10;
                             \Log::info('🔄 Usando duración por defecto para audio: 10 segundos');
                         }
                     }
@@ -309,7 +294,6 @@ class MessageController extends Controller
                 $message->sender->avatar_url = $message->sender->avatar_url;
             }
 
-            // ✅ RESPUESTA MEJORADA CON DATOS DE AUDIO
             $formattedMessage = [
                 'id' => $message->id,
                 'sender_id' => $message->sender_id,
@@ -352,7 +336,7 @@ class MessageController extends Controller
             ], 500);
         }
     }
-    // Marcar mensaje como leído
+
     public function markAsRead($messageId)
     {
         $message = Message::findOrFail($messageId);
@@ -366,7 +350,6 @@ class MessageController extends Controller
         return response()->json(['success' => false], 403);
     }
 
-    // Agregar reacción
     public function addReaction(Request $request, $messageId)
     {
         $validator = Validator::make($request->all(), [
@@ -386,7 +369,6 @@ class MessageController extends Controller
         ]);
     }
 
-    // Eliminar reacción
     public function removeReaction(Request $request, $messageId)
     {
         $validator = Validator::make($request->all(), [
@@ -399,7 +381,6 @@ class MessageController extends Controller
 
         $message = Message::findOrFail($messageId);
 
-        // Verificar que el usuario puede quitar la reacción
         if (!in_array(Auth::id(), $message->reactions[$request->emoji] ?? [])) {
             return response()->json(['success' => false], 403);
         }
@@ -412,7 +393,6 @@ class MessageController extends Controller
         ]);
     }
 
-    // Eliminar mensaje
     public function destroy($messageId)
     {
         $message = Message::findOrFail($messageId);
@@ -426,7 +406,6 @@ class MessageController extends Controller
         return response()->json(['success' => false], 403);
     }
 
-    // API para obtener mensajes (método original - mantener por compatibilidad)
     public function getMessages($propertyId, $userId)
     {
         $messages = Message::forConversation($propertyId, Auth::id(), $userId)
@@ -437,13 +416,6 @@ class MessageController extends Controller
         return response()->json(['messages' => $messages]);
     }
 
-    // ========================================
-    // 🆕 NUEVOS MÉTODOS PARA EL CHAT - CORREGIDOS
-    // ========================================
-
-    /**
-     * Iniciar una conversación sobre una propiedad
-     */
     public function startConversation(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -462,7 +434,6 @@ class MessageController extends Controller
         $receiverId = $request->receiver_id;
         $senderId = Auth::id();
 
-        // Verificar que no sea el propietario
         if ($property->user_id === $senderId) {
             return response()->json([
                 'success' => false,
@@ -470,7 +441,6 @@ class MessageController extends Controller
             ], 422);
         }
 
-        // Buscar si ya existe una conversación
         $existingMessage = Message::where('property_id', $request->property_id)
             ->where(function($query) use ($senderId, $receiverId) {
                 $query->where(function($q) use ($senderId, $receiverId) {
@@ -483,11 +453,9 @@ class MessageController extends Controller
             })
             ->first();
 
-        // Crear ID de conversación
         $conversationId = 'property_' . $request->property_id . '_users_' . min($senderId, $receiverId) . '_' . max($senderId, $receiverId);
 
         if (!$existingMessage) {
-            // Crear mensaje inicial si no existe conversación
             Message::create([
                 'property_id' => $request->property_id,
                 'sender_id' => $senderId,
@@ -507,55 +475,199 @@ class MessageController extends Controller
         ]);
     }
 
-    /**
-     * Obtener todas las conversaciones del usuario
-     */
-            // En app/Http/Controllers/MessageController.php - REEMPLAZAR método getConversations()
-public function getConversations()
+                    public function getConversations()
 {
     try {
-        \Log::info('Getting conversations for user: ' . Auth::id());
+        $currentUserId = Auth::id();
+        
+        \Log::info('📥 ========== INICIO getConversations ==========');
+        \Log::info('👤 Usuario actual:', ['user_id' => $currentUserId]);
 
         $conversations = Auth::user()->getConversationsWith();
 
-        \Log::info('Raw conversations: ', $conversations);
-
-        // Cargar datos adicionales
-        foreach ($conversations as &$conversation) {
-
-            $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')->find($conversation['other_user_id']);
-
-                if ($otherUser) {
-                    $otherUser->avatar_url = $otherUser->avatar_url;
-                    $conversation['other_user'] = $otherUser;
-                } else {
-                    $conversation['other_user'] = null;
-                }
-
-
-            $conversation['property'] = Property::select('id', 'title')->find($conversation['property_id']);
-            $conversation['last_message'] = Auth::user()->getLastMessageWith(
-                $conversation['other_user_id'],
-                $conversation['property_id']
-            );
-            $conversation['unread_count'] = Auth::user()->receivedMessages()
-                ->where('sender_id', $conversation['other_user_id'])
-                ->where('property_id', $conversation['property_id'])
-                ->whereNull('read_at')
-                ->count();
-        }
-
-        \Log::info('Processed conversations: ', $conversations);
-
-        return response()->json([
-            'success' => true,
+        \Log::info('🔍 Conversaciones encontradas (raw):', [
+            'count' => count($conversations),
             'conversations' => $conversations
         ]);
 
-    } catch (\Exception $e) {
-        \Log::error('Error in getConversations: ' . $e->getMessage());
-        \Log::error('Stack trace: ' . $e->getTraceAsString());
+        $filteredConversations = [];
+        $conversationIndex = 0;
 
+        foreach ($conversations as $conversation) {
+            $conversationIndex++;
+            
+            \Log::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            \Log::info("🔍 Procesando conversación #{$conversationIndex}", [
+                'property_id' => $conversation['property_id'],
+                'other_user_id' => $conversation['other_user_id']
+            ]);
+            
+            $otherUserId = $conversation['other_user_id'];
+            
+            // Contar TODOS los mensajes de esta conversación
+            $allMessagesCount = Message::where('property_id', $conversation['property_id'])
+                ->where(function($query) use ($currentUserId, $otherUserId) {
+                    $query->where(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $currentUserId)
+                          ->where('receiver_id', $otherUserId);
+                    })->orWhere(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $otherUserId)
+                          ->where('receiver_id', $currentUserId);
+                    });
+                })
+                ->count();
+            
+            \Log::info("📊 Total de mensajes en conversación:", ['count' => $allMessagesCount]);
+            
+            // Obtener mensajes con deleted_by para debug
+            $messagesWithDeletedBy = Message::where('property_id', $conversation['property_id'])
+                ->where(function($query) use ($currentUserId, $otherUserId) {
+                    $query->where(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $currentUserId)
+                          ->where('receiver_id', $otherUserId);
+                    })->orWhere(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $otherUserId)
+                          ->where('receiver_id', $currentUserId);
+                    });
+                })
+                ->select('id', 'sender_id', 'receiver_id', 'deleted_by', 'created_at')
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function($msg) use ($currentUserId) {
+                    return [
+                        'id' => $msg->id,
+                        'sender_id' => $msg->sender_id,
+                        'receiver_id' => $msg->receiver_id,
+                        'deleted_by' => $msg->deleted_by,
+                        'current_user_deleted' => in_array($currentUserId, $msg->deleted_by ?? []),
+                    ];
+                });
+            
+            \Log::info("🗂️ Últimos 5 mensajes con deleted_by:", [
+                'messages' => $messagesWithDeletedBy->toArray()
+            ]);
+            
+            // Verificar si hay mensajes visibles (no eliminados por este usuario)
+            $visibleMessagesQuery = Message::where('property_id', $conversation['property_id'])
+                ->where(function($query) use ($currentUserId, $otherUserId) {
+                    $query->where(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $currentUserId)
+                          ->where('receiver_id', $otherUserId);
+                    })->orWhere(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $otherUserId)
+                          ->where('receiver_id', $currentUserId);
+                    });
+                });
+            
+            \Log::info("🔍 Query ANTES de notDeletedBy:", [
+                'sql' => $visibleMessagesQuery->toSql(),
+                'bindings' => $visibleMessagesQuery->getBindings()
+            ]);
+            
+            $visibleMessagesQuery->notDeletedBy($currentUserId);
+            
+            \Log::info("🔍 Query DESPUÉS de notDeletedBy:", [
+                'sql' => $visibleMessagesQuery->toSql(),
+                'bindings' => $visibleMessagesQuery->getBindings()
+            ]);
+            
+            $visibleMessagesCount = $visibleMessagesQuery->count();
+            $hasVisibleMessages = $visibleMessagesCount > 0;
+
+            \Log::info("📊 Resultado de verificación:", [
+                'property_id' => $conversation['property_id'],
+                'visible_messages_count' => $visibleMessagesCount,
+                'hasVisibleMessages' => $hasVisibleMessages,
+                'current_user_id' => $currentUserId
+            ]);
+
+            // Si no hay mensajes visibles, omitir esta conversación
+            if (!$hasVisibleMessages) {
+                \Log::info("⏭️ ❌ Conversación OMITIDA (sin mensajes visibles)", [
+                    'property_id' => $conversation['property_id'],
+                    'other_user_id' => $conversation['other_user_id'],
+                    'reason' => 'No hay mensajes visibles para este usuario'
+                ]);
+                continue;
+            }
+
+            \Log::info("✅ Conversación INCLUIDA (tiene mensajes visibles)");
+
+            $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')
+                ->find($conversation['other_user_id']);
+
+            if ($otherUser) {
+                $otherUser->avatar_url = $otherUser->avatar_url;
+                $conversation['other_user'] = $otherUser;
+            } else {
+                $conversation['other_user'] = null;
+            }
+
+            $conversation['property'] = Property::select('id', 'title')
+                ->find($conversation['property_id']);
+                
+            // Obtener último mensaje NO eliminado
+            $lastMessage = Message::where('property_id', $conversation['property_id'])
+                ->where(function($query) use ($currentUserId, $otherUserId) {
+                    $query->where(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $currentUserId)
+                          ->where('receiver_id', $otherUserId);
+                    })->orWhere(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $otherUserId)
+                          ->where('receiver_id', $currentUserId);
+                    });
+                })
+                ->notDeletedBy($currentUserId)
+                ->orderBy('created_at', 'desc')
+                ->first();
+                
+            \Log::info("📨 Último mensaje visible:", [
+                'message_id' => $lastMessage?->id,
+                'message_text' => $lastMessage?->message,
+                'created_at' => $lastMessage?->created_at
+            ]);
+                
+            $conversation['last_message'] = $lastMessage;
+            
+            // Contar mensajes no leídos y no eliminados
+            $unreadCount = Auth::user()->receivedMessages()
+                ->where('sender_id', $conversation['other_user_id'])
+                ->where('property_id', $conversation['property_id'])
+                ->whereNull('read_at')
+                ->notDeletedBy($currentUserId)
+                ->count();
+                
+            \Log::info("📬 Mensajes no leídos:", ['count' => $unreadCount]);
+                
+            $conversation['unread_count'] = $unreadCount;
+
+            $filteredConversations[] = $conversation;
+            
+            \Log::info("➕ Conversación agregada al resultado final");
+        }
+
+        \Log::info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        \Log::info('✅ ========== FIN getConversations ==========');
+        \Log::info('📊 Resumen final:', [
+            'conversaciones_raw' => count($conversations),
+            'conversaciones_filtradas' => count($filteredConversations)
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'conversations' => $filteredConversations
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('❌ ========== ERROR en getConversations ==========');
+        \Log::error('💥 Error:', [
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ]);
+        \Log::error('📍 Stack trace:', ['trace' => $e->getTraceAsString()]);
+        
         return response()->json([
             'success' => false,
             'error' => $e->getMessage()
@@ -563,12 +675,8 @@ public function getConversations()
     }
 }
 
-    /**
-     * ✅ NUEVO: Obtener mensajes por ID de conversación
-     */
     public function getMessagesByConversationId($conversationId)
     {
-        // Parsear el conversation ID: property_4_users_13_14
         if (!preg_match('/property_(\d+)_users_(\d+)_(\d+)/', $conversationId, $matches)) {
             return response()->json([
                 'success' => false,
@@ -581,7 +689,6 @@ public function getConversations()
         $userId2 = $matches[3];
         $currentUserId = Auth::id();
 
-        // Verificar que el usuario actual es parte de la conversación
         if ($currentUserId != $userId1 && $currentUserId != $userId2) {
             return response()->json([
                 'success' => false,
@@ -589,35 +696,34 @@ public function getConversations()
             ], 403);
         }
 
-        // Obtener el otro usuario
         $otherUserId = ($currentUserId == $userId1) ? $userId2 : $userId1;
 
-        // Obtener mensajes
         $messages = Message::forConversation($propertyId, $currentUserId, $otherUserId)
+                            ->notDeletedBy($currentUserId) // 🆕 Filtrar mensajes eliminados por este usuario
                             ->with(['sender:id,name,last_name,profile_photo', 'replyTo'])
-                           ->orderBy('created_at', 'asc')
-                           ->get()
-                           ->each(function ($message) {
+                        ->orderBy('created_at', 'asc')
+                        ->get()
+                        ->each(function ($message) {
                             if ($message->sender) {
                                 $message->sender->avatar_url = $message->sender->avatar_url;
                             }
                         })
-                           ->map(function ($message) {
-                               return [
-                                   'id' => $message->id,
-                                   'sender_id' => $message->sender_id,
-                                   'receiver_id' => $message->receiver_id,
-                                   'message' => $message->message,
-                                   'type' => $message->type,
-                                   'file_url' => $message->getFileUrl(),
-                                   'file_name' => $message->file_name,
-                                   'file_size_formatted' => $message->getFileSizeFormatted(),
-                                   'reactions' => $message->reactions ?? [], // ✅ AGREGAR ESTO
-                                   'read_at' => $message->read_at,
-                                   'created_at' => $message->created_at,
-                                   'sender' => $message->sender
-                               ];
-                           });
+                        ->map(function ($message) {
+                            return [
+                                'id' => $message->id,
+                                'sender_id' => $message->sender_id,
+                                'receiver_id' => $message->receiver_id,
+                                'message' => $message->message,
+                                'type' => $message->type,
+                                'file_url' => $message->getFileUrl(),
+                                'file_name' => $message->file_name,
+                                'file_size_formatted' => $message->getFileSizeFormatted(),
+                                'reactions' => $message->reactions ?? [],
+                                'read_at' => $message->read_at,
+                                'created_at' => $message->created_at,
+                                'sender' => $message->sender
+                            ];
+                        });
 
         return response()->json([
             'success' => true,
@@ -625,12 +731,8 @@ public function getConversations()
         ]);
     }
 
-    /**
-     * ✅ NUEVO: Marcar mensajes como leídos por conversación
-     */
     public function markMessagesAsRead($conversationId)
     {
-        // Parsear el conversation ID
         if (!preg_match('/property_(\d+)_users_(\d+)_(\d+)/', $conversationId, $matches)) {
             return response()->json([
                 'success' => false,
@@ -643,10 +745,8 @@ public function getConversations()
         $userId2 = $matches[3];
         $currentUserId = Auth::id();
 
-        // Obtener el otro usuario
         $otherUserId = ($currentUserId == $userId1) ? $userId2 : $userId1;
 
-        // Marcar mensajes como leídos
         Message::where('property_id', $propertyId)
                ->where('sender_id', $otherUserId)
                ->where('receiver_id', $currentUserId)
@@ -654,5 +754,126 @@ public function getConversations()
                ->update(['read_at' => now()]);
 
         return response()->json(['success' => true]);
+    }
+
+    // ========================================
+    // 🆕 NUEVO MÉTODO: ELIMINAR CONVERSACIÓN
+    // ========================================
+    
+        /**
+ * 🗑️ Eliminar conversación (soft delete por usuario)
+ */
+    public function deleteConversation($conversationId)
+    {
+        try {
+            \Log::info('🗑️ Iniciando eliminación de conversación', [
+                'conversation_id' => $conversationId,
+                'user_id' => Auth::id()
+            ]);
+
+            // Validar formato del ID
+            if (!preg_match('/property_(\d+)_users_(\d+)_(\d+)/', $conversationId, $matches)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ID de conversación inválido'
+                ], 400);
+            }
+
+            $propertyId = $matches[1];
+            $userId1 = $matches[2];
+            $userId2 = $matches[3];
+            $currentUserId = Auth::id();
+
+            // Verificar permisos
+            if ($currentUserId != $userId1 && $currentUserId != $userId2) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes acceso a esta conversación'
+                ], 403);
+            }
+
+            $otherUserId = ($currentUserId == $userId1) ? $userId2 : $userId1;
+
+            // Obtener todos los mensajes de la conversación
+            $messages = Message::where('property_id', $propertyId)
+                ->where(function($query) use ($currentUserId, $otherUserId) {
+                    $query->where(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $currentUserId)
+                        ->where('receiver_id', $otherUserId);
+                    })->orWhere(function($q) use ($currentUserId, $otherUserId) {
+                        $q->where('sender_id', $otherUserId)
+                        ->where('receiver_id', $currentUserId);
+                    });
+                })
+                ->get();
+
+            if ($messages->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontraron mensajes en esta conversación'
+                ], 404);
+            }
+
+            $updatedCount = 0;
+            $deletedPermanentlyCount = 0;
+
+            // Procesar cada mensaje
+            foreach ($messages as $message) {
+                $deletedBy = $message->deleted_by ?? [];
+                
+                // Si el usuario actual ya eliminó este mensaje, skip
+                if (in_array($currentUserId, $deletedBy)) {
+                    continue;
+                }
+
+                // Agregar usuario actual a deleted_by
+                $deletedBy[] = $currentUserId;
+                $message->deleted_by = $deletedBy;
+                $message->save();
+                $updatedCount++;
+
+                \Log::info('📝 Mensaje marcado como eliminado', [
+                    'message_id' => $message->id,
+                    'deleted_by' => $deletedBy,
+                    'deleted_by_count' => count($deletedBy)
+                ]);
+
+                // Si ambos usuarios eliminaron, borrar permanentemente
+                if (count($deletedBy) >= 2) {
+                    \Log::info('🗑️ Eliminando mensaje permanentemente', [
+                        'message_id' => $message->id,
+                        'reason' => 'Ambos usuarios eliminaron'
+                    ]);
+                    $message->delete();
+                    $deletedPermanentlyCount++;
+                }
+            }
+
+            \Log::info('✅ Conversación procesada', [
+                'conversation_id' => $conversationId,
+                'messages_marked_deleted' => $updatedCount,
+                'messages_deleted_permanently' => $deletedPermanentlyCount,
+                'user_id' => $currentUserId,
+                'other_user_id' => $otherUserId
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Conversación eliminada exitosamente',
+                'updated_count' => $updatedCount,
+                'deleted_permanently_count' => $deletedPermanentlyCount
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('❌ Error eliminando conversación', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar la conversación: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

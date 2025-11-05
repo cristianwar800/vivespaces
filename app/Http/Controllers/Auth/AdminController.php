@@ -88,66 +88,72 @@ class AdminController extends Controller
         ]);
     }
 
-    /**
-     * Obtener lista de todos los usuarios para administración
-     * Con filtros y paginación
-     */
-    public function getAllUsers(Request $request)
-    {
-        // VERIFICAR QUE EL USUARIO SEA ADMINISTRADOR
-        if (auth()->user()->role !== 'admin') {
-            return response()->json(['error' => 'No tienes permisos de administrador'], 403);
-        }
-
-        // CREAR CONSULTA BASE
-        $query = User::query();
-
-        // FILTRO POR BÚSQUEDA (OPCIONAL)
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        // FILTRO POR ROL (OPCIONAL)
-        if ($request->filled('role')) {
-            $query->where('role', $request->role);
-        }
-
-        // FILTRO POR ESTADO (ACTIVO/SUSPENDIDO)
-        if ($request->filled('status')) {
-            if ($request->status === 'suspended') {
-                $query->whereNotNull('suspended_at');
-            } else {
-                $query->whereNull('suspended_at');
+        /**
+ * Obtener lista de todos los usuarios para administración
+ * Con filtros y paginación
+ */
+        public function getAllUsers(Request $request)
+        {
+            // VERIFICAR QUE EL USUARIO SEA ADMINISTRADOR
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['error' => 'No tienes permisos de administrador'], 403);
             }
+
+            // CREAR CONSULTA BASE
+            $query = User::query();
+
+            // FILTRO POR BÚSQUEDA (OPCIONAL)
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('last_name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+                });
+            }
+
+            // FILTRO POR ROL (OPCIONAL)
+            if ($request->filled('role')) {
+                $query->where('role', $request->role);
+            }
+
+            // FILTRO POR ESTADO (ACTIVO/SUSPENDIDO)
+            if ($request->filled('status')) {
+                if ($request->status === 'suspended') {
+                    $query->whereNotNull('suspended_at');
+                } else {
+                    $query->whereNull('suspended_at');
+                }
+            }
+
+            // ORDENAMIENTO Y PAGINACIÓN
+            $users = $query->latest()->paginate($request->get('per_page', 15));
+
+            // TRANSFORMAR DATOS PARA LA RESPUESTA
+            $users->getCollection()->transform(function ($user) {
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'last_name' => $user->last_name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'created_at' => $user->created_at->format('d/m/Y H:i'),
+                    'suspended' => !is_null($user->suspended_at),
+                    'suspended_at' => $user->suspended_at ? $user->suspended_at->format('d/m/Y H:i') : null,
+                    'properties_count' => $user->properties()->count(),
+                    
+                    // ✅ CAMPOS AGREGADOS PARA VERIFICACIÓN DE IDENTIDAD
+                    'is_identity_verified' => (bool) $user->is_identity_verified,
+                    'verified_at' => $user->verified_at ?? null,
+                    'email_verified_at' => $user->email_verified_at ? $user->email_verified_at->format('d/m/Y H:i') : null,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'users' => $users
+            ]);
         }
-
-        // ORDENAMIENTO Y PAGINACIÓN
-        $users = $query->latest()->paginate($request->get('per_page', 15));
-
-        // TRANSFORMAR DATOS PARA LA RESPUESTA
-        $users->getCollection()->transform(function ($user) {
-            return [
-                'id' => $user->id,
-                'name' => $user->name . ' ' . $user->last_name,
-                'email' => $user->email,
-                'role' => $user->role,
-                'created_at' => $user->created_at->format('d/m/Y H:i'),
-                'suspended' => !is_null($user->suspended_at),
-                'suspended_at' => $user->suspended_at ? $user->suspended_at->format('d/m/Y H:i') : null,
-                'properties_count' => $user->properties()->count()
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'users' => $users
-        ]);
-    }
 
     /**
      * 🆕 Obtener lista de todas las propiedades para administración
@@ -779,6 +785,61 @@ class AdminController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al eliminar el usuario: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+        public function revokeVerification($userId, Request $request)
+    {
+        // VERIFICAR PERMISOS
+        if (auth()->user()->role !== 'admin') {
+            return response()->json(['error' => 'No tienes permisos de administrador'], 403);
+        }
+
+        try {
+            $user = User::findOrFail($userId);
+
+            // VERIFICAR QUE NO SEA EL MISMO USUARIO
+            if ($user->id === auth()->id()) {
+                return response()->json(['error' => 'No puedes revocar tu propia verificación'], 422);
+            }
+
+            // VERIFICAR QUE EL USUARIO ESTÉ VERIFICADO
+            if (!$user->is_identity_verified) {
+                return response()->json(['error' => 'Este usuario no tiene verificación activa'], 422);
+            }
+
+            // REVOCAR VERIFICACIÓN
+            $user->update([
+                'is_identity_verified' => false,
+                'verified_at' => null
+            ]);
+
+            // LOG DE LA ACCIÓN
+            Log::info('Identity verification revoked by admin', [
+                'admin_id' => auth()->id(),
+                'user_id' => $user->id,
+                'reason' => $request->reason ?? 'Revocado manualmente desde panel de administración'
+            ]);
+
+            // RETORNAR CONFIRMACIÓN
+            return response()->json([
+                'success' => true,
+                'message' => 'Verificación de identidad revocada exitosamente',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name . ' ' . $user->last_name,
+                    'email' => $user->email,
+                    'is_identity_verified' => false,
+                    'verified_at' => null
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error revoking verification: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al revocar verificación: ' . $e->getMessage()
             ], 500);
         }
     }

@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
             'guest' => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class,
+            
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

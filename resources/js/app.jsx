@@ -23,8 +23,50 @@ import Contacto from './components/Contacto';
 import Search from './components/Search';
 import LayoutMap from './components/LayoutMap';
 import FastApiRecomendador from './components/FastApiRecomendador';
-// ❌ ELIMINAR ESTA LÍNEA - Ya no se necesita importar aquí
 import NotificationPanel from './components/NotificationPanel';
+import VerificationFlow from './components/verification/VerificationFlow';
+
+// ==================== 🎯 CONTROL DE WIDGETS ====================
+/**
+ * Determina si los widgets globales (ChatBot y LayoutMap) deben mostrarse
+ * según la ruta actual
+ */
+function shouldShowGlobalWidgets() {
+    const currentPath = window.location.pathname;
+    
+    // Lista de rutas/patrones donde NO queremos mostrar los widgets
+    const hiddenRoutes = [
+        '/properties/',          // Detalles de propiedades (ej: /properties/1)
+        '/admin',                // Panel de administración
+        '/messages',             // Mensajes de usuario
+        '/chat',                 // Chat
+        '/profile',              // Perfil de usuario
+        '/verification',         // Todo el flujo de verificación
+        '/verify',               // Rutas de verificación
+        '/photo-verification',   // Verificación de foto
+        '/test-ocr',            // Test OCR
+        '/my-properties',        // Mis propiedades
+        '/user/properties',      // Propiedades del usuario
+    ];
+    
+    // Verificar si la ruta actual coincide con alguna ruta oculta
+    const shouldHide = hiddenRoutes.some(route => currentPath.includes(route));
+    
+    // También ocultar si estamos en un contenedor específico de verificación
+    const verificationContainer = document.getElementById('verification-router-root');
+    const photoVerificationContainer = document.getElementById('photo-verification-root');
+    const testOCRContainer = document.getElementById('test-ocr-root');
+    const chatContainer = document.getElementById('chat-root');
+    const adminPanelContainer = document.getElementById('admin-panel-root');
+    const profileContainer = document.getElementById('profile-root');
+    
+    if (verificationContainer || photoVerificationContainer || testOCRContainer || 
+        chatContainer || adminPanelContainer || profileContainer) {
+        return false;
+    }
+    
+    return !shouldHide;
+}
 
 // Función para obtener datos del usuario desde Laravel
 function getUserData() {
@@ -45,6 +87,10 @@ function getUserData() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 DOM loaded, iniciando renderizado de componentes');
 
+    // Verificar si debemos mostrar widgets globales
+    const showWidgets = shouldShowGlobalWidgets();
+    console.log(`🎯 Widgets globales: ${showWidgets ? 'VISIBLES' : 'OCULTOS'} en ${window.location.pathname}`);
+
     // Navbar siempre presente (layout) - Ahora incluye NotificationPanel dentro
     const navbarContainer = document.getElementById('navbar-root');
     if (navbarContainer) {
@@ -54,30 +100,26 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✅ Navbar renderizado (incluye NotificationPanel)');
     }
 
-    // ❌ ELIMINAR ESTE BLOQUE COMPLETO - NotificationPanel ahora está dentro del Navbar
-    // const notificationPanelRoot = document.getElementById('notification-panel-root');
-    // if (notificationPanelRoot) {
-    //     const root = createRoot(notificationPanelRoot);
-    //     root.render(<NotificationPanel />);
-    //     console.log('✅ NotificationPanel renderizado');
-    // }
-
-    // ChatBot siempre presente (layout)
+    // ChatBot condicional según la ruta
     const chatbotContainer = document.getElementById('chatbox-root');
-    if (chatbotContainer) {
+    if (chatbotContainer && showWidgets) {
         const userData = getUserData();
         const root = createRoot(chatbotContainer);
         root.render(<ChatBot user={userData} />);
         console.log('✅ ChatBot renderizado');
+    } else if (chatbotContainer && !showWidgets) {
+        console.log('⛔ ChatBot NO renderizado (ruta oculta)');
     }
 
-    // LayoutMap siempre presente (layout)
+    // LayoutMap condicional según la ruta
     const layoutMapContainer = document.getElementById('layout-map-root');
-    if (layoutMapContainer) {
+    if (layoutMapContainer && showWidgets) {
         const userData = getUserData();
         const root = createRoot(layoutMapContainer);
         root.render(<LayoutMap user={userData} />);
         console.log('✅ LayoutMap renderizado');
+    } else if (layoutMapContainer && !showWidgets) {
+        console.log('⛔ LayoutMap NO renderizado (ruta oculta)');
     }
 
     // Welcome content
@@ -166,6 +208,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
+    // Verification Flow (NUEVO)
+    const verificationRouterContainer = document.getElementById('verification-router-root');
+    if (verificationRouterContainer) {
+        const userData = getUserData();
+        const root = createRoot(verificationRouterContainer);
+        root.render(<VerificationFlow user={userData} />);
+        console.log('✅ VerificationFlow renderizado');
+        return;
+    }
+
     // Comunidad
     const comunidadContainer = document.getElementById('comunidad-root');
     if (comunidadContainer) {
@@ -225,7 +277,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-        const notificationsPageContainer = document.getElementById('notifications-page-root');
+    // Notification Panel Page
+    const notificationsPageContainer = document.getElementById('notifications-page-root');
     if (notificationsPageContainer) {
         const userData = getUserData();
         const root = createRoot(notificationsPageContainer);

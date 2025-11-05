@@ -13,20 +13,22 @@ export default defineConfig(({ mode }) => {
             laravel({
                 input: [
                     'resources/css/app.css',
-                    'resources/js/app.jsx',  // ← Cambio aquí: .js por .jsx
+                    'resources/js/app.jsx',
                 ],
                 refresh: true,
             }),
-            react(),
+            react({
+                fastRefresh: false,
+            }),
         ],
         server: {
-            host: '0.0.0.0',
+            host: '127.0.0.1',
             port: 5174,
             strictPort: true,
             cors: true,
-            hmr: {
-                host: 'localhost',
-                port: 5174,
+            hmr: false,
+            watch: {
+                usePolling: true,
             },
             headers: {
                 'Access-Control-Allow-Origin': '*',

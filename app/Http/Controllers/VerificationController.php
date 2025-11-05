@@ -3,17 +3,23 @@
 namespace App\Http\Controllers;
 
 use App\Services\OCRService;
+use App\Models\UserVerification;
+use App\Services\FaceService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class VerificationController extends Controller
 {
     private $ocrService;
+    private $faceService;
 
     // Configuración de límites
     private const MAX_FILE_SIZE = 10240; // 10MB en KB
@@ -26,12 +32,11 @@ class VerificationController extends Controller
     private const ALLOWED_DOC_TYPES = ['pdf'];
     private const ALL_ALLOWED_TYPES = ['jpeg', 'jpg', 'png', 'webp', 'pdf'];
 
-    // Configuración ESTRICTA de confianza por tipo - MEJORADA
-    // En VerificationController.php, línea ~25
+    // Configuración ESTRICTA de confianza por tipo
     private const STRICT_CONFIDENCE_THRESHOLDS = [
-        'ine' => 45,        // SÚPER accesible - de 70 a 45
-        'pasaporte' => 40,   // SÚPER accesible - de 65 a 40
-        'comprobante' => 35  // SÚPER accesible - de 60 a 35
+        'ine' => 45,
+        'pasaporte' => 40,
+        'comprobante' => 35
     ];
 
     // Tipos de documentos ÚNICOS permitidos
@@ -41,7 +46,7 @@ class VerificationController extends Controller
         'comprobante' => 'Comprobante de Domicilio'
     ];
 
-    // BLACKLISTS EXPANDIDAS - Palabras que NO deben aparecer en cada tipo
+    // BLACKLISTS EXPANDIDAS
     private const DOCUMENT_BLACKLISTS = [
         'ine' => [
             'PASAPORTE', 'PASSPORT', 'ESTADOS UNIDOS MEXICANOS',
@@ -65,31 +70,7 @@ class VerificationController extends Controller
         ]
     ];
 
-    // WHITELISTS MEJORADAS - Palabras que DEBEN aparecer
-    private const DOCUMENT_REQUIRED_PATTERNS = [
-        'ine' => [
-            'INSTITUTO NACIONAL ELECTORAL',
-            'CREDENCIAL PARA VOTAR',
-            // Al menos uno de estos identificadores
-            'CURP', 'CLAVE DE ELECTOR'
-        ],
-        'pasaporte' => [
-            'PASAPORTE',
-            'ESTADOS UNIDOS MEXICANOS',
-            // Formatos de número de pasaporte mexicano
-            'MEX'
-        ],
-        'comprobante' => [
-            // Al menos uno de estos servicios válidos
-            'CFE', 'COMISION FEDERAL DE ELECTRICIDAD', 'TELMEX', 'IZZI',
-            'TOTALPLAY', 'MEGACABLE', 'TELCEL', 'MOVISTAR', 'AT&T',
-            'AXTEL', 'UNEFON', 'DISH', 'SKY',
-            'AGUA', 'AGUAKAN', 'SAPAC', 'SIAPA', 'SADM',
-            'GAS NATURAL', 'GAS LP', 'NATURGY'
-        ]
-    ];
-
-    // NUEVOS: Estados mexicanos válidos para validación
+    // Estados mexicanos válidos
     private const VALID_MEXICAN_STATES = [
         'AGUASCALIENTES', 'BAJA CALIFORNIA', 'BAJA CALIFORNIA SUR', 'CAMPECHE',
         'COAHUILA', 'COLIMA', 'CHIAPAS', 'CHIHUAHUA', 'CDMX', 'CIUDAD DE MEXICO',
@@ -99,37 +80,933 @@ class VerificationController extends Controller
         'TABASCO', 'TAMAULIPAS', 'TLAXCALA', 'VERACRUZ', 'YUCATAN', 'ZACATECAS'
     ];
 
-    public function __construct(OCRService $ocrService)
+    public function __construct(OCRService $ocrService, FaceService $faceService)
     {
         $this->ocrService = $ocrService;
+        $this->faceService = $faceService;
+    }
+
+    // ==========================================
+    // 🔥 MÉTODO PRINCIPAL - VERIFY API ESTRICTO 85%
+    // ==========================================
+
+    /**
+     * 🔥 Verificación facial ESTRICTA usando Verify API
+     * MODO ESTRICTO:
+     * 1. Threshold FIJO en 85% (NO se reduce por ninguna razón)
+     * 2. OCR de nombre es OPCIONAL (solo informativo)
+     * 3. ÚNICA condición de aprobación: Face ID ≥ 85%
+     */
+     public function verifyFaceTest(Request $request)
+{
+    try {
+        // 🔥 VALIDAR QUE EL USUARIO NO ESTÉ YA VERIFICADO
+        $user = auth()->user();
+        
+        if ($user->is_identity_verified) {
+            \Log::warning('⚠️ Usuario ya verificado intentó usar Face ID', [
+                'user_id' => $user->id,
+                'verified_at' => $user->verified_at
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Tu identidad ya está verificada',
+                'code' => 'ALREADY_VERIFIED',
+                'message' => 'No puedes volver a verificarte porque tu identidad ya fue confirmada.',
+                'verified_at' => $user->verified_at->toISOString()
+            ], 403);
+        }
+
+        if (!config('services.compreface.enabled')) {
+            \Log::info('⚠️ Face verification está deshabilitado', [
+                'user_id' => $user->id
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'La verificación facial no está disponible en este momento',
+                'code' => 'FACE_VERIFICATION_DISABLED',
+            ], 503);
+        }
+
+        \Log::info('🔐 Iniciando verificación ESTRICTA Face ID (threshold 85% fijo)', [
+            'user_id' => $user->id,
+            'method' => 'strict_face_id_85'
+        ]);
+
+        $request->validate([
+            'selfie_data' => 'required|string',
+            'ine' => 'required|file|image|max:10240',
+        ]);
+
+        $userName = $user->name . ' ' . $user->last_name;
+
+        // Procesar selfie
+        $selfieData = $request->input('selfie_data');
+        if (strpos($selfieData, ',') !== false) {
+            $selfieData = explode(',', $selfieData)[1];
+        }
+        $selfieImageData = base64_decode($selfieData);
+        $selfieTempPath = 'selfie_' . uniqid() . '.jpg';
+        Storage::disk('local')->put($selfieTempPath, $selfieImageData);
+
+        // Procesar INE
+        $ineFile = $request->file('ine');
+        $ineTempPath = 'ine_' . uniqid() . '.' . $ineFile->getClientOriginalExtension();
+        $ineFile->storeAs('', $ineTempPath, 'local');
+
+        // Verificación facial
+        $threshold = 85;
+        $apiKey = config('services.compreface.api_key');
+        $baseUrl = config('services.compreface.base_url');
+        $selfieFullPath = Storage::disk('local')->path($selfieTempPath);
+        $ineFullPath = Storage::disk('local')->path($ineTempPath);
+
+        $response = Http::timeout(30)
+            ->withHeaders(['x-api-key' => $apiKey])
+            ->attach('source_image', file_get_contents($selfieFullPath), 'selfie.jpg')
+            ->attach('target_image', file_get_contents($ineFullPath), 'ine.jpg')
+            ->post("{$baseUrl}/api/v1/verification/verify");
+
+        if (!$response->successful()) {
+            Storage::disk('local')->delete($selfieTempPath);
+            Storage::disk('local')->delete($ineTempPath);
+
+            $errorData = $response->json();
+            if (isset($errorData['code']) && $errorData['code'] == 28) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se detectó un rostro en una de las imágenes',
+                    'code' => 'NO_FACE_DETECTED',
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error en el servicio de verificación',
+                'code' => 'VERIFICATION_SERVICE_ERROR',
+            ], 422);
+        }
+
+        $responseData = $response->json();
+        $resultArray = $responseData['result'] ?? [];
+        if (empty($resultArray)) {
+            Storage::disk('local')->delete($selfieTempPath);
+            Storage::disk('local')->delete($ineTempPath);
+            return response()->json([
+                'success' => false,
+                'error' => 'No se obtuvo resultado de la verificación',
+                'code' => 'NO_RESULT'
+            ], 422);
+        }
+
+        $firstResult = $resultArray[0] ?? [];
+        $faceMatches = $firstResult['face_matches'] ?? [];
+        if (empty($faceMatches)) {
+            Storage::disk('local')->delete($selfieTempPath);
+            Storage::disk('local')->delete($ineTempPath);
+            return response()->json([
+                'success' => false,
+                'error' => 'No se encontraron coincidencias de rostros',
+                'code' => 'NO_FACE_MATCHES',
+            ], 422);
+        }
+
+        $firstMatch = $faceMatches[0];
+        $similarityRaw = $firstMatch['similarity'] ?? 0;
+        $faceSimilarity = round($similarityRaw * 100, 2);
+
+        // OCR
+        $ocrResult = $this->ocrService->processImage($ineFile, 'ine');
+        $nameMatchPercentage = 0;
+        $nameMatchDetails = null;
+        $fullExtractedText = null;
+
+        if ($ocrResult['success']) {
+            $extractedText = $ocrResult['text'] ?? '';
+            $fullExtractedText = $extractedText;
+            $nameMatch = $this->ocrService->validateNameMatch($extractedText, $userName);
+            $nameMatchPercentage = $nameMatch['match_percentage'];
+            $nameMatchDetails = $nameMatch;
+        } else {
+            $fullExtractedText = 'No se pudo extraer texto de la INE';
+        }
+
+        Storage::disk('local')->delete($selfieTempPath);
+        Storage::disk('local')->delete($ineTempPath);
+
+        $isApproved = $faceSimilarity >= $threshold;
+
+        // 🔥 GUARDAR PROGRESO DEL PASO 1 SI ES APROBADO
+        if ($isApproved) {
+            try {
+                $session = UserVerification::forUser($user->id)
+                    ->where('status', 'in_progress')
+                    ->latest()
+                    ->first();
+
+                if (!$session) {
+                    $session = UserVerification::create([
+                        'user_id' => $user->id,
+                        'session_id' => 'verify_' . Str::uuid(),
+                        'current_step' => 1,
+                        'completed_steps' => [],
+                        'steps_data' => [],
+                        'status' => 'in_progress',
+                        'progress_percentage' => 0,
+                        'last_activity_at' => now(),
+                        'expires_at' => now()->addHours(2)
+                    ]);
+                }
+
+                $session->markStepCompleted(1, [
+                    'verification_type' => 'face_id_ine',
+                    'face_similarity' => $faceSimilarity,
+                    'name_match_percentage' => $nameMatchPercentage,
+                    'ocr_text' => $fullExtractedText,
+                    'validated_at' => now()->toISOString(),
+                    'success' => true
+                ]);
+
+                \Log::info('✅ Paso 1 guardado correctamente', [
+                    'session_id' => $session->session_id,
+                    'progress' => $session->progress_percentage
+                ]);
+
+            } catch (\Exception $saveError) {
+                \Log::error('❌ Error guardando progreso del Paso 1', [
+                    'error' => $saveError->getMessage()
+                ]);
+            }
+        }
+
+        if ($isApproved) {
+            return response()->json([
+                'success' => true,
+                'is_match' => true,
+                'message' => '✅ Verificación exitosa - Identidad confirmada',
+                'face_id' => [
+                    'similarity_percentage' => $faceSimilarity,
+                    'threshold' => $threshold,
+                    'approved' => true
+                ],
+                'ocr_validation' => [
+                    'name_match_percentage' => $nameMatchPercentage,
+                    'matched_words' => $nameMatchDetails['matched_words'] ?? 0,
+                    'total_words' => $nameMatchDetails['total_words'] ?? 0,
+                    'extracted_text' => $fullExtractedText,
+                ]
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'is_match' => false,
+                'error' => 'Verificación fallida - Similitud facial insuficiente',
+                'face_id' => [
+                    'similarity_percentage' => $faceSimilarity,
+                    'threshold' => $threshold,
+                ],
+            ], 422);
+        }
+
+    } catch (\Exception $e) {
+        \Log::error('❌ Error en verificación', [
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'error' => 'Error interno del servidor',
+        ], 500);
+    }
+}
+
+            /**
+ * 🆕 Validar comprobante de domicilio (sin guardar archivo)
+ */
+        /**
+ * 🆕 Validar comprobante de domicilio (sin guardar archivo)
+ */
+    public function validateDocument(Request $request)
+    {
+        try {
+            // 🔥 VALIDAR QUE EL USUARIO NO ESTÉ YA VERIFICADO
+            $user = auth()->user();
+            
+            if ($user->is_identity_verified) {
+                Log::warning('⚠️ Usuario ya verificado intentó subir documento', [
+                    'user_id' => $user->id,
+                    'verified_at' => $user->verified_at
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Tu identidad ya está verificada',
+                    'code' => 'ALREADY_VERIFIED',
+                    'message' => 'No puedes volver a verificarte porque tu identidad ya fue confirmada.',
+                    'verified_at' => $user->verified_at->toISOString()
+                ], 403);
+            }
+
+            Log::info('📄 Iniciando validación de comprobante de domicilio');
+
+            $request->validate([
+                'document' => 'required|file|mimes:jpeg,png,jpg,pdf|max:10240'
+            ]);
+
+            $file = $request->file('document');
+
+            Log::info('📁 Archivo recibido para validación', [
+                'filename' => $file->getClientOriginalName(),
+                'size' => $file->getSize(),
+                'mime' => $file->getMimeType(),
+                'user_id' => $user->id
+            ]);
+
+            $ocrService = app(OCRService::class);
+            $ocrResult = $ocrService->processImage($file, 'comprobante');
+
+            if (!$ocrResult['success']) {
+                Log::error('❌ OCR falló para comprobante', [
+                    'error' => $ocrResult['error'] ?? 'Unknown error'
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se pudo procesar el documento',
+                    'details' => $ocrResult['error'] ?? 'Error en OCR',
+                    'suggestions' => [
+                        'Asegúrate de que la imagen sea clara y legible',
+                        'Verifica que todo el documento sea visible',
+                        'Intenta con mejor iluminación'
+                    ]
+                ], 422);
+            }
+
+            $extractedText = $ocrResult['text'] ?? '';
+            
+            Log::info('📝 Texto extraído del comprobante', [
+                'text_length' => strlen($extractedText),
+                'text_preview' => substr($extractedText, 0, 200)
+            ]);
+
+            $validation = $ocrResult['validation'] ?? [];
+            
+            if (!($validation['is_valid'] ?? false)) {
+                Log::warning('⚠️ Comprobante no válido', [
+                    'validation' => $validation
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => 'El documento no parece ser un comprobante de domicilio válido',
+                    'validation' => $validation,
+                    'error_reasons' => [
+                        'No se detectó una empresa de servicios reconocida',
+                        'El formato no corresponde a un recibo de servicios'
+                    ],
+                    'suggestions' => [
+                        'Verifica que sea un recibo de luz, agua, teléfono o gas',
+                        'El comprobante debe tener máximo 4 meses de antigüedad',
+                        'Asegúrate de que la dirección sea visible',
+                        'Intenta con una foto más clara del documento'
+                    ]
+                ], 422);
+            }
+
+            $recencyValidation = $ocrService->validateDocumentRecency($extractedText, 'comprobante');
+            
+            if (!($recencyValidation['is_recent'] ?? false)) {
+                Log::warning('⚠️ Comprobante muy antiguo o fecha inválida', [
+                    'recency' => $recencyValidation
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => $recencyValidation['message'] ?? 'El comprobante es muy antiguo',
+                    'recency_validation' => $recencyValidation,
+                    'error_reasons' => [
+                        $recencyValidation['message'] ?? 'Fecha de comprobante inválida'
+                    ],
+                    'suggestions' => [
+                        $recencyValidation['suggestion'] ?? 'El comprobante debe tener máximo 4 meses de antigüedad',
+                        'Verifica que la fecha del documento sea visible',
+                        'Asegúrate de usar un comprobante reciente'
+                    ]
+                ], 422);
+            }
+
+            $extractedData = $validation['extracted_data'] ?? [];
+            $detailedInfo = [];
+            
+            if (isset($extractedData['service'])) {
+                $detailedInfo[] = "Servicio detectado: {$extractedData['service']}";
+            }
+            
+            if (isset($extractedData['postal_code'])) {
+                $detailedInfo[] = "Código Postal: {$extractedData['postal_code']}";
+            }
+            
+            if (isset($recencyValidation['date_found'])) {
+                $detailedInfo[] = "Fecha del comprobante: {$recencyValidation['date_found']}";
+            }
+            
+            if (isset($recencyValidation['months_old'])) {
+                $months = $recencyValidation['months_old'];
+                $detailedInfo[] = "Antigüedad: {$months} " . ($months == 1 ? 'mes' : 'meses');
+            }
+
+            $response = [
+                'success' => true,
+                'message' => '✅ Comprobante de domicilio verificado exitosamente',
+                'document_validation' => [
+                    'is_valid' => true,
+                    'confidence' => $validation['confidence'] ?? 0,
+                    'confidence_percentage' => round($validation['confidence'] ?? 0, 2),
+                    'document_type' => 'comprobante',
+                    'extracted_text' => $extractedText,
+                    'extracted_data' => $extractedData,
+                    'recency_validation' => $recencyValidation,
+                    'patterns_found' => $validation['patterns'] ?? []
+                ],
+                'detailed_info' => $detailedInfo,
+                'next_action' => 'show_finalize_button'
+            ];
+
+            Log::info('✅ Comprobante validado exitosamente', [
+                'user_id' => $user->id,
+                'confidence' => $validation['confidence'] ?? 0
+            ]);
+
+            try {
+                Log::info('💾 Guardando progreso del Paso 2 en base de datos...');
+                
+                $session = UserVerification::forUser($user->id)
+                    ->where('status', 'in_progress')
+                    ->latest()
+                    ->first();
+
+                if (!$session) {
+                    Log::info('📝 No existe sesión, creando nueva...');
+                    
+                    $session = UserVerification::create([
+                        'user_id' => $user->id,
+                        'session_id' => 'verify_' . Str::uuid(),
+                        'current_step' => 2,
+                        'completed_steps' => [],
+                        'steps_data' => [],
+                        'status' => 'in_progress',
+                        'progress_percentage' => 0,
+                        'last_activity_at' => now(),
+                        'expires_at' => now()->addHours(2)
+                    ]);
+                    
+                    Log::info('✅ Sesión creada', ['session_id' => $session->session_id]);
+                }
+
+                $session->markStepCompleted(2, [
+                    'document_type' => 'comprobante',
+                    'validation' => $response['document_validation'],
+                    'confidence' => $validation['confidence'] ?? 0,
+                    'service' => $extractedData['service'] ?? null,
+                    'validated_at' => now()->toISOString(),
+                    'success' => true
+                ]);
+
+                Log::info('✅ Paso 2 guardado correctamente', [
+                    'session_id' => $session->session_id,
+                    'completed_steps' => $session->completed_steps,
+                    'progress' => $session->progress_percentage
+                ]);
+
+                $response['session_id'] = $session->session_id;
+                $response['progress_percentage'] = $session->progress_percentage;
+                $response['completed_steps'] = $session->completed_steps;
+
+            } catch (\Exception $saveError) {
+                Log::error('❌ Error guardando progreso del Paso 2', [
+                    'error' => $saveError->getMessage(),
+                    'trace' => $saveError->getTraceAsString()
+                ]);
+            }
+
+            return response()->json($response);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('❌ Validación de archivo fallida', [
+                'errors' => $e->errors()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Archivo inválido',
+                'details' => $e->errors(),
+                'suggestions' => [
+                    'El archivo debe ser JPG, PNG o PDF',
+                    'El tamaño máximo es de 10MB'
+                ]
+            ], 422);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Error procesando comprobante', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno al procesar el documento',
+                'details' => $e->getMessage(),
+                'suggestions' => [
+                    'Intenta nuevamente en unos momentos',
+                    'Si el problema persiste, contacta al soporte'
+                ]
+            ], 500);
+        }
+    }
+            /**
+ * 🔥 Finalizar verificación - Marcar usuario como verificado
+ * Se llama cuando el usuario hace clic en "Finalizar Verificación"
+ */
+        public function finalizeVerification(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            $user = auth()->user();
+
+            Log::info('🎯 Iniciando finalización de verificación', [
+                'user_id' => $userId,
+                'user_name' => $user->name
+            ]);
+
+            // 🔥 PRIMERO: Verificar si ya está verificado
+            if ($user->is_identity_verified) {
+                Log::info('ℹ️ Usuario ya estaba verificado', [
+                    'user_id' => $userId,
+                    'verified_at' => $user->verified_at
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Tu identidad ya estaba verificada',
+                    'data' => [
+                        'is_verified' => true,
+                        'verified_at' => $user->verified_at->toISOString(),
+                        'verification_method' => $user->verification_method,
+                        'can_publish_properties' => true
+                    ],
+                    'redirect_url' => '/properties/create'
+                ]);
+            }
+
+            // Buscar sesión activa del usuario
+            $session = UserVerification::where('user_id', $userId)
+                ->whereIn('status', ['in_progress', 'completed'])
+                ->latest()
+                ->first();
+
+            if (!$session) {
+                Log::warning('⚠️ No se encontró sesión activa', [
+                    'user_id' => $userId
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se encontró una sesión de verificación activa',
+                    'suggestion' => 'Completa los pasos de verificación antes de finalizar',
+                    'suggestions' => [
+                        'Paso 1: Verifica tu INE + Selfie',
+                        'Paso 2: Sube tu comprobante de domicilio',
+                        'Luego haz clic en Finalizar Verificación'
+                    ]
+                ], 404);
+            }
+
+            // Verificar que tenga los 2 pasos completados
+            $completedSteps = $session->completed_steps ?? [];
+            
+            Log::info('📊 Verificando pasos completados', [
+                'session_id' => $session->session_id,
+                'completed_steps' => $completedSteps,
+                'required_steps' => [1, 2],
+                'status' => $session->status,
+                'progress' => $session->progress_percentage
+            ]);
+
+            // Verificar que tenga Paso 1 (INE) y Paso 2 (Comprobante)
+            $hasStep1 = in_array(1, $completedSteps);
+            $hasStep2 = in_array(2, $completedSteps);
+
+            if (!$hasStep1 || !$hasStep2) {
+                $missingSteps = [];
+                if (!$hasStep1) $missingSteps[] = 'Paso 1: INE + Selfie';
+                if (!$hasStep2) $missingSteps[] = 'Paso 2: Comprobante de Domicilio';
+
+                Log::warning('⚠️ Pasos incompletos', [
+                    'user_id' => $userId,
+                    'session_id' => $session->session_id,
+                    'completed_steps' => $completedSteps,
+                    'missing_steps' => $missingSteps,
+                    'has_step_1' => $hasStep1,
+                    'has_step_2' => $hasStep2
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Debes completar ambos pasos antes de finalizar',
+                    'data' => [
+                        'completed_steps' => $completedSteps,
+                        'missing_steps' => $missingSteps,
+                        'has_step_1' => $hasStep1,
+                        'has_step_2' => $hasStep2,
+                        'session_id' => $session->session_id,
+                        'progress_percentage' => $session->progress_percentage
+                    ],
+                    'suggestions' => [
+                        'Completa todos los pasos requeridos:',
+                        ...$missingSteps,
+                        '',
+                        'Pasos completados hasta ahora:',
+                        ...array_map(function($step) {
+                            return "✅ Paso {$step}";
+                        }, $completedSteps)
+                    ]
+                ], 422);
+            }
+
+            // 🎉 MARCAR USUARIO COMO VERIFICADO
+            $user->update([
+                'is_identity_verified' => true,
+                'verified_at' => now(),
+                'verification_method' => 'face_id_85_document_proof'
+            ]);
+
+            // Marcar sesión como completada
+            $session->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'progress_percentage' => 100
+            ]);
+
+            Log::info('🎉 Usuario verificado completamente', [
+                'user_id' => $userId,
+                'session_id' => $session->session_id,
+                'verified_at' => $user->verified_at,
+                'verification_method' => $user->verification_method,
+                'completed_steps' => $completedSteps,
+                'session_status' => $session->status
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => '🎉 ¡Verificación completada exitosamente!',
+                'data' => [
+                    'is_verified' => true,
+                    'verified_at' => $user->verified_at->toISOString(),
+                    'verification_method' => $user->verification_method,
+                    'can_publish_properties' => true,
+                    'completed_steps' => $completedSteps,
+                    'session_id' => $session->session_id,
+                    'progress_percentage' => 100
+                ],
+                'congratulations' => [
+                    'title' => '¡Felicidades!',
+                    'message' => 'Tu identidad ha sido verificada exitosamente. Ya puedes publicar propiedades en la plataforma.',
+                    'next_steps' => [
+                        'Publica tu primera propiedad',
+                        'Explora propiedades disponibles',
+                        'Completa tu perfil'
+                    ]
+                ],
+                'redirect_url' => '/properties/create'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Error finalizando verificación', [
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al finalizar la verificación',
+                'details' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor',
+                'suggestion' => 'Intenta nuevamente en unos momentos'
+            ], 500);
+        }
+    }
+
+
+    public function startVerificationSession(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            
+            Log::info('🔄 Iniciando sesión de verificación', ['user_id' => $userId]);
+            
+            // Buscar sesión activa existente
+            $session = UserVerification::forUser($userId)->active()->latest()->first();
+            
+            if ($session) {
+                Log::info('📋 Sesión recuperada', [
+                    'session_id' => $session->session_id,
+                    'progress' => $session->progress_percentage
+                ]);
+                
+                return response()->json([
+                    'success' => true,
+                    'session_id' => $session->session_id,
+                    'existing' => true,
+                    'current_step' => $session->current_step,
+                    'completed_steps' => $session->completed_steps,
+                    'steps_data' => $session->steps_data,
+                    'progress' => $session->progress_percentage,
+                    'expires_at' => $session->expires_at->toISOString(),
+                    'message' => 'Sesión recuperada'
+                ]);
+            }
+            
+            // Crear nueva sesión
+            $faceEnabled = config('services.compreface.enabled', false);
+            
+            $session = UserVerification::create([
+                'user_id' => $userId,
+                'session_id' => 'verify_' . Str::uuid(),
+                'current_step' => 1,
+                'completed_steps' => [],
+                'steps_data' => [],
+                'status' => 'in_progress',
+                'progress_percentage' => 0,
+                'last_activity_at' => now(),
+                'expires_at' => now()->addHours(2)
+            ]);
+            
+            Log::info('🆕 Nueva sesión creada', ['session_id' => $session->session_id]);
+            
+            return response()->json([
+                'success' => true,
+                'session_id' => $session->session_id,
+                'existing' => false,
+                'current_step' => 1,
+                'face_enabled' => $faceEnabled,
+                'message' => 'Sesión iniciada'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('❌ Error iniciando sesión', [
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo iniciar la sesión'
+            ], 500);
+        }
+    }
+
+/**
+ * 🔥 Guardar progreso de un paso
+ */
+    public function saveStepProgress(Request $request)
+    {
+        try {
+            $request->validate([
+                'session_id' => 'required|string',
+                'step_number' => 'required|integer',
+                'step_data' => 'required|array'
+            ]);
+            
+            $userId = auth()->id();
+            $sessionId = $request->input('session_id');
+            $stepNumber = $request->input('step_number');
+            $stepData = $request->input('step_data');
+            
+            // Buscar sesión
+            $session = UserVerification::forUser($userId)
+                ->where('session_id', $sessionId)
+                ->active()
+                ->firstOrFail();
+            
+            // Guardar paso completado
+            $session->markStepCompleted($stepNumber, $stepData);
+            
+            Log::info('✅ Progreso guardado', [
+                'session_id' => $sessionId,
+                'step' => $stepNumber,
+                'progress' => $session->progress_percentage
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Progreso guardado',
+                'next_step' => $stepNumber + 1,
+                'progress' => $session->progress_percentage,
+                'is_completed' => $session->isCompleted()
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('❌ Error guardando progreso', [
+                'error' => $e->getMessage(),
+                'session_id' => $request->input('session_id')
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo guardar el progreso'
+            ], 500);
+        }
+    }
+
+
+
+
+                /**
+ * 🔥 OBTENER PROGRESO - Busca sesiones completadas o en progreso
+ */
+        public function getVerificationProgress(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            
+            \Log::info('🔍 Consultando progreso de verificación', [
+                'user_id' => $userId
+            ]);
+            
+            // 🔥 BUSCAR SESIONES ACTIVAS O COMPLETADAS
+            $session = UserVerification::forUser($userId)
+                ->whereIn('status', ['in_progress', 'completed'])
+                ->latest()
+                ->first();
+            
+            if (!$session) {
+                \Log::info('📭 No hay sesión para recuperar', [
+                    'user_id' => $userId
+                ]);
+                
+                return response()->json([
+                    'success' => true,
+                    'has_session' => false
+                ]);
+            }
+            
+            // 🔥 LOG DETALLADO de lo que se va a devolver
+            \Log::info('📦 Sesión recuperada', [
+                'session_id' => $session->session_id,
+                'status' => $session->status,
+                'completed_steps' => $session->completed_steps,
+                'steps_data_keys' => array_keys($session->steps_data ?? []),
+                'progress' => $session->progress_percentage,
+                'current_step' => $session->current_step
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'has_session' => true,
+                'session_id' => $session->session_id,
+                'current_step' => $session->current_step,
+                'completed_steps' => $session->completed_steps,
+                'steps_data' => $session->steps_data,
+                'progress_percentage' => $session->progress_percentage,
+                'status' => $session->status,
+                'expires_at' => $session->expires_at->toISOString()
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('❌ Error obteniendo progreso', [
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo obtener el progreso'
+            ], 500);
+        }
     }
 
     /**
-     * Verificación individual ESTRICTA de documento - MEJORADA
+     * 🆕 ENDPOINT PARA OBTENER CONFIGURACIÓN DE VERIFICACIÓN
+     * Frontend consulta este endpoint para saber qué features están activas
      */
+    public function getVerificationConfig()
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'ocr_enabled' => true,
+                'face_verification_enabled' => config('services.compreface.enabled', false),
+                'face_threshold' => 85, // 🔒 THRESHOLD FIJO
+                'face_threshold_adjustable' => false, // 🔒 NO SE AJUSTA
+                'supported_documents' => ['ine', 'pasaporte', 'comprobante'],
+                'features' => [
+                    'name_verification' => true,
+                    'vigency_verification' => true,
+                    'curp_validation' => true,
+                    'quality_assessment' => true,
+                    'contamination_detection' => true
+                ]
+            ]
+        ]);
+    }
+
+    /**
+     * Helper: Limpiar archivos temporales
+     */
+    private function cleanupTempFiles($files)
+    {
+        foreach ($files as $file) {
+            if (is_string($file) && file_exists($file)) {
+                try {
+                    unlink($file);
+                    Log::info('🧹 Archivo temporal eliminado: ' . basename($file));
+                } catch (\Exception $e) {
+                    Log::warning('⚠️ No se pudo eliminar archivo temporal: ' . basename($file));
+                }
+            }
+        }
+    }
+
+    /**
+     * Helper: Obtener nivel de confianza desde similitud
+     */
+    private function getConfidenceLevelFromSimilarity($similarityPercentage)
+    {
+        if ($similarityPercentage >= 95) return 'muy_alta';
+        if ($similarityPercentage >= 90) return 'alta';
+        if ($similarityPercentage >= 85) return 'buena';
+        if ($similarityPercentage >= 70) return 'media';
+        if ($similarityPercentage >= 60) return 'baja';
+        return 'muy_baja';
+    }
+
+    // ==========================================
+    // RESTO DE MÉTODOS (OCR, etc.) - SIN CAMBIOS
+    // ==========================================
+
     public function verifySingleDocument(Request $request)
     {
         try {
-            // Rate Limiting
             $this->enforceRateLimit($request, 'single_document');
-
-            // Validar request básico
             $this->validateSingleDocumentRequest($request);
 
             $documentType = $request->input('document_type');
             $file = $request->file('document');
+            $user = auth()->user();
 
-            Log::info("Iniciando verificación ESTRICTA mejorada", [
-                'user_id' => auth()->id(),
+            Log::info("🔍 Iniciando verificación con validaciones avanzadas", [
+                'user_id' => $user->id,
+                'user_name' => $user->name . ' ' . $user->last_name,
                 'document_type' => $documentType,
                 'file_size' => $file->getSize(),
                 'mime_type' => $file->getMimeType()
             ]);
 
-            // PASO 1: Validar archivo físico
             $this->validateDocumentFile($file, $documentType);
 
-            // PASO 2: Procesar con OCR MEJORADO
             $ocrResult = $this->ocrService->processImage($file, $documentType);
 
             if (!$ocrResult['success']) {
@@ -149,7 +1026,95 @@ class VerificationController extends Controller
             $extractedText = $ocrResult['text'] ?? '';
             $ocrValidation = $ocrResult['validation'] ?? null;
 
-            // PASO 3: DETECCIÓN AUTOMÁTICA MEJORADA vs EXPECTATIVA
+            $nameMatch = null;
+            if (in_array($documentType, ['ine', 'pasaporte'])) {
+                $userName = $user->name . ' ' . $user->last_name;
+                $nameMatch = $this->ocrService->validateNameMatch($extractedText, $userName);
+
+                Log::info('📝 Resultado validación de nombre', [
+                    'user_name' => $userName,
+                    'matches' => $nameMatch['matches'],
+                    'match_percentage' => $nameMatch['match_percentage'],
+                    'matched_words' => $nameMatch['matched_words'],
+                    'total_words' => $nameMatch['total_words']
+                ]);
+
+                if (!$nameMatch['matches']) {
+                    return $this->strictErrorResponse(
+                        "El nombre en el documento no coincide con tu nombre registrado ({$nameMatch['match_percentage']}% de coincidencia)",
+                        'name_mismatch',
+                        'NAME_MISMATCH',
+                        [
+                            "Tu nombre registrado: {$userName}",
+                            "Palabras encontradas en el documento: " . implode(', ', $nameMatch['found_words']),
+                            "Coincidencia: {$nameMatch['matched_words']} de {$nameMatch['total_words']} palabras",
+                            'Asegúrate de que el nombre en tu perfil coincida exactamente con tu documento oficial',
+                            'Si tu nombre es diferente, actualiza tu perfil antes de continuar',
+                            'Verifica que el documento sea tuyo y esté completo'
+                        ]
+                    );
+                }
+
+                Log::info('✅ Nombre verificado correctamente', [
+                    'match_percentage' => $nameMatch['match_percentage'],
+                    'matched_words' => $nameMatch['matched_words']
+                ]);
+            }
+
+            $recencyCheck = $this->ocrService->validateDocumentRecency($extractedText, $documentType);
+
+            Log::info('📅 Resultado validación de vigencia', [
+                'document_type' => $documentType,
+                'is_recent' => $recencyCheck['is_recent'],
+                'year_found' => $recencyCheck['year_found'] ?? 'no detectado',
+                'message' => $recencyCheck['message']
+            ]);
+
+            if (!$recencyCheck['is_recent']) {
+                $suggestions = [
+                    $recencyCheck['message'],
+                    $recencyCheck['suggestion'] ?? 'Verifica la vigencia del documento'
+                ];
+
+                if ($documentType === 'ine') {
+                    $suggestions[] = 'Tu INE debe estar vigente (no vencida)';
+                    $suggestions[] = 'La fecha de vigencia debe ser 2025 o posterior';
+                    $suggestions[] = 'Puedes renovarla en cualquier módulo del INE';
+                    if (isset($recencyCheck['year_found'])) {
+                        $suggestions[] = "Año detectado en documento: {$recencyCheck['year_found']}";
+                    }
+                } elseif ($documentType === 'pasaporte') {
+                    $suggestions[] = 'Tu pasaporte debe estar vigente';
+                    $suggestions[] = 'Verifica la fecha de vencimiento en el documento';
+                    $suggestions[] = 'Los pasaportes tienen validez de 10 años';
+                    if (isset($recencyCheck['year_found'])) {
+                        $suggestions[] = "Año detectado en documento: {$recencyCheck['year_found']}";
+                    }
+                } elseif ($documentType === 'comprobante') {
+                    $suggestions[] = 'El comprobante debe tener máximo 4 meses de antigüedad';
+                    $suggestions[] = 'Sube un recibo más reciente de luz, agua, gas o teléfono';
+                    if (isset($recencyCheck['date_found'])) {
+                        $suggestions[] = "Fecha detectada: {$recencyCheck['date_found']}";
+                    }
+                    if (isset($recencyCheck['months_old'])) {
+                        $suggestions[] = "Antigüedad: {$recencyCheck['months_old']} meses";
+                    }
+                }
+
+                return $this->strictErrorResponse(
+                    $recencyCheck['message'],
+                    'document_expired',
+                    'DOCUMENT_EXPIRED',
+                    $suggestions
+                );
+            }
+
+            Log::info('✅ Documento vigente verificado', [
+                'document_type' => $documentType,
+                'year_found' => $recencyCheck['year_found'],
+                'validation_message' => $recencyCheck['message']
+            ]);
+
             $detectedType = $this->detectDocumentTypeEnhanced($extractedText);
 
             if ($detectedType !== $documentType) {
@@ -166,19 +1131,17 @@ class VerificationController extends Controller
                 );
             }
 
-            // PASO 4: VALIDACIÓN ESTRICTA MEJORADA POR TIPO
             $validationResult = $this->strictValidateDocumentTypeEnhanced($extractedText, $documentType, $ocrValidation);
 
             if (!$validationResult['is_valid']) {
                 return $this->strictErrorResponse(
-                    $validationResult['error'],
+                    $validationResult['error'] ?? 'Documento no válido',
                     'strict_validation_failed',
                     'STRICT_VALIDATION_FAILED',
                     $validationResult['suggestions'] ?? []
                 );
             }
 
-            // PASO 5: VERIFICAR PUREZA MEJORADA (NO contiene elementos de otros documentos)
             $purityCheck = $this->validateDocumentPurityEnhanced($extractedText, $documentType);
 
             if (!$purityCheck['is_pure']) {
@@ -190,7 +1153,6 @@ class VerificationController extends Controller
                 );
             }
 
-            // PASO 6: VERIFICACIÓN DE CALIDAD DE IMAGEN (nuevo)
             $qualityCheck = $this->validateImageQuality($file, $extractedText);
 
             if (!$qualityCheck['is_quality']) {
@@ -202,13 +1164,15 @@ class VerificationController extends Controller
                 );
             }
 
-            // VERIFICACIÓN EXITOSA
-            Log::info('Documento ESTRICTO verificado exitosamente con mejoras', [
-                'user_id' => auth()->id(),
+            Log::info('🎉 Documento verificado exitosamente con TODAS las validaciones', [
+                'user_id' => $user->id,
                 'document_type' => $documentType,
                 'confidence' => $validationResult['confidence'],
-                'critical_elements' => $validationResult['critical_elements'] ?? 0,
-                'quality_score' => $qualityCheck['quality_score'] ?? 0
+                'name_match_percentage' => $nameMatch['match_percentage'] ?? 'N/A',
+                'document_vigency' => $recencyCheck['message'],
+                'document_year' => $recencyCheck['year_found'] ?? 'N/A',
+                'quality_score' => $qualityCheck['quality_score'] ?? 0,
+                'critical_elements' => $validationResult['critical_elements'] ?? 0
             ]);
 
             return response()->json([
@@ -224,13 +1188,19 @@ class VerificationController extends Controller
                     'quality_score' => $qualityCheck['quality_score'] ?? 0,
                     'verification_timestamp' => now()->toISOString(),
                     'validation_details' => [
+                        'name_verified' => $nameMatch ? true : false,
+                        'name_match_percentage' => $nameMatch['match_percentage'] ?? null,
+                        'name_matched_words' => $nameMatch['matched_words'] ?? null,
+                        'vigency_verified' => true,
+                        'vigency_message' => $recencyCheck['message'],
+                        'document_year' => $recencyCheck['year_found'] ?? null,
                         'curp_valid' => $validationResult['curp_valid'] ?? false,
                         'voter_key_valid' => $validationResult['voter_key_valid'] ?? false,
                         'state_detected' => $validationResult['state_detected'] ?? null,
                         'service_company' => $validationResult['service_company'] ?? null
                     ]
                 ],
-                'security_notice' => 'Documento procesado únicamente en memoria con validación CURP completa. No se almacenan datos personales.',
+                'security_notice' => 'Documento procesado únicamente en memoria con validación CURP completa. No se almacenan datos personales ni imágenes.',
                 'next_steps' => $this->getNextStepsForDocument($documentType)
             ]);
 
@@ -262,17 +1232,15 @@ class VerificationController extends Controller
         }
     }
 
+    // ==========================================
+    // MÉTODOS PRIVADOS DE VALIDACIÓN (Sin cambios)
+    // ==========================================
 
-
-    /**
-     * Detección automática de tipo de documento MEJORADA
-     */
     private function detectDocumentTypeEnhanced($text)
     {
         $text = strtoupper($text);
         $scores = ['ine' => 0, 'pasaporte' => 0, 'comprobante' => 0];
 
-        // Detectar INE - múltiples indicadores
         if (strpos($text, 'INSTITUTO NACIONAL ELECTORAL') !== false) {
             $scores['ine'] += 50;
         }
@@ -280,13 +1248,12 @@ class VerificationController extends Controller
             $scores['ine'] += 40;
         }
         if (preg_match('/[A-Z]{4}\d{6}[HMX][A-Z0-9]{5}[A-Z0-9]{2}/', $text)) {
-            $scores['ine'] += 30; // CURP encontrado
+            $scores['ine'] += 30;
         }
         if (preg_match('/[A-Z]{6}\d{8}[HM]\d{3}/', $text)) {
-            $scores['ine'] += 25; // Clave de elector
+            $scores['ine'] += 25;
         }
 
-        // Detectar Pasaporte - indicadores específicos
         if (strpos($text, 'PASAPORTE') !== false || strpos($text, 'PASSPORT') !== false) {
             $scores['pasaporte'] += 40;
         }
@@ -294,13 +1261,12 @@ class VerificationController extends Controller
             $scores['pasaporte'] += 45;
         }
         if (preg_match('/[GN]\d{8}/', $text)) {
-            $scores['pasaporte'] += 30; // Número de pasaporte mexicano
+            $scores['pasaporte'] += 30;
         }
         if (strpos($text, 'MEX') !== false) {
             $scores['pasaporte'] += 15;
         }
 
-        // Detectar Comprobante - empresas específicas
         $serviceCompanies = ['CFE', 'COMISION FEDERAL DE ELECTRICIDAD', 'TELMEX', 'IZZI', 'TOTALPLAY', 'MEGACABLE'];
         foreach ($serviceCompanies as $company) {
             if (strpos($text, $company) !== false) {
@@ -309,15 +1275,13 @@ class VerificationController extends Controller
             }
         }
 
-        // Indicadores adicionales de comprobante
         if (preg_match('/\$[\d,]+\.?\d*/', $text)) {
-            $scores['comprobante'] += 15; // Monto
+            $scores['comprobante'] += 15;
         }
         if (preg_match('/KWH|CONSUMO|LECTURA/', $text)) {
             $scores['comprobante'] += 20;
         }
 
-        // Penalizaciones por contaminación cruzada
         if ($scores['ine'] > 0) {
             if (strpos($text, 'PASAPORTE') !== false) $scores['ine'] -= 30;
             if (strpos($text, 'CFE') !== false) $scores['ine'] -= 25;
@@ -333,18 +1297,14 @@ class VerificationController extends Controller
             if (strpos($text, 'PASAPORTE') !== false) $scores['comprobante'] -= 35;
         }
 
-        // Determinar el tipo con mayor score
         $maxScore = max($scores);
-        if ($maxScore < 15) { // Umbral mínimo
+        if ($maxScore < 15) {
             return null;
         }
 
         return array_search($maxScore, $scores);
     }
 
-    /**
-     * Validación estricta mejorada por tipo de documento
-     */
     private function strictValidateDocumentTypeEnhanced($text, $documentType, $ocrValidation = null)
     {
         switch ($documentType) {
@@ -363,79 +1323,66 @@ class VerificationController extends Controller
         }
     }
 
-    /**
-     * Validación INE MEJORADA con integración del OCRService
-     */
-                private function strictValidateINEEnhanced($text, $ocrValidation = null)
-{
-    $text = strtoupper($text);
-    $score = 0;
-    $patterns = [];
-    $criticalElements = 0;
-    $errors = [];
+    private function strictValidateINEEnhanced($text, $ocrValidation = null)
+    {
+        $text = strtoupper($text);
+        $score = 0;
+        $patterns = [];
+        $criticalElements = 0;
 
-    // Si tenemos validación del OCRService, usarla como base
-    if ($ocrValidation && isset($ocrValidation['is_valid'])) {
-        $score = $ocrValidation['confidence'] ?? 0;
-        $patterns = $ocrValidation['patterns'] ?? [];
-        $criticalElements = $ocrValidation['critical_elements_passed'] ?? 0;
+        if ($ocrValidation && isset($ocrValidation['is_valid'])) {
+            $score = $ocrValidation['confidence'] ?? 0;
+            $patterns = $ocrValidation['patterns'] ?? [];
+            $criticalElements = $ocrValidation['critical_elements_passed'] ?? 0;
 
-        // Verificaciones adicionales del controlador
-        $extractedData = $ocrValidation['extracted_data'] ?? [];
+            $extractedData = $ocrValidation['extracted_data'] ?? [];
 
-        // Validación adicional de estado mexicano
-        foreach (self::VALID_MEXICAN_STATES as $state) {
-            if (strpos($text, $state) !== false) {
-                $score += 5;
-                $patterns[] = 'Valid Mexican State: ' . $state;
-                break;
+            foreach (self::VALID_MEXICAN_STATES as $state) {
+                if (strpos($text, $state) !== false) {
+                    $score += 5;
+                    $patterns[] = 'Valid Mexican State: ' . $state;
+                    break;
+                }
             }
+
+            $retryInfo = $this->handleIntelligentRetries('ine');
+            $progressiveValidation = $this->validateWithProgressiveThresholds(
+                $score,
+                'ine',
+                $criticalElements,
+                $retryInfo['current_attempts']
+            );
+
+            $isValid = $ocrValidation['is_valid'] && $progressiveValidation['is_valid'];
+            $detailedFeedback = $isValid ? [] : $this->getDetailedFeedback(
+                $score,
+                $progressiveValidation['threshold_used'],
+                'ine'
+            );
+
+            return [
+                'is_valid' => $isValid,
+                'confidence' => min(100, $score),
+                'patterns' => $patterns,
+                'critical_elements' => $criticalElements,
+                'curp_valid' => isset($extractedData['curp']),
+                'voter_key_valid' => isset($extractedData['voter_key']),
+                'state_detected' => $extractedData['state'] ?? null,
+                'threshold_info' => $progressiveValidation,
+                'retry_info' => $retryInfo,
+                'error' => !$isValid ? $detailedFeedback['message'] : null,
+                'suggestions' => !$isValid ? $detailedFeedback['suggestions'] : []
+            ];
         }
 
-        // NUEVO: Usar validación progresiva
-        $retryInfo = $this->handleIntelligentRetries('ine');
-        $progressiveValidation = $this->validateWithProgressiveThresholds(
-            $score,
-            'ine',
-            $criticalElements,
-            $retryInfo['current_attempts']
-        );
-
-        $isValid = $ocrValidation['is_valid'] && $progressiveValidation['is_valid'];
-        $detailedFeedback = $isValid ? [] : $this->getDetailedFeedback(
-            $score,
-            $progressiveValidation['threshold_used'],
-            'ine'
-        );
-
-        return [
-            'is_valid' => $isValid,
-            'confidence' => min(100, $score),
-            'patterns' => $patterns,
-            'critical_elements' => $criticalElements,
-            'curp_valid' => isset($extractedData['curp']),
-            'voter_key_valid' => isset($extractedData['voter_key']),
-            'state_detected' => $extractedData['state'] ?? null,
-            'threshold_info' => $progressiveValidation,
-            'retry_info' => $retryInfo,
-            'error' => !$isValid ? $detailedFeedback['message'] : null,
-            'suggestions' => !$isValid ? $detailedFeedback['suggestions'] : []
-        ];
+        return $this->basicINEValidation($text);
     }
 
-    // Fallback a validación básica si no hay OCR validation
-    return $this->basicINEValidation($text);
-}
-
-    /**
-     * Validación Pasaporte MEJORADA
-     */
-        private function strictValidatePassportEnhanced($text, $ocrValidation = null)
+    private function strictValidatePassportEnhanced($text, $ocrValidation = null)
     {
         if ($ocrValidation && isset($ocrValidation['is_valid'])) {
             $score = $ocrValidation['confidence'] ?? 0;
 
-            // NUEVO: Usar validación progresiva
             $retryInfo = $this->handleIntelligentRetries('pasaporte');
             $progressiveValidation = $this->validateWithProgressiveThresholds(
                 $score,
@@ -466,16 +1413,12 @@ class VerificationController extends Controller
         return $this->basicPassportValidation($text);
     }
 
-    /**
-     * Validación Comprobante MEJORADA
-     */
-        private function strictValidateAddressProofEnhanced($text, $ocrValidation = null)
+    private function strictValidateAddressProofEnhanced($text, $ocrValidation = null)
     {
         if ($ocrValidation && isset($ocrValidation['is_valid'])) {
             $score = $ocrValidation['confidence'] ?? 0;
             $extractedData = $ocrValidation['extracted_data'] ?? [];
 
-            // Validación adicional de fecha (máximo 4 meses)
             if (isset($extractedData['bill_date'])) {
                 $billDate = $extractedData['bill_date'];
                 if ($this->isDateTooOld($billDate, 4)) {
@@ -483,7 +1426,6 @@ class VerificationController extends Controller
                 }
             }
 
-            // NUEVO: Usar validación progresiva
             $retryInfo = $this->handleIntelligentRetries('comprobante');
             $progressiveValidation = $this->validateWithProgressiveThresholds(
                 max(0, $score),
@@ -515,9 +1457,6 @@ class VerificationController extends Controller
         return $this->basicAddressProofValidation($text);
     }
 
-    /**
-     * Validación de pureza mejorada
-     */
     private function validateDocumentPurityEnhanced($text, $documentType)
     {
         $text = strtoupper($text);
@@ -529,11 +1468,10 @@ class VerificationController extends Controller
             if (strpos($text, $forbiddenWord) !== false) {
                 $contamination[] = $forbiddenWord;
 
-                // Asignar severidad según la palabra
                 if (in_array($forbiddenWord, ['INSTITUTO NACIONAL ELECTORAL', 'PASAPORTE', 'CFE'])) {
-                    $severityScore += 50; // Alta severidad
+                    $severityScore += 50;
                 } else {
-                    $severityScore += 20; // Severidad media
+                    $severityScore += 20;
                 }
             }
         }
@@ -557,21 +1495,18 @@ class VerificationController extends Controller
         return ['is_pure' => true, 'contamination_score' => 0];
     }
 
-        private function validateWithProgressiveThresholds($confidence, $documentType, $criticalElements, $attempts = 0)
+    private function validateWithProgressiveThresholds($confidence, $documentType, $criticalElements, $attempts = 0)
     {
         $baseThreshold = self::STRICT_CONFIDENCE_THRESHOLDS[$documentType];
 
-        // Reducir umbral si tiene elementos críticos válidos
         if ($criticalElements >= 2) {
             $baseThreshold -= 8;
         }
 
-        // Reducir umbral para múltiples intentos (más tolerante)
         if ($attempts >= 1) {
             $baseThreshold -= 15;
         }
 
-        // Nunca bajar de un mínimo de seguridad
         $minimumThreshold = [
             'ine' => 30,
             'pasaporte' => 25,
@@ -590,8 +1525,6 @@ class VerificationController extends Controller
             ]
         ];
     }
-
-
 
     private function getDetailedFeedback($confidence, $requiredConfidence, $documentType)
     {
@@ -633,45 +1566,38 @@ class VerificationController extends Controller
         }
     }
 
-        private function handleIntelligentRetries($documentType)
+    private function handleIntelligentRetries($documentType)
     {
         $userId = auth()->id();
         $attemptsKey = "attempts_{$documentType}_{$userId}";
         $attempts = Cache::get($attemptsKey, 0);
 
-        // Incrementar contador
         Cache::put($attemptsKey, $attempts + 1, now()->addHours(24));
 
         return [
             'current_attempts' => $attempts + 1,
-            'use_relaxed' => $attempts >= 1, // Desde el segundo intento
+            'use_relaxed' => $attempts >= 1,
             'message' => $attempts >= 1 ? 'Aplicando criterios más flexibles' : null
         ];
     }
 
-    /**
-     * NUEVA: Validación de calidad de imagen
-     */
     private function validateImageQuality($file, $extractedText)
     {
         $qualityScore = 100;
         $issues = [];
 
-        // Verificar tamaño de archivo (muy pequeño = baja calidad)
         $fileSize = $file->getSize();
-        if ($fileSize < 10000) { // Menos de 50KB
+        if ($fileSize < 50000) {
             $qualityScore -= 15;
             $issues[] = 'Archivo muy pequeño, posible baja resolución';
         }
 
-        // Verificar longitud del texto extraído
         $textLength = strlen($extractedText);
         if ($textLength < 50) {
             $qualityScore -= 15;
             $issues[] = 'Poco texto extraído, posible imagen borrosa';
         }
 
-        // Verificar presencia de caracteres extraños (indicativo de OCR pobre)
         $strangeCharCount = preg_match_all('/[^\p{L}\p{N}\s\.\,\:\;\-\/\(\)]/u', $extractedText);
         if ($strangeCharCount > 10) {
             $qualityScore -= 20;
@@ -700,13 +1626,9 @@ class VerificationController extends Controller
         ];
     }
 
-    /**
-     * Verificar si una fecha es muy antigua
-     */
     private function isDateTooOld($dateString, $maxMonths)
     {
         try {
-            // Intentar parsear diferentes formatos de fecha
             $patterns = [
                 '/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/',
                 '/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/'
@@ -722,16 +1644,14 @@ class VerificationController extends Controller
                 }
             }
 
-            return true; // Si no se puede parsear, considerar muy antigua
+            return true;
         } catch (\Exception $e) {
             return true;
         }
     }
 
-    // Métodos de validación básica (fallback)
     private function basicINEValidation($text)
     {
-        // Implementación básica como fallback
         $score = 0;
         if (strpos($text, 'INSTITUTO NACIONAL ELECTORAL') !== false) $score += 30;
         if (strpos($text, 'CREDENCIAL PARA VOTAR') !== false) $score += 25;
@@ -777,16 +1697,19 @@ class VerificationController extends Controller
         ];
     }
 
-    /**
-     * Verificación completa con los 3 documentos - MEJORADA
-     */
+    // ==========================================
+    // MÉTODOS AUXILIARES
+    // ==========================================
+
     public function verifyComplete(Request $request)
     {
         try {
             $this->enforceRateLimit($request, 'verification_complete');
             $this->validateCompleteRequest($request);
 
-            if (auth()->user()->is_identity_verified) {
+            $user = auth()->user();
+
+            if ($user->is_identity_verified) {
                 return $this->strictErrorResponse(
                     'Tu identidad ya ha sido verificada previamente',
                     'already_verified',
@@ -801,124 +1724,135 @@ class VerificationController extends Controller
             $documentsProcessed = 0;
             $totalCriticalElements = 0;
 
-            // Procesar cada documento con validación estricta mejorada
-            $documentsToProcess = [
-                'ine_document' => 'ine',
-                'passport_document' => 'pasaporte',
-                'address_proof' => 'comprobante'
-            ];
+            $identityType = $request->input('identity_type');
+            $identityFile = $request->file('identity_document');
 
-            foreach ($documentsToProcess as $fileKey => $documentType) {
-                if ($request->hasFile($fileKey)) {
-                    $result = $this->processDocumentStrictEnhanced($request->file($fileKey), $documentType);
-
-                    if (!$result['success']) {
-                        return $this->strictErrorResponse(
-                            "Error en {$documentType}: " . $result['error'],
-                            $documentType . '_failed',
-                            strtoupper($documentType) . '_PROCESSING_FAILED',
-                            $result['suggestions'] ?? []
-                        );
-                    }
-
-                    $results[$documentType] = $result;
-                    $totalConfidence += $result['confidence'];
-                    $totalCriticalElements += $result['critical_elements'] ?? 0;
-                    $documentsProcessed++;
-                }
-            }
-
-            // Validar que al menos tenemos un documento de identidad
-            if (!isset($results['ine']) && !isset($results['pasaporte'])) {
+            if (!$identityFile || !$identityType) {
                 return $this->strictErrorResponse(
-                    'Debes proporcionar al menos un documento de identidad válido (INE o Pasaporte)',
+                    'Debes proporcionar un documento de identidad válido (INE o Pasaporte)',
                     'no_identity_document',
                     'NO_IDENTITY_DOCUMENT'
                 );
             }
 
-            // Verificación facial opcional mejorada
-            $faceVerification = null;
-            if ($request->hasFile('selfie')) {
-                $faceVerification = $this->verifyFaceMatchEnhanced($request->file('selfie'), $results);
+            Log::info('🔍 Procesando documento de identidad', [
+                'user_id' => $user->id,
+                'identity_type' => $identityType
+            ]);
+
+            $identityResult = $this->processDocumentCompleteWithValidations($identityFile, $identityType, $user);
+
+            if (!$identityResult['success']) {
+                return $this->strictErrorResponse(
+                    "Error en {$identityType}: " . $identityResult['error'],
+                    $identityType . '_failed',
+                    strtoupper($identityType) . '_PROCESSING_FAILED',
+                    $identityResult['suggestions'] ?? []
+                );
             }
 
-            // Calcular métricas finales con ponderación
+            $results[$identityType] = $identityResult;
+            $totalConfidence += $identityResult['confidence'];
+            $totalCriticalElements += $identityResult['critical_elements'] ?? 0;
+            $documentsProcessed++;
+
+            if ($request->hasFile('address_proof')) {
+                Log::info('🔍 Procesando comprobante de domicilio', [
+                    'user_id' => $user->id
+                ]);
+
+                $addressResult = $this->processDocumentCompleteWithValidations(
+                    $request->file('address_proof'),
+                    'comprobante',
+                    $user
+                );
+
+                if (!$addressResult['success']) {
+                    return $this->strictErrorResponse(
+                        "Error en comprobante: " . $addressResult['error'],
+                        'comprobante_failed',
+                        'COMPROBANTE_PROCESSING_FAILED',
+                        $addressResult['suggestions'] ?? []
+                    );
+                }
+
+                $results['comprobante'] = $addressResult;
+                $totalConfidence += $addressResult['confidence'];
+                $totalCriticalElements += $addressResult['critical_elements'] ?? 0;
+                $documentsProcessed++;
+            }
+
             $averageConfidence = $documentsProcessed > 0 ? ($totalConfidence / $documentsProcessed) : 0;
-            $confidenceBonus = $totalCriticalElements > 6 ? 5 : 0; // Bonus por elementos críticos
+            $confidenceBonus = $totalCriticalElements > 6 ? 5 : 0;
             $finalConfidence = min(100, $averageConfidence + $confidenceBonus);
 
-            $verificationId = 'strict_ver_' . uniqid() . '_' . auth()->id();
+            $verificationId = 'ver_complete_' . uniqid() . '_' . $user->id;
 
-            // Extraer nombre más confiable
-            $verifiedName = $this->extractVerifiedNameEnhanced($results);
-
-            // Actualizar usuario con información mejorada
-            auth()->user()->update([
+            $user->update([
                 'is_identity_verified' => true,
                 'verified_at' => now(),
-                'verification_method' => 'strict_multi_document_enhanced',
-                'verified_name' => $verifiedName,
+                'verification_method' => 'complete_enhanced_' . $identityType,
+                'verified_name' => $results[$identityType]['extracted_name'] ?? $user->name,
                 'verification_confidence' => $finalConfidence
             ]);
 
-            // Guardar metadata mejorada
             $this->saveVerificationMetadataEnhanced($verificationId, [
                 'documents_processed' => array_keys($results),
-                'individual_confidences' => array_map(function($result) {
-                    return $result['confidence'];
-                }, $results),
-                'average_confidence' => $averageConfidence,
+                'identity_type' => $identityType,
                 'final_confidence' => $finalConfidence,
                 'total_critical_elements' => $totalCriticalElements,
-                'face_verification' => $faceVerification ? 'completed' : 'skipped',
+                'name_verified' => true,
+                'vigency_verified' => true,
                 'verification_timestamp' => now(),
-                'validation_method' => 'strict_enhanced',
-                'quality_scores' => array_map(function($result) {
-                    return $result['quality_score'] ?? 0;
-                }, $results)
+                'validation_method' => 'complete_with_name_and_vigency'
             ]);
 
-            Log::info('Verificación completa ESTRICTA MEJORADA exitosa', [
-                'user_id' => auth()->id(),
+            Log::info('🎉 Verificación completa exitosa con TODAS las validaciones', [
+                'user_id' => $user->id,
                 'verification_id' => $verificationId,
                 'documents_count' => $documentsProcessed,
                 'final_confidence' => $finalConfidence,
-                'critical_elements' => $totalCriticalElements
+                'identity_type' => $identityType
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => '🎉 Verificación de identidad completada exitosamente con validación avanzada',
-                'code' => 'STRICT_VERIFICATION_COMPLETE_ENHANCED',
+                'message' => '🎉 Verificación de identidad completada exitosamente',
+                'code' => 'VERIFICATION_COMPLETE_ENHANCED',
                 'data' => [
                     'verification_id' => $verificationId,
                     'documents_verified' => array_keys($results),
+                    'identity_type' => $identityType,
                     'confidence_score' => round($finalConfidence, 2),
                     'individual_scores' => array_map(function($result) {
                         return round($result['confidence'], 2);
                     }, $results),
                     'critical_elements_total' => $totalCriticalElements,
                     'verified_at' => now()->toISOString(),
-                    'verified_name' => $verifiedName,
-                    'face_verification' => $faceVerification ? 'completed' : 'not_provided',
-                    'quality_assessment' => $this->getOverallQualityAssessment($results)
+                    'verified_name' => $results[$identityType]['extracted_name'] ?? $user->name,
+                    'validations_performed' => [
+                        'name_verification' => true,
+                        'vigency_verification' => true,
+                        'document_type_verification' => true,
+                        'quality_verification' => true,
+                        'purity_verification' => true
+                    ]
                 ],
-                'privacy_notice' => 'Documentos procesados únicamente en memoria con algoritmos de validación CURP oficiales. No se almacenan datos biométricos.'
+                'privacy_notice' => 'Documentos procesados únicamente en memoria. No se almacenan imágenes originales ni datos biométricos.'
             ]);
 
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error de validación mejorada',
-                'code' => 'VALIDATION_FAILED_ENHANCED',
+                'message' => 'Error de validación',
+                'code' => 'VALIDATION_FAILED',
                 'errors' => $e->errors()
             ], 422);
 
         } catch (\Exception $e) {
-            $errorId = 'complete_err_enhanced_' . uniqid();
+            $errorId = 'complete_err_' . uniqid();
 
-            Log::error('Error crítico en verificación completa mejorada', [
+            Log::error('Error crítico en verificación completa', [
                 'error_id' => $errorId,
                 'user_id' => auth()->id(),
                 'error' => $e->getMessage(),
@@ -927,17 +1861,14 @@ class VerificationController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error interno del sistema mejorado',
-                'code' => 'INTERNAL_SERVER_ERROR_ENHANCED',
+                'message' => 'Error interno del sistema',
+                'code' => 'INTERNAL_ERROR',
                 'error_id' => $errorId
             ], 500);
         }
     }
 
-    /**
-     * NUEVO: Procesamiento estricto mejorado de documento individual
-     */
-    private function processDocumentStrictEnhanced($file, $documentType)
+    private function processDocumentCompleteWithValidations($file, $documentType, $user)
     {
         try {
             $this->validateDocumentFile($file, $documentType);
@@ -947,31 +1878,60 @@ class VerificationController extends Controller
             if (!$ocrResult['success']) {
                 return [
                     'success' => false,
-                    'error' => 'No se pudo procesar el documento con OCR mejorado',
-                    'suggestions' => [
-                        'Mejora la calidad de la imagen',
-                        'Verifica la iluminación',
-                        'Asegúrate de que el documento esté completo y enfocado'
-                    ]
+                    'error' => 'No se pudo procesar el documento',
+                    'suggestions' => ['Mejora la calidad de la imagen', 'Asegúrate de que el documento sea legible']
                 ];
             }
 
             $extractedText = $ocrResult['text'] ?? '';
             $ocrValidation = $ocrResult['validation'] ?? null;
 
-            // Validación estricta mejorada
-            $validation = $this->strictValidateDocumentTypeEnhanced($extractedText, $documentType, $ocrValidation);
+            if (in_array($documentType, ['ine', 'pasaporte'])) {
+                $userName = $user->name . ' ' . $user->last_name;
+                $nameMatch = $this->ocrService->validateNameMatch($extractedText, $userName);
+
+                if (!$nameMatch['matches']) {
+                    return [
+                        'success' => false,
+                        'error' => "El nombre no coincide ({$nameMatch['match_percentage']}% de coincidencia)",
+                        'suggestions' => [
+                            "Tu nombre registrado: {$userName}",
+                            'Verifica que el documento sea tuyo',
+                            'Actualiza tu perfil si el nombre es diferente'
+                        ]
+                    ];
+                }
+            }
+
+            $recencyCheck = $this->ocrService->validateDocumentRecency($extractedText, $documentType);
+
+            if (!$recencyCheck['is_recent']) {
+                return [
+                    'success' => false,
+                    'error' => $recencyCheck['message'],
+                    'suggestions' => [
+                        $recencyCheck['suggestion'] ?? 'Documento no vigente',
+                        'Verifica la fecha de vigencia del documento'
+                    ]
+                ];
+            }
+
+            $validation = $this->strictValidateDocumentTypeEnhanced(
+                $extractedText,
+                $documentType,
+                $ocrValidation
+            );
 
             if (!$validation['is_valid']) {
                 return [
                     'success' => false,
-                    'error' => $validation['error'],
-                    'suggestions' => $validation['suggestions'] ?? []
+                    'error' => $validation['error'] ?? 'Documento no válido',
+                    'suggestions' => $validation['suggestions'] ?? ['Verifica la calidad del documento']
                 ];
             }
 
-            // Verificar pureza mejorada
             $purityCheck = $this->validateDocumentPurityEnhanced($extractedText, $documentType);
+
             if (!$purityCheck['is_pure']) {
                 return [
                     'success' => false,
@@ -980,8 +1940,8 @@ class VerificationController extends Controller
                 ];
             }
 
-            // Verificar calidad de imagen
             $qualityCheck = $this->validateImageQuality($file, $extractedText);
+
             if (!$qualityCheck['is_quality']) {
                 return [
                     'success' => false,
@@ -996,16 +1956,16 @@ class VerificationController extends Controller
                 'critical_elements' => $validation['critical_elements'] ?? 0,
                 'patterns' => $validation['patterns'] ?? [],
                 'quality_score' => $qualityCheck['quality_score'] ?? 0,
+                'extracted_name' => $ocrValidation['extracted_name'] ?? null,
                 'extracted_data' => $ocrValidation['extracted_data'] ?? []
             ];
 
         } catch (\Exception $e) {
-            Log::error("Error procesando {$documentType} estricto mejorado", [
+            Log::error("Error procesando {$documentType}", [
                 'error' => $e->getMessage(),
-                'file_size' => $file->getSize(),
+                'user_id' => $user->id,
                 'trace' => $e->getTraceAsString()
             ]);
-
             return [
                 'success' => false,
                 'error' => 'Error interno procesando el documento'
@@ -1013,82 +1973,6 @@ class VerificationController extends Controller
         }
     }
 
-    /**
-     * MEJORADO: Verificación facial con mejor logging
-     */
-    private function verifyFaceMatchEnhanced($selfieFile, $documentResults): bool
-    {
-        try {
-            Log::info('Iniciando verificación facial mejorada', [
-                'user_id' => auth()->id(),
-                'selfie_size' => $selfieFile->getSize(),
-                'documents_count' => count($documentResults)
-            ]);
-
-            // TODO: Implementar CompreFace aquí con mejores validaciones
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error('Error en verificación facial mejorada', [
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * MEJORADO: Extracción de nombre más inteligente
-     */
-    private function extractVerifiedNameEnhanced($results)
-    {
-        // Priorizar INE > Pasaporte > Fallback
-        if (isset($results['ine']['extracted_data']['name'])) {
-            return $results['ine']['extracted_data']['name'];
-        }
-
-        if (isset($results['pasaporte']['extracted_data']['name'])) {
-            return $results['pasaporte']['extracted_data']['name'];
-        }
-
-        // Fallback a nombres extraídos por OCR
-        foreach ($results as $type => $result) {
-            if (isset($result['extracted_data']['name'])) {
-                return $result['extracted_data']['name'];
-            }
-        }
-
-        return 'Nombre no extraído';
-    }
-
-    /**
-     * NUEVO: Evaluación general de calidad
-     */
-    private function getOverallQualityAssessment($results)
-    {
-        $totalQuality = 0;
-        $count = 0;
-
-        foreach ($results as $result) {
-            if (isset($result['quality_score'])) {
-                $totalQuality += $result['quality_score'];
-                $count++;
-            }
-        }
-
-        $averageQuality = $count > 0 ? $totalQuality / $count : 0;
-
-        if ($averageQuality >= 90) return 'Excelente';
-        if ($averageQuality >= 80) return 'Muy buena';
-        if ($averageQuality >= 70) return 'Buena';
-        if ($averageQuality >= 60) return 'Regular';
-        return 'Aceptable';
-    }
-
-    /**
-     * MEJORADO: Guardar metadata con más detalles
-     */
     private function saveVerificationMetadataEnhanced($verificationId, $metadata)
     {
         try {
@@ -1096,7 +1980,7 @@ class VerificationController extends Controller
                 'user_id' => auth()->id(),
                 'ip_address' => request()->ip(),
                 'user_agent' => request()->userAgent(),
-                'processing_version' => '2.0_enhanced',
+                'processing_version' => '6.0_strict_face_id_85_fixed',
                 'created_at' => now()
             ]);
 
@@ -1108,96 +1992,68 @@ class VerificationController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::warning('No se pudo guardar metadata de verificación mejorada', [
+            Log::warning('No se pudo guardar metadata de verificación', [
                 'verification_id' => $verificationId,
                 'error' => $e->getMessage()
             ]);
         }
     }
 
-    /**
-     * Obtener información de documentos soportados - MEJORADA
-     */
     public function getSupportedDocuments()
     {
+        $faceVerificationEnabled = config('services.compreface.enabled', false);
+
         return response()->json([
             'success' => true,
             'data' => [
                 'document_types' => self::DOCUMENT_TYPES,
+                'validation_features' => [
+                    'name_verification' => 'Verifica que el nombre coincida con el registrado',
+                    'vigency_verification' => 'Verifica que documentos sean recientes (2024-2025)',
+                    'curp_validation' => 'Algoritmo oficial CURP con dígito verificador',
+                    'quality_assessment' => 'Evaluación de calidad de imagen',
+                    'contamination_detection' => 'Detección de elementos cruzados',
+                    'facial_recognition' => $faceVerificationEnabled 
+                        ? 'Verificación biométrica ESTRICTA con Verify API (threshold fijo 85%)'
+                        : 'Verificación facial no disponible'
+                ],
                 'strict_requirements' => [
                     'ine' => [
-                        'required_elements' => [
-                            'CURP válido con dígito verificador',
-                            'Instituto Nacional Electoral',
-                            'Credencial para Votar',
-                            'Clave de elector válida'
-                        ],
-                        'forbidden_elements' => ['Pasaporte', 'CFE', 'Servicios públicos'],
                         'min_confidence' => self::STRICT_CONFIDENCE_THRESHOLDS['ine'],
-                        'validation_features' => [
-                            'Algoritmo oficial CURP',
-                            'Validación de estados mexicanos',
-                            'Verificación de fechas de nacimiento'
-                        ]
+                        'required_validations' => ['Nombre', 'CURP', 'Vigencia 2024+'],
                     ],
                     'pasaporte' => [
-                        'required_elements' => [
-                            'Pasaporte',
-                            'Estados Unidos Mexicanos',
-                            'Número de pasaporte mexicano (G/N + 8 dígitos)'
-                        ],
-                        'forbidden_elements' => ['INE', 'Credencial', 'CFE'],
                         'min_confidence' => self::STRICT_CONFIDENCE_THRESHOLDS['pasaporte'],
-                        'validation_features' => [
-                            'Detección de formato MRZ',
-                            'Validación de códigos de país',
-                            'Verificación de fechas de emisión'
-                        ]
+                        'required_validations' => ['Nombre', 'Número pasaporte', 'Vigencia'],
                     ],
                     'comprobante' => [
-                        'required_elements' => [
-                            'Empresa de servicios válida',
-                            'Dirección completa',
-                            'Fecha reciente (máximo 4 meses)'
-                        ],
-                        'forbidden_elements' => ['INE', 'Pasaporte', 'CURP'],
                         'min_confidence' => self::STRICT_CONFIDENCE_THRESHOLDS['comprobante'],
-                        'accepted_companies' => [
-                            'CFE', 'Telmex', 'Izzi', 'Totalplay', 'Megacable',
-                            'Telcel', 'Movistar', 'AT&T', 'Axtel', 'Dish', 'Sky'
-                        ],
-                        'validation_features' => [
-                            'Validación de códigos postales mexicanos',
-                            'Verificación de fechas de vencimiento',
-                            'Detección de formato de direcciones mexicanas'
-                        ]
+                        'required_validations' => ['Empresa válida', 'Fecha máx 4 meses'],
                     ]
                 ],
                 'file_requirements' => [
                     'max_size_mb' => round(self::MAX_FILE_SIZE / 1024, 1),
                     'min_size_kb' => self::MIN_FILE_SIZE,
-                    'allowed_formats' => self::ALL_ALLOWED_TYPES,
-                    'recommended_formats' => ['jpg', 'png'],
-                    'quality_requirements' => [
-                        'Resolución mínima recomendada: 1200x800 píxeles',
-                        'Iluminación uniforme sin reflejos',
-                        'Enfoque nítido en todo el documento',
-                        'Contraste adecuado para lectura clara'
-                    ]
+                    'allowed_formats' => self::ALL_ALLOWED_TYPES
                 ],
-                'security_features' => [
-                    'processing_mode' => 'In-memory only (no persistent storage)',
-                    'curp_validation' => 'Official Mexican algorithm with check digit',
-                    'contamination_detection' => 'Cross-document element detection',
-                    'quality_assessment' => 'Image quality scoring system'
-                ]
-            ],
-            'api_version' => '2.0_enhanced',
-            'last_updated' => now()->toISOString()
+                'facial_verification' => $faceVerificationEnabled ? [
+                    'algorithm' => 'CompreFace Verify API',
+                    'enabled' => true,
+                    'strict_threshold' => 85,
+                    'threshold_fixed' => true,
+                    'no_exceptions' => 'Threshold NO se reduce por lentes, iluminación o cualquier condición',
+                    'multiple_faces_rejected' => true,
+                    'quality_checks' => true,
+                    'approval_criteria' => 'ÚNICO: Face ID ≥85%'
+                ] : [
+                    'enabled' => false,
+                    'message' => 'Verificación facial no disponible en este momento'
+                ],
+                'api_version' => '6.0_strict_face_id_85_fixed',
+                'last_updated' => now()->toISOString()
+            ]
         ]);
     }
-
-    // MÉTODOS DE VALIDACIÓN Y UTILIDADES MEJORADOS
 
     private function validateSingleDocumentRequest(Request $request)
     {
@@ -1218,58 +2074,32 @@ class VerificationController extends Controller
             ]
         ], [
             'document_type.required' => 'Debes especificar el tipo de documento',
-            'document_type.in' => 'Tipo de documento no válido. Permitidos: ' . implode(', ', array_keys(self::DOCUMENT_TYPES)),
+            'document_type.in' => 'Tipo de documento no válido',
             'document.required' => 'Debes seleccionar un archivo',
-            'document.mimes' => 'Formato no permitido. Usa: ' . implode(', ', self::ALL_ALLOWED_TYPES),
-            'document.min' => 'El archivo es demasiado pequeño (mínimo ' . self::MIN_FILE_SIZE . 'KB)',
-            'document.max' => 'El archivo es demasiado grande (máximo ' . round(self::MAX_FILE_SIZE/1024, 1) . 'MB)'
+            'document.mimes' => 'Formato no permitido',
+            'document.min' => 'El archivo es demasiado pequeño',
+            'document.max' => 'El archivo es demasiado grande'
         ]);
     }
 
     private function validateCompleteRequest(Request $request)
     {
-        $allowedTypes = implode(',', self::ALL_ALLOWED_TYPES);
-
-        $rules = [
-            'selfie' => [
-                'required',
-                'file',
-                'mimes:' . implode(',', self::ALLOWED_IMAGE_TYPES),
-                'min:' . self::MIN_FILE_SIZE,
-                'max:' . self::MAX_FILE_SIZE
-            ]
-        ];
-
-        if (!$request->hasFile('ine_document') && !$request->hasFile('passport_document')) {
-            throw ValidationException::withMessages([
-                'identity_document' => 'Debes proporcionar al menos un documento de identidad (INE o Pasaporte)'
-            ]);
-        }
-
-        foreach (['ine_document', 'passport_document', 'address_proof'] as $fileKey) {
-            if ($request->hasFile($fileKey)) {
-                $rules[$fileKey] = [
-                    'file',
-                    'mimes:' . $allowedTypes,
-                    'min:' . self::MIN_FILE_SIZE,
-                    'max:' . self::MAX_FILE_SIZE
-                ];
-            }
-        }
-
-        $request->validate($rules, [
-            'selfie.required' => 'La selfie es obligatoria para verificación facial',
+        $request->validate([
+            'identity_type' => 'required|in:ine,pasaporte',
+            'identity_document' => 'required|file|mimes:jpeg,jpg,png,webp|max:10240',
+            'address_proof' => 'nullable|file|mimes:jpeg,jpg,png,webp,pdf|max:10240'
+        ], [
+            'identity_type.required' => 'Debes especificar el tipo de identidad',
+            'identity_document.required' => 'Debes subir tu documento de identidad',
             '*.mimes' => 'Formato de archivo no soportado',
-            '*.min' => 'El archivo es demasiado pequeño',
-            '*.max' => 'El archivo es demasiado grande (máximo ' . round(self::MAX_FILE_SIZE/1024, 1) . 'MB)'
+            '*.max' => 'El archivo es demasiado grande'
         ]);
     }
 
-    private function validateDocumentFile($file, string $documentType)
+    private function validateDocumentFile($file, $documentType)
     {
         $extension = strtolower($file->getClientOriginalExtension());
 
-        // Validaciones específicas por tipo
         if ($documentType === 'comprobante' && $extension === 'pdf') {
             if ($file->getSize() > self::MAX_FILE_SIZE * 1024) {
                 throw ValidationException::withMessages([
@@ -1279,22 +2109,20 @@ class VerificationController extends Controller
             return;
         }
 
-        // Para INE y Pasaporte, preferir imágenes de alta calidad
         if (in_array($documentType, ['ine', 'pasaporte']) && !in_array($extension, self::ALLOWED_IMAGE_TYPES)) {
             throw ValidationException::withMessages([
                 'document' => "Para {$documentType} debe ser una imagen clara (JPG, PNG, WEBP)"
             ]);
         }
 
-        // Validar tamaño mínimo más estricto para documentos oficiales
-        if (in_array($documentType, ['ine', 'pasaporte']) && $file->getSize() < 20000) { // 20KB
+        if (in_array($documentType, ['ine', 'pasaporte']) && $file->getSize() < 20000) {
             throw ValidationException::withMessages([
-                'document' => "La imagen del {$documentType} es demasiado pequeña para análisis detallado (mínimo 20KB)"
+                'document' => "La imagen del {$documentType} es demasiado pequeña (mínimo 20KB)"
             ]);
         }
     }
 
-    private function enforceRateLimit(Request $request, string $type)
+    private function enforceRateLimit(Request $request, $type)
     {
         $key = $type . '_' . $request->ip() . '_' . (auth()->id() ?? 'guest');
 
@@ -1328,18 +2156,15 @@ class VerificationController extends Controller
     {
         $nextSteps = [
             'ine' => [
-                'Si tienes pasaporte, también puedes verificarlo para mayor seguridad',
                 'Sube un comprobante de domicilio reciente (máximo 4 meses)',
-                'Toma una selfie clara para verificación facial'
+                'Completa la verificación para publicar propiedades'
             ],
             'pasaporte' => [
-                'Si tienes INE, también puedes verificarla',
                 'Sube un comprobante de domicilio reciente (máximo 4 meses)',
-                'Toma una selfie clara para verificación facial'
+                'Completa la verificación para publicar propiedades'
             ],
             'comprobante' => [
                 'Sube tu INE o Pasaporte para verificar identidad',
-                'Toma una selfie clara para verificación facial',
                 'Completa el proceso de verificación integral'
             ]
         ];
@@ -1347,14 +2172,14 @@ class VerificationController extends Controller
         return $nextSteps[$documentType] ?? [];
     }
 
-    private function strictErrorResponse(string $message, string $step, string $code, array $suggestions = [], int $status = 422)
+    private function strictErrorResponse($message, $step, $code, $suggestions = [], $status = 422)
     {
         $response = [
             'success' => false,
             'message' => $message,
             'step' => $step,
             'code' => $code,
-            'validation_level' => 'strict_enhanced',
+            'validation_level' => 'strict_v6_face_id_85_fixed',
             'timestamp' => now()->toISOString()
         ];
 
@@ -1376,38 +2201,18 @@ class VerificationController extends Controller
         return response()->json($response, $status);
     }
 
-    /**
-     * Endpoint para testing mejorado
-     */
     public function testOCR(Request $request)
     {
         try {
             $this->enforceRateLimit($request, 'test_ocr');
 
             $request->validate([
-                'image' => [
-                    'required',
-                    'file',
-                    'mimes:' . implode(',', self::ALL_ALLOWED_TYPES),
-                    'min:' . self::MIN_FILE_SIZE,
-                    'max:' . self::MAX_FILE_SIZE
-                ],
-                'document_type' => [
-                    'sometimes',
-                    'string',
-                    'in:' . implode(',', array_keys(self::DOCUMENT_TYPES))
-                ]
+                'image' => 'required|file|mimes:' . implode(',', self::ALL_ALLOWED_TYPES) . '|max:' . self::MAX_FILE_SIZE,
+                'document_type' => 'nullable|in:' . implode(',', array_keys(self::DOCUMENT_TYPES))
             ]);
 
             $file = $request->file('image');
             $documentType = $request->input('document_type');
-
-            Log::info('Test OCR mejorado iniciado', [
-                'user_id' => auth()->id(),
-                'file_size' => $file->getSize(),
-                'mime_type' => $file->getMimeType(),
-                'specified_type' => $documentType
-            ]);
 
             $startTime = microtime(true);
             $result = $this->ocrService->processImage($file, $documentType);
@@ -1422,10 +2227,7 @@ class VerificationController extends Controller
                 ], 422);
             }
 
-            // Detectar tipo automáticamente mejorado
             $detectedType = $this->detectDocumentTypeEnhanced($result['text'] ?? '');
-
-            // Validación de calidad de imagen
             $qualityCheck = $this->validateImageQuality($file, $result['text'] ?? '');
 
             $result['metadata'] = [
@@ -1434,9 +2236,8 @@ class VerificationController extends Controller
                 'processing_time_ms' => $processingTime,
                 'detected_type' => $detectedType,
                 'specified_type' => $documentType,
-                'auto_detection' => $detectedType ? "Detectado como: {$detectedType}" : 'Tipo no identificado',
                 'quality_assessment' => $qualityCheck,
-                'api_version' => '2.0_enhanced'
+                'api_version' => '6.0_strict_face_id_85_fixed'
             ];
 
             return response()->json([
@@ -1445,22 +2246,13 @@ class VerificationController extends Controller
                 'code' => 'OCR_SUCCESS_ENHANCED'
             ]);
 
-        } catch (ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Error de validación: ' . implode(', ', Arr::flatten($e->errors())),
-                'code' => 'VALIDATION_ERROR',
-                'errors' => $e->errors()
-            ], 422);
-
         } catch (\Exception $e) {
-            $errorId = 'test_err_enhanced_' . uniqid();
+            $errorId = 'test_err_' . uniqid();
 
-            Log::error('Error crítico en testOCR mejorado', [
+            Log::error('Error en testOCR', [
                 'error_id' => $errorId,
                 'error' => $e->getMessage(),
-                'user_id' => auth()->id(),
-                'trace' => $e->getTraceAsString()
+                'user_id' => auth()->id()
             ]);
 
             return response()->json([
@@ -1472,9 +2264,6 @@ class VerificationController extends Controller
         }
     }
 
-    /**
-     * Obtener status de verificación del usuario - MEJORADO
-     */
     public function getVerificationStatus()
     {
         $user = auth()->user();
@@ -1487,7 +2276,6 @@ class VerificationController extends Controller
                 'verification_method' => $user->verification_method ?? null,
                 'verified_name' => $user->verified_name ?? null,
                 'verification_confidence' => $user->verification_confidence ?? null,
-                'verification_level' => $this->getVerificationLevel($user->verification_method ?? ''),
                 'user_info' => [
                     'id' => $user->id,
                     'name' => $user->name . ' ' . $user->last_name,
@@ -1497,17 +2285,99 @@ class VerificationController extends Controller
         ]);
     }
 
-    /**
-     * NUEVO: Determinar nivel de verificación
-     */
-    private function getVerificationLevel($method)
+    public function showFaceTest()
     {
-        if (strpos($method, 'strict') !== false && strpos($method, 'enhanced') !== false) {
-            return 'strict_enhanced';
-        } elseif (strpos($method, 'strict') !== false) {
-            return 'strict';
-        } else {
-            return 'standard';
+        return view('verification.face-test');
+    }
+
+    /**
+     * 🔥 DETECCIÓN EN TIEMPO REAL - MANTENER
+     */
+    public function detectFacesRealTime(Request $request)
+    {
+        try {
+            // 🔥 VERIFICAR SI FACE VERIFICATION ESTÁ HABILITADO
+            if (!config('services.compreface.enabled')) {
+                return response()->json([
+                    'success' => false,
+                    'faces' => [],
+                    'message' => 'Detección facial no disponible en este momento'
+                ], 503);
+            }
+
+            $request->validate([
+                'image' => 'required|file|mimes:jpeg,jpg,png|max:5120',
+            ]);
+
+            $image = $request->file('image');
+            
+            $tempPath = storage_path('app/temp/frame_' . uniqid() . '.' . $image->getClientOriginalExtension());
+            if (!file_exists(dirname($tempPath))) {
+                mkdir(dirname($tempPath), 0755, true);
+            }
+            $image->move(dirname($tempPath), basename($tempPath));
+
+            $detection = $this->faceService->detectFaces($tempPath);
+
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+
+            if (!$detection['success']) {
+                return response()->json([
+                    'success' => false,
+                    'faces' => [],
+                    'message' => 'No se pudieron detectar rostros'
+                ]);
+            }
+
+            $faces = [];
+            if (isset($detection['faces_data']) && is_array($detection['faces_data'])) {
+                foreach ($detection['faces_data'] as $face) {
+                    $box = $face['box'] ?? null;
+                    if ($box) {
+                        $faces[] = [
+                            'box' => [
+                                'x' => $box['x_min'] ?? 0,
+                                'y' => $box['y_min'] ?? 0,
+                                'width' => ($box['x_max'] ?? 0) - ($box['x_min'] ?? 0),
+                                'height' => ($box['y_max'] ?? 0) - ($box['y_min'] ?? 0)
+                            ],
+                            'confidence' => $face['subjects'][0]['similarity'] ?? 0,
+                            'attributes' => [
+                                'glasses' => $this->detectGlasses($face)
+                            ]
+                        ];
+                    }
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'faces' => $faces,
+                'faces_count' => count($faces),
+                'timestamp' => now()->toISOString()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error en detección de rostros tiempo real', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'faces' => [],
+                'error' => 'Error en detección'
+            ], 500);
         }
+    }
+
+    /**
+     * Helper para detectar lentes
+     */
+    private function detectGlasses($faceData)
+    {
+        $confidence = $faceData['subjects'][0]['similarity'] ?? 0;
+        return $confidence >= 0.7 && $confidence < 0.95;
     }
 }

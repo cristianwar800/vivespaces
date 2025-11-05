@@ -1,0 +1,138 @@
+# Deployment de la aplicación Laravel OPTIMIZADO Y BALANCEADO
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vivespaces-app
+  labels:
+    app: vivespaces-app
+spec:
+  replicas: 1  # 🔥 1 pod para desarrollo
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: vivespaces-app
+  template:
+    metadata:
+      labels:
+        app: vivespaces-app
+    spec:
+      containers:
+      - name: laravel
+        image: vivespaces:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: APP_NAME
+          value: "ViveSpaces"
+        - name: APP_ENV
+          value: "local"
+        - name: APP_DEBUG
+          value: "true"
+        - name: APP_KEY
+          value: "base64:zF8gd7r0acgJj0QP+a4pbJ98JqrSSqwvcS0B5qOENQs="
+        - name: DB_CONNECTION
+          value: "mysql"
+        - name: DB_HOST
+          value: "vivespaces-mysql"
+        - name: DB_PORT
+          value: "3307"
+        - name: DB_DATABASE
+          value: "vivespaces"
+        - name: DB_USERNAME
+          value: "root"
+        - name: DB_PASSWORD
+          value: ""
+        - name: LOG_CHANNEL
+          value: "stderr"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: SESSION_DRIVER
+          value: "file"
+        - name: CACHE_DRIVER
+          value: "file"
+        - name: QUEUE_CONNECTION
+          value: "sync"
+        - name: VIEW_COMPILED_PATH
+          value: "/var/www/html/storage/framework/views"
+        - name: APP_URL
+          value: "http://vivespaces.com.mx"
+        - name: FRONTEND_URL
+          value: "http://localhost:5174"
+        - name: SANCTUM_STATEFUL_DOMAINS
+          value: "localhost:5174,localhost:30080,vivespaces.com.mx"
+        - name: SESSION_DOMAIN
+          value: ".vivespaces.com.mx"
+        - name: PHP_OPCACHE_ENABLE
+          value: "1"
+        - name: PHP_OPCACHE_MEMORY_CONSUMPTION
+          value: "128"
+        - name: PHP_MEMORY_LIMIT
+          value: "256M"
+        volumeMounts:
+        - name: app-code
+          mountPath: /var/www/html
+        resources:
+          requests:
+            memory: "384Mi"
+            cpu: "250m"
+          limits:
+            memory: "768Mi"
+            cpu: "750m"
+        startupProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: app-code
+        hostPath:
+          path: /run/desktop/mnt/host/c/laragon/www/vivespaces
+          type: Directory
+
+---
+# Service de la aplicación
+apiVersion: v1
+kind: Service
+metadata:
+  name: vivespaces-app
+  labels:
+    app: vivespaces-app
+spec:
+  type: NodePort
+  selector:
+    app: vivespaces-app
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
+    name: http
+    protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800

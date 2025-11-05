@@ -26,6 +26,7 @@ class Message extends Model
         'edited_at',
         'is_deleted',
         'reactions',
+        'deleted_by', // 🆕 NUEVO
     ];
 
     protected $casts = [
@@ -35,9 +36,13 @@ class Message extends Model
         'is_deleted' => 'boolean',
         'metadata' => 'array',
         'reactions' => 'array',
+        'deleted_by' => 'array', // 🆕 NUEVO
     ];
 
-    // Relaciones
+    // ==========================================
+    // 🔗 RELACIONES
+    // ==========================================
+
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
@@ -63,7 +68,10 @@ class Message extends Model
         return $this->hasMany(Message::class, 'reply_to_id');
     }
 
-    // Métodos para archivos
+    // ==========================================
+    // 📁 MÉTODOS PARA ARCHIVOS
+    // ==========================================
+
     public function isImage(): bool
     {
         return $this->type === 'image';
@@ -100,7 +108,10 @@ class Message extends Model
         return $bytes . ' bytes';
     }
 
-    // Métodos para reacciones
+    // ==========================================
+    // 😊 MÉTODOS PARA REACCIONES
+    // ==========================================
+
     public function addReaction(string $emoji, int $userId): void
     {
         $reactions = $this->reactions ?? [];
@@ -135,7 +146,54 @@ class Message extends Model
         return count($this->reactions[$emoji] ?? []);
     }
 
-    // Scopes útiles
+    // ==========================================
+    // 🗑️ MÉTODOS PARA DELETED_BY (NUEVOS)
+    // ==========================================
+
+    /**
+     * Verificar si un usuario específico eliminó este mensaje
+     */
+    public function isDeletedBy(int $userId): bool
+    {
+        return in_array($userId, $this->deleted_by ?? []);
+    }
+
+    /**
+     * Marcar mensaje como eliminado por un usuario
+     */
+    public function markDeletedBy(int $userId): self
+    {
+        $deletedBy = $this->deleted_by ?? [];
+        
+        if (!in_array($userId, $deletedBy)) {
+            $deletedBy[] = $userId;
+            $this->deleted_by = $deletedBy;
+            $this->save();
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Verificar si ambos usuarios (sender y receiver) eliminaron el mensaje
+     */
+    public function isDeletedByBoth(): bool
+    {
+        return count($this->deleted_by ?? []) >= 2;
+    }
+
+    /**
+     * Obtener los IDs de usuarios que eliminaron este mensaje
+     */
+    public function getDeletedByUsers(): array
+    {
+        return $this->deleted_by ?? [];
+    }
+
+    // ==========================================
+    // 🔍 SCOPES
+    // ==========================================
+
     public function scopeForConversation($query, $propertyId, $userId1, $userId2)
     {
         return $query->where('property_id', $propertyId)
@@ -157,19 +215,48 @@ class Message extends Model
                     ->whereNull('read_at');
     }
 
-            // En app/Models/Message.php
-
-public function getDurationFormattedAttribute()
-{
-    if (!$this->duration) {
-        return null;
+    /**
+     * 🆕 Scope para filtrar mensajes NO eliminados por un usuario específico
+     */
+    public function scopeNotDeletedBy($query, int $userId)
+    {
+        return $query->where(function($q) use ($userId) {
+            $q->whereNull('deleted_by')
+            ->orWhereRaw("NOT (JSON_CONTAINS(deleted_by, CAST(? AS JSON)) OR JSON_CONTAINS(deleted_by, CAST(? AS JSON)))", [$userId, "\"$userId\""]);
+        });
     }
 
-    $minutes = floor($this->duration / 60);
-    $seconds = $this->duration % 60;
+    /**
+     * 🆕 Scope para obtener solo mensajes eliminados por un usuario específico
+     */
+    public function scopeDeletedBy($query, int $userId)
+    {
+        return $query->whereRaw("JSON_CONTAINS(deleted_by, '\"$userId\"')");
+    }
 
-    return sprintf('%d:%02d', $minutes, $seconds);
-}
+    /**
+     * 🆕 Scope para mensajes eliminados por ambos usuarios
+     */
+    public function scopeDeletedByBoth($query)
+    {
+        return $query->whereRaw("JSON_LENGTH(deleted_by) >= 2");
+    }
+
+    // ==========================================
+    // 🎵 ATRIBUTOS PARA AUDIO
+    // ==========================================
+
+    public function getDurationFormattedAttribute()
+    {
+        if (!$this->duration) {
+            return null;
+        }
+
+        $minutes = floor($this->duration / 60);
+        $seconds = $this->duration % 60;
+
+        return sprintf('%d:%02d', $minutes, $seconds);
+    }
 
     public function getAudioInfoAttribute()
     {

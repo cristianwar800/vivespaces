@@ -1,0 +1,9 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vivespaces-app-pdb
+spec:
+  minAvailable: 1  # 🔥 Mínimo 1 pod activo (de 2 total)
+  selector:
+    matchLabels:
+      app: vivespaces-app
