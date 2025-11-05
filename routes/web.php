@@ -37,6 +37,26 @@ Route::get('/', function () {
 Route::get('/properties', [PropertyController::class, 'index'])->name('properties');
 
 // ==========================================
+// 🔍 BÚSQUEDA Y CONTACTO (Público)
+// ==========================================
+
+// Búsqueda de propiedades
+Route::get('/search', function () {
+    return view('search');
+})->name('search');
+
+Route::get('/search/properties', [PropertyController::class, 'searchProperties'])->name('search.properties');
+
+// Contacto
+Route::get('/contacto', [ContactoController::class, 'index'])->name('contacto.index');
+Route::post('/contacto', [ContactoController::class, 'enviar'])->name('contacto.enviar');
+
+// Recomendador AI
+Route::get('/recomendador', function () {
+    return view('fastapi-recomendador');
+})->name('recomendador');
+
+// ==========================================
 // ✉️ VERIFICACIÓN DE EMAIL (Público)
 // ==========================================
 
@@ -409,6 +429,16 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/messages', [MessageController::class, 'store']);
 
     // ----------------
+    // 🤖 Chatbot API
+    // ----------------
+    Route::prefix('chatbot')->group(function () {
+        Route::post('/message', [ChatBotController::class, 'processMessage'])
+            ->name('api.chatbot.message');
+        Route::post('/welcome', [ChatBotController::class, 'getWelcomeMessage'])
+            ->name('api.chatbot.welcome');
+    });
+
+    // ----------------
     // ⭐ CALIFICACIONES DE USUARIOS
     // ----------------
     Route::prefix('ratings')->group(function () {
@@ -571,13 +601,6 @@ if (app()->environment(['local', 'staging'])) {
         return view('test-ai');
     })->name('ai-search-test');
 
-    Route::prefix('api/chatbot')->group(function () {
-        Route::post('/message', [ChatBotController::class, 'processMessage'])
-            ->name('api.chatbot.message');
-        Route::post('/welcome', [ChatBotController::class, 'getWelcomeMessage'])
-            ->name('api.chatbot.welcome');
-    });
-
     Route::get('/face-service', function() {
         $apiKey = config('services.compreface.api_key');
         $baseUrl = config('services.compreface.base_url');
@@ -633,19 +656,6 @@ if (app()->environment(['local', 'staging'])) {
             'ready' => $connection['status'] === 'Conectado ✅' ? 'Listo para usar 🚀' : 'Revisar configuración ⚠️'
         ]);
     });
-
-    Route::get('/search', function () {
-        return view('search');
-    })->name('search');
-
-    Route::get('/search/properties', [PropertyController::class, 'searchProperties'])->name('search.properties');
-
-    Route::get('/contacto', [ContactoController::class, 'index'])->name('contacto.index');
-    Route::post('/contacto', [ContactoController::class, 'enviar'])->name('contacto.enviar');
-
-    Route::get('/recomendador', function () {
-        return view('fastapi-recomendador');
-    })->name('recomendador');
 
     Route::get('/test-face-detection', function() {
         return view('test-face-detection');
