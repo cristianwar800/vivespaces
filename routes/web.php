@@ -7,7 +7,6 @@ use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\VerificationController;
-use App\Http\Controllers\Comparison\PhotoComparisonController;
 use App\Http\Controllers\ComunidadController;
 use App\Http\Controllers\AISearchController;
 use App\Http\Controllers\NotificationController;
@@ -116,23 +115,16 @@ Route::middleware('auth')->group(function () {
     // ✅ Verificación de Identidad
     // ----------------
     Route::prefix('verification')->group(function () {
-        // 🔥 NUEVO: Endpoint de configuración (para que el frontend sepa qué está habilitado)
+        // 🔥 Configuración (para que el frontend sepa qué está habilitado)
         Route::get('/config', [VerificationController::class, 'getVerificationConfig'])
             ->name('verification.config');
 
-        // Verificación con fotos
-       
-        // Verificación OCR
-        Route::post('/identity-ocr', [VerificationController::class, 'verify']);
-        Route::post('/test-ocr', [VerificationController::class, 'testOCR']);
-        Route::post('/document', [VerificationController::class, 'verifySingleDocument']);
-        Route::post('/complete', [VerificationController::class, 'verifyComplete']);
-        Route::get('/documents/supported', [VerificationController::class, 'getSupportedDocuments']);
+        // 🔥 Vista principal de verificación con VerificationFlow
+        Route::get('/identity', function () {
+            return view('verification-identity');
+        })->name('verification.identity');
 
-        // 🔥 VERIFICACIÓN FACIAL - Vista de prueba
-        Route::get('/face-test', [VerificationController::class, 'showFaceTest'])->name('verification.face.test');
-        
-        // 🔥 NUEVA RUTA: Verificación facial con Verify API (threshold 85%)
+        // 🔥 Verificación facial con Verify API
         Route::post('/face-verify', [VerificationController::class, 'verifyFaceTest'])
             ->name('verification.face-verify');
         
@@ -140,22 +132,33 @@ Route::middleware('auth')->group(function () {
         Route::post('/detect-faces-realtime', [VerificationController::class, 'detectFacesRealTime'])
             ->name('detect.faces.realtime');
         
-        // 🔥 ========================================
-        // 🔥 NUEVAS RUTAS DE PERSISTENCIA
-        // 🔥 ========================================
+        // 🔥 Gestión de sesión y progreso
         Route::post('/start-session', [VerificationController::class, 'startVerificationSession'])
             ->name('verification.start-session');
         Route::post('/save-progress', [VerificationController::class, 'saveStepProgress'])
             ->name('verification.save-progress');
         Route::get('/progress', [VerificationController::class, 'getVerificationProgress'])
             ->name('verification.progress');
-             Route::post('/validate-document', [VerificationController::class, 'validateDocument'])
-        ->name('verification.validate-document');
-        Route::post('/finalize', [VerificationController::class, 'finalizeVerification'])
-        ->name('verification.finalize');
 
+        // 🔥 Validación de documentos
+        Route::post('/validate-document', [VerificationController::class, 'validateDocument'])
+            ->name('verification.validate-document');
         
-        // Vista de prueba (AL FINAL)
+        // 🔥 Finalizar verificación
+        Route::post('/finalize', [VerificationController::class, 'finalizeVerification'])
+            ->name('verification.finalize');
+
+        // OCR (legacy - si aún lo usas)
+        Route::post('/identity-ocr', [VerificationController::class, 'verify']);
+        Route::post('/test-ocr', [VerificationController::class, 'testOCR']);
+        Route::post('/document', [VerificationController::class, 'verifySingleDocument']);
+        Route::post('/complete', [VerificationController::class, 'verifyComplete']);
+        Route::get('/documents/supported', [VerificationController::class, 'getSupportedDocuments']);
+
+        // Vista de prueba facial
+        Route::get('/face-test', [VerificationController::class, 'showFaceTest'])->name('verification.face.test');
+        
+        // Vista de prueba general
         Route::get('/test', function () {
             return view('test-verification');
         });
@@ -265,8 +268,7 @@ Route::middleware('auth')->group(function () {
             Route::post('/{userId}/reset-password', [AdminController::class, 'resetUserPassword'])->name('admin.users.reset-password');
             Route::patch('/{userId}/change-role', [AdminController::class, 'changeUserRole'])->name('admin.users.change-role');
             Route::delete('/{userId}', [AdminController::class, 'deleteUser'])->name('admin.users.delete');
-            Route::patch('/{userId}/revoke-verification', [AdminController::class, 'revokeVerification'])->name('admin.users.revoke-verification'); // ✅ CORREGIDO
-
+            Route::patch('/{userId}/revoke-verification', [AdminController::class, 'revokeVerification'])->name('admin.users.revoke-verification');
         });
 
         // Gestión de propiedades desde admin
@@ -410,28 +412,13 @@ Route::prefix('api')->middleware('auth')->group(function () {
     // ⭐ CALIFICACIONES DE USUARIOS
     // ----------------
     Route::prefix('ratings')->group(function () {
-        // Verificar si puede calificar
         Route::post('/can-rate', [UserRatingController::class, 'canRate']);
-        
-        // Guardar o actualizar calificación
         Route::post('/', [UserRatingController::class, 'store']);
-        
-        // Verificar si debe mostrar el prompt de calificación
         Route::post('/should-show-prompt', [UserRatingController::class, 'shouldShowRatingPrompt']);
-        
-        // Detectar palabras clave en mensajes
         Route::post('/detect-keywords', [UserRatingController::class, 'detectRatingKeywords']);
-        
-        // Contador de mensajes en conversación
         Route::get('/messages/count/{propertyId}/{userId}', [UserRatingController::class, 'getConversationMessageCount']);
-        
-        // Obtener estadísticas de un usuario
         Route::get('/user/{userId}/stats', [UserRatingController::class, 'getUserStats']);
-        
-        // Obtener todas las calificaciones de un usuario
         Route::get('/user/{userId}', [UserRatingController::class, 'getUserRatings']);
-        
-        // Eliminar una calificación
         Route::delete('/{ratingId}', [UserRatingController::class, 'destroy']);
     });
 
@@ -462,63 +449,25 @@ Route::prefix('api')->middleware('auth')->group(function () {
 
 Route::prefix('ai')->group(function () {
 
-    // ============================================
     // RUTAS DE MACHINE LEARNING
-    // ============================================
-
-    // Test de algoritmos ML
     Route::get('/ml-test', [AISearchController::class, 'testML']);
-
-    // Clasificación rápida con Naive Bayes
     Route::post('/classify/quick', [AISearchController::class, 'classifyQuick']);
-
-    // Búsquedas similares con KNN
     Route::post('/similar', [AISearchController::class, 'findSimilar']);
-
-    // Predicción compleja con MLP
     Route::post('/predict/complex', [AISearchController::class, 'predictComplex']);
-
-    // Ensemble (los 3 algoritmos)
     Route::post('/predict/ensemble', [AISearchController::class, 'predictEnsemble']);
-
-    // Comparar todos los algoritmos
     Route::post('/compare', [AISearchController::class, 'compareAll']);
 
-    // ============================================
     // RUTAS ORIGINALES
-    // ============================================
-
-    // Health check
     Route::get('/health', [AISearchController::class, 'healthCheck']);
-
-    // Test de conexión
     Route::get('/test', [AISearchController::class, 'testConnection']);
-
-    // Tracking de búsqueda
     Route::post('/track', [AISearchController::class, 'trackSearch']);
-
-    // Patrones de usuario
     Route::get('/patterns/user/{userId}', [AISearchController::class, 'getUserPatterns']);
-
-    // Patrones globales
     Route::get('/patterns/global', [AISearchController::class, 'getGlobalPatterns']);
-
-    // Predicciones
     Route::post('/predictions', [AISearchController::class, 'getPredictions']);
-
-    // Sugerencias
     Route::get('/suggestions/{userId}', [AISearchController::class, 'getSuggestions']);
-
-    // Trending
     Route::get('/trending', [AISearchController::class, 'getTrending']);
-
-    // Dashboard de analytics
     Route::get('/analytics/dashboard', [AISearchController::class, 'getAnalyticsDashboard']);
-
-    // Analizar intención
     Route::post('/intent', [AISearchController::class, 'analyzeIntent']);
-
-    // Inicializar sistema
     Route::post('/initialize', [AISearchController::class, 'initialize']);
 
 }); // FIN Route::prefix('ai')
@@ -534,7 +483,6 @@ Route::post('/notifications/delete-all', function() {
             ], 401);
         }
 
-        // Eliminar todas las notificaciones del usuario
         $deleted = $user->notifications()->delete();
 
         \Log::info('🗑️ Notificaciones eliminadas', [
@@ -592,43 +540,6 @@ if (app()->environment(['local', 'staging'])) {
             }
         });
 
-        Route::get('/model-files', function() {
-            $modelPath = public_path('comparison-model/model.json');
-            $metadataPath = public_path('comparison-model/metadata.json');
-            $weightsPath = public_path('comparison-model/weights.bin');
-
-            return response()->json([
-                'model_exists' => file_exists($modelPath),
-                'metadata_exists' => file_exists($metadataPath),
-                'weights_exists' => file_exists($weightsPath),
-                'model_path' => $modelPath,
-                'metadata_path' => $metadataPath,
-                'weights_path' => $weightsPath,
-                'model_size' => file_exists($modelPath) ? filesize($modelPath) : 0,
-                'metadata_size' => file_exists($metadataPath) ? filesize($metadataPath) : 0,
-                'weights_size' => file_exists($weightsPath) ? filesize($weightsPath) : 0,
-            ]);
-        });
-
-        Route::get('/dd-test', function() {
-            dd([
-                'message' => 'Ruta funciona!',
-                'api_key' => config('services.ocr_space.api_key'),
-                'ocr_service_exists' => class_exists('App\Services\OCRService'),
-                'controller_exists' => class_exists('App\Http\Controllers\VerificationController'),
-                'guzzle_exists' => class_exists('GuzzleHttp\Client'),
-                'intervention_exists' => class_exists('Intervention\Image\Facades\Image'),
-            ]);
-        });
-
-        Route::get('/chat-test', function() {
-            return response()->json([
-                'success' => true,
-                'message' => 'El endpoint funciona',
-                'user' => auth()->user() ? auth()->user()->name : 'No logueado'
-            ]);
-        })->middleware('auth');
-
         Route::get('/conversations', function() {
             if (!auth()->check()) {
                 return 'No estás logueado';
@@ -671,7 +582,6 @@ if (app()->environment(['local', 'staging'])) {
         $apiKey = config('services.compreface.api_key');
         $baseUrl = config('services.compreface.base_url');
         
-        // Test de configuración básica
         $config = [
             'api_key_configured' => !empty($apiKey),
             'api_key_length' => strlen($apiKey ?? ''),
@@ -679,7 +589,6 @@ if (app()->environment(['local', 'staging'])) {
             'base_url' => $baseUrl
         ];
         
-        // Test con Recognition API
         try {
             $testImage = imagecreatetruecolor(100, 100);
             ob_start();
@@ -688,7 +597,6 @@ if (app()->environment(['local', 'staging'])) {
             ob_end_clean();
             imagedestroy($testImage);
             
-            // Test de detección
             $response = Http::timeout(10)
                 ->withHeaders(['x-api-key' => $apiKey])
                 ->attach('file', $imageData, 'test.jpg')
@@ -739,13 +647,6 @@ if (app()->environment(['local', 'staging'])) {
         return view('fastapi-recomendador');
     })->name('recomendador');
 
-    Route::middleware(['auth'])->group(function () {
-        Route::get('/verification/identity', function () {
-            return view('verification-identity');
-        })->name('verification.identity');
-    });
-
-    // borrar
     Route::get('/test-face-detection', function() {
         return view('test-face-detection');
     });
