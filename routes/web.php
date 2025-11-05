@@ -121,10 +121,7 @@ Route::middleware('auth')->group(function () {
             ->name('verification.config');
 
         // Verificación con fotos
-        Route::get('/identity', [PhotoComparisonController::class, 'index'])->name('photo.verification');
-        Route::post('/photos', [PhotoComparisonController::class, 'verifyPhotos'])->name('photo.verify');
-        Route::get('/status', [PhotoComparisonController::class, 'getVerificationStatus'])->name('verification.status');
-
+       
         // Verificación OCR
         Route::post('/identity-ocr', [VerificationController::class, 'verify']);
         Route::post('/test-ocr', [VerificationController::class, 'testOCR']);

@@ -14,7 +14,6 @@ import Properties from './components/Properties';
 import Email from './components/Email';
 import Chat from './components/Chat';
 import TestOCR from './components/TestOCR';
-import PhotoVerification from './components/PhotoVerification';
 import Comunidad from './components/Comunidad';
 import AdminPanel from './components/AdminPanel';
 import TestAI from './components/TestAI';
@@ -54,13 +53,12 @@ function shouldShowGlobalWidgets() {
     
     // También ocultar si estamos en un contenedor específico de verificación
     const verificationContainer = document.getElementById('verification-router-root');
-    const photoVerificationContainer = document.getElementById('photo-verification-root');
     const testOCRContainer = document.getElementById('test-ocr-root');
     const chatContainer = document.getElementById('chat-root');
     const adminPanelContainer = document.getElementById('admin-panel-root');
     const profileContainer = document.getElementById('profile-root');
     
-    if (verificationContainer || photoVerificationContainer || testOCRContainer || 
+    if (verificationContainer || testOCRContainer || 
         chatContainer || adminPanelContainer || profileContainer) {
         return false;
     }
@@ -198,17 +196,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Photo Verification
-    const photoVerificationContainer = document.getElementById('photo-verification-root');
-    if (photoVerificationContainer) {
-        const userData = getUserData();
-        const root = createRoot(photoVerificationContainer);
-        root.render(<PhotoVerification user={userData} />);
-        console.log('✅ PhotoVerification renderizado');
-        return;
-    }
-
-    // Verification Flow (NUEVO)
+    // Verification Flow
     const verificationRouterContainer = document.getElementById('verification-router-root');
     if (verificationRouterContainer) {
         const userData = getUserData();
