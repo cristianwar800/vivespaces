@@ -61,4 +61,8 @@ return [
         'face_collection' => env('COMPREFACE_FACE_COLLECTION', 'main'),
     ],  
 
+    'resend' => [
+    'key' => env('RESEND_API_KEY'),
+    ],
+
 ];

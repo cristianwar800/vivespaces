@@ -19,13 +19,15 @@ class AppServiceProvider extends ServiceProvider
      * Bootstrap any application services.
      */
     public function boot(): void
-    {
-        if (request()->getHost() !== 'localhost' && request()->getHost() !== '127.0.0.1') {
-            $ngrokUrl = config('app.ngrok_url');
-            if ($ngrokUrl) {
-                URL::forceRootUrl($ngrokUrl);
+        {
+            // Forzar HTTPS en producción (Railway, Ngrok, etc)
+            if (request()->getHost() !== 'localhost' && request()->getHost() !== '127.0.0.1') {
                 URL::forceScheme('https');
+                
+                $ngrokUrl = config('app.ngrok_url');
+                if ($ngrokUrl) {
+                    URL::forceRootUrl($ngrokUrl);
+                }
             }
         }
-    }
 }
