@@ -45,9 +45,9 @@ class Chatbot extends Model
     ];
 
     /**
-     * Desactivar updated_at automático (solo usamos created_at)
+     * Timestamps automáticos habilitados
      */
-    const UPDATED_AT = null;
+    public $timestamps = true;
 
     /**
      * Relación: Pertenece a un usuario
