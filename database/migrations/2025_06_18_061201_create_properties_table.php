@@ -30,11 +30,20 @@ return new class extends Migration
             $table->string('image')->nullable();
             $table->decimal('latitude', 10, 8)->nullable();
             $table->decimal('longitude', 11, 8)->nullable();
+
+            // 🐕 Política de mascotas
+            $table->string('pets_allowed', 20)->default('negotiable'); // 'no_pets', 'pets_allowed', 'negotiable'
+            $table->text('pets_details')->nullable(); // Detalles: "Solo perros pequeños (max 10kg)"
+
             $table->timestamps();
 
             // No se puede usar restricciones de clave foránea para esta lógica compleja,
             // así que no se define onDelete aquí. El control se debe hacer a nivel de aplicación.
             $table->foreign('user_id')->references('id')->on('users');
+
+            // 🚀 ÍNDICES PARA BÚSQUEDA GEOGRÁFICA RÁPIDA
+            $table->index(['latitude', 'longitude'], 'idx_location');
+            $table->index(['is_active', 'latitude', 'longitude'], 'idx_active_location');
         });
     }
 

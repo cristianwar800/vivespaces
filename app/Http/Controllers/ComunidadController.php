@@ -19,7 +19,18 @@ class ComunidadController extends Controller
 
             // Filtros opcionales
             if ($request->filled('zone')) {
-                $query->where('zone', $request->zone);
+                // Soportar múltiples zonas separadas por coma
+                if (str_contains($request->zone, ',')) {
+                    $zones = array_map('trim', explode(',', $request->zone));
+                    $query->where(function($q) use ($zones) {
+                        foreach ($zones as $zone) {
+                            $q->orWhere('zone', 'like', "%{$zone}%");
+                        }
+                    });
+                } else {
+                    // Búsqueda parcial para soportar zonas completas del mapa
+                    $query->where('zone', 'like', "%{$request->zone}%");
+                }
             }
 
             if ($request->filled('post_type')) {
@@ -107,9 +118,9 @@ class ComunidadController extends Controller
                 'subzone' => 'nullable|string|max:100',
                 'post_type' => ['required', Rule::in(['general', 'alert', 'question', 'sale', 'service', 'event', 'lost_found'])],
                 'topic' => ['required', Rule::in(['security', 'maintenance', 'social', 'services', 'marketplace', 'pets', 'transportation', 'other'])],
-                'is_pinned' => 'boolean',
-                'allow_comments' => 'boolean',
-                'is_anonymous' => 'boolean',
+                'is_pinned' => 'nullable|boolean',
+                'allow_comments' => 'nullable|boolean',
+                'is_anonymous' => 'nullable|boolean',
                 'attachments' => 'nullable|array|max:5',
                 'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:10240', // 10MB máximo
             ], [
@@ -120,6 +131,8 @@ class ComunidadController extends Controller
                 'content.min' => 'El contenido debe tener al menos 10 caracteres',
                 'content.max' => 'El contenido no puede tener más de 5000 caracteres',
                 'zone.required' => 'La zona es obligatoria',
+                'zone.max' => 'La zona no puede exceder 100 caracteres',
+                'subzone.max' => 'La subzona no puede exceder 100 caracteres',
                 'post_type.required' => 'El tipo de publicación es obligatorio',
                 'post_type.in' => 'El tipo de publicación seleccionado no es válido',
                 'topic.required' => 'El tema es obligatorio',
@@ -153,7 +166,7 @@ class ComunidadController extends Controller
                 'title' => $validated['title'],
                 'content' => $validated['content'],
                 'zone' => $validated['zone'],
-                'subzone' => $validated['subzone'],
+                'subzone' => $validated['subzone'] ?? null,
                 'post_type' => $validated['post_type'],
                 'topic' => $validated['topic'],
                 'is_pinned' => $validated['is_pinned'] ?? false,
@@ -231,10 +244,88 @@ class ComunidadController extends Controller
                 'subzone' => 'nullable|string|max:100',
                 'post_type' => ['sometimes', 'required', Rule::in(['general', 'alert', 'question', 'sale', 'service', 'event', 'lost_found'])],
                 'topic' => ['sometimes', 'required', Rule::in(['security', 'maintenance', 'social', 'services', 'marketplace', 'pets', 'transportation', 'other'])],
-                'is_pinned' => 'boolean',
-                'allow_comments' => 'boolean',
-                'is_anonymous' => 'boolean',
+                'is_pinned' => 'nullable|boolean',
+                'allow_comments' => 'nullable|boolean',
+                'is_anonymous' => 'nullable|boolean',
+                'existing_attachments' => 'nullable|string', // JSON string de archivos existentes
+                'attachments' => 'nullable|array|max:5',
+                'attachments.*' => 'file|mimes:jpeg,png,jpg,gif,pdf,doc,docx|max:10240',
+            ], [
+                'title.required' => 'El título es obligatorio',
+                'title.min' => 'El título debe tener al menos 5 caracteres',
+                'title.max' => 'El título no puede tener más de 200 caracteres',
+                'content.required' => 'El contenido es obligatorio',
+                'content.min' => 'El contenido debe tener al menos 10 caracteres',
+                'content.max' => 'El contenido no puede tener más de 5000 caracteres',
+                'zone.required' => 'La zona es obligatoria',
+                'zone.max' => 'La zona no puede exceder 100 caracteres',
+                'subzone.max' => 'La subzona no puede exceder 100 caracteres',
+                'post_type.required' => 'El tipo de publicación es obligatorio',
+                'post_type.in' => 'El tipo de publicación seleccionado no es válido',
+                'topic.required' => 'El tema es obligatorio',
+                'topic.in' => 'El tema seleccionado no es válido',
+                'attachments.max' => 'No puedes subir más de 5 archivos nuevos',
+                'attachments.*.max' => 'Cada archivo no puede ser mayor a 10MB',
+                'attachments.*.mimes' => 'Los archivos deben ser de tipo: jpeg, png, jpg, gif, pdf, doc, docx',
             ]);
+
+            // 🆕 Procesar archivos adjuntos
+            $attachmentPaths = [];
+
+            // Obtener archivos existentes que se mantienen (enviados desde el frontend)
+            if ($request->has('existing_attachments')) {
+                $existingAttachmentsJson = $request->input('existing_attachments');
+
+                // Validar que sea un JSON válido
+                if (!empty($existingAttachmentsJson)) {
+                    $existingAttachments = json_decode($existingAttachmentsJson, true);
+
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($existingAttachments)) {
+                        // Validar que cada archivo tenga la estructura correcta
+                        foreach ($existingAttachments as $file) {
+                            if (isset($file['path']) && isset($file['name'])) {
+                                $attachmentPaths[] = $file;
+                            }
+                        }
+                    } else {
+                        \Log::warning('JSON inválido en existing_attachments', [
+                            'json' => $existingAttachmentsJson,
+                            'error' => json_last_error_msg()
+                        ]);
+                    }
+                }
+            }
+
+            // Agregar nuevos archivos
+            if ($request->hasFile('attachments')) {
+                // Validar que no se excedan los 5 archivos totales
+                $totalFiles = count($attachmentPaths) + count($request->file('attachments'));
+                if ($totalFiles > 5) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No puedes tener más de 5 archivos en total',
+                        'errors' => [
+                            'attachments' => ['El total de archivos (existentes + nuevos) no puede exceder 5']
+                        ]
+                    ], 422);
+                }
+
+                foreach ($request->file('attachments') as $file) {
+                    $path = $file->store('community-posts', 'public');
+                    $attachmentPaths[] = [
+                        'path' => $path,
+                        'name' => $file->getClientOriginalName(),
+                        'type' => $file->getMimeType(),
+                        'size' => $file->getSize()
+                    ];
+                }
+            }
+
+            // Actualizar attachments solo si se enviaron cambios
+            // Si se envió existing_attachments (aunque esté vacío), significa que el usuario editó los archivos
+            if ($request->has('existing_attachments') || $request->hasFile('attachments')) {
+                $validated['attachments'] = $attachmentPaths;
+            }
 
             $post->update($validated);
             $post->load('user:id,name,last_name');
@@ -301,36 +392,8 @@ class ComunidadController extends Controller
         }
     }
 
-    // Reaccionar a post
-    public function react($id)
-    {
-        try {
-            // Verificar autenticación
-            if (!Auth::check()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Debes estar autenticado para reaccionar'
-                ], 401);
-            }
-
-            $post = Comunidad::findOrFail($id);
-
-            // Incrementar contador de reacciones
-            $post->increment('reactions_count');
-
-            return response()->json([
-                'success' => true,
-                'reactions_count' => $post->reactions_count,
-                'message' => 'Reacción agregada'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al procesar la reacción'
-            ], 500);
-        }
-    }
+    // 🗑️ REACCIONES REMOVIDAS - Simplificación del sistema
+    // Si necesitas reacciones en el futuro, usa una tabla pivot: user_id + comunidad_id
 
     // ============================================
     // 🆕 MÉTODOS DE COMENTARIOS CORREGIDOS
@@ -362,7 +425,7 @@ class ComunidadController extends Controller
             $validated = $request->validate([
                 'content' => 'required|string|min:1|max:1000',
                 'parent_id' => 'nullable|exists:comments,id', // Cambiado a 'comments'
-                'is_anonymous' => 'boolean'
+                'is_anonymous' => 'nullable|boolean'
             ], [
                 'content.required' => 'El comentario no puede estar vacío',
                 'content.min' => 'El comentario debe tener al menos 1 caracter',
@@ -432,6 +495,66 @@ class ComunidadController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar los comentarios'
+            ], 500);
+        }
+    }
+
+    // Editar comentario - 🆕 NUEVO
+    public function updateComment(Request $request, $commentId)
+    {
+        try {
+            // Verificar autenticación
+            if (!Auth::check()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Debes estar autenticado'
+                ], 401);
+            }
+
+            $comment = Comments::findOrFail($commentId);
+
+            // Verificar permisos
+            if ($comment->user_id !== Auth::id()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para editar este comentario'
+                ], 403);
+            }
+
+            // Validar nuevo contenido
+            $validated = $request->validate([
+                'content' => 'required|string|min:1|max:1000',
+            ], [
+                'content.required' => 'El comentario no puede estar vacío',
+                'content.min' => 'El comentario debe tener al menos 1 caracter',
+                'content.max' => 'El comentario no puede tener más de 1000 caracteres',
+            ]);
+
+            // Actualizar comentario
+            $comment->update([
+                'content' => trim($validated['content'])
+            ]);
+
+            // Cargar relaciones para la respuesta
+            $comment->load(['user:id,name,last_name']);
+
+            return response()->json([
+                'success' => true,
+                'data' => $comment,
+                'message' => 'Comentario actualizado exitosamente'
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar el comentario'
             ], 500);
         }
     }

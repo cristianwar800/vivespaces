@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\GoogleAuthController;
 use App\Http\Controllers\Auth\AdminController;
 use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\EmailVerificationController;
@@ -76,6 +77,29 @@ Route::get('/verification/status', [EmailVerificationController::class, 'getVeri
     ->name('verification.status');
 
 // ==========================================
+// 🔑 PASSWORD RESET (Recuperar contraseña)
+// ==========================================
+
+Route::prefix('password')->group(function () {
+    // Enviar código de recuperación
+    Route::post('/send-reset-code', [EmailVerificationController::class, 'sendPasswordResetCode'])
+        ->name('password.send-reset-code');
+    
+    // Verificar código de recuperación
+    Route::post('/verify-reset-code', [EmailVerificationController::class, 'verifyPasswordResetCode'])
+        ->name('password.verify-reset-code');
+    
+    // Restablecer contraseña
+    Route::post('/reset', [EmailVerificationController::class, 'resetPassword'])
+        ->name('password.reset');
+    
+    // Vista para "Olvidé mi contraseña"
+    Route::get('/forgot', function () {
+            return view('email');
+    })->name('password.forgot');
+});
+
+// ==========================================
 // 👤 RUTAS DE AUTENTICACIÓN (Solo invitados)
 // ==========================================
 
@@ -88,6 +112,9 @@ Route::middleware('guest')->group(function () {
     Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
     Route::post('/register', [AuthController::class, 'register']);
 });
+// 🆕 Google OAuth Routes
+Route::get('/auth/google', [GoogleAuthController::class, 'redirectToGoogle'])->name('auth.google');
+Route::get('/auth/google/callback', [GoogleAuthController::class, 'handleGoogleCallback']);
 
 // ==========================================
 // 🔒 RUTAS PROTEGIDAS (Solo usuarios autenticados)
@@ -99,6 +126,7 @@ Route::middleware('auth')->group(function () {
     // 🔐 Autenticación y Perfil
     // ----------------
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+    Route::get('/logout', [AuthController::class, 'logout']); // Permitir GET también para evitar error 419
 
     // Perfil de usuario
     Route::prefix('profile')->group(function () {
@@ -112,25 +140,57 @@ Route::middleware('auth')->group(function () {
     // 🏠 Gestión de Propiedades (CRUD completo)
     // ----------------
     Route::prefix('properties')->group(function () {
-        Route::get('/create', [PropertyController::class, 'create'])->name('properties.create');
-        Route::post('/', [PropertyController::class, 'store'])->name('properties.store');
-        Route::get('/{property}/edit', [PropertyController::class, 'edit'])->name('properties.edit');
-        Route::put('/{property}', [PropertyController::class, 'update'])->name('properties.update');
-        Route::delete('/{property}', [PropertyController::class, 'destroy'])->name('properties.destroy');
-        Route::get('/{property}', [PropertyController::class, 'show'])->name('properties.show');
+        // 🔥 RUTAS ESPECÍFICAS PRIMERO (antes de las rutas con parámetros dinámicos)
+        Route::get('/favorites', [PropertyController::class, 'getFavorites'])->name('properties.favorites');
+
+        // 🔒 RUTAS PROTEGIDAS - Requieren identidad verificada
+        Route::get('/create', [PropertyController::class, 'create'])
+            ->middleware('verified.identity')
+            ->name('properties.create');
+
+        // 🔥 RUTAS CON PARÁMETROS DINÁMICOS AL FINAL
+        Route::post('/', [PropertyController::class, 'store'])
+            ->middleware('verified.identity')
+            ->name('properties.store');
+
+        Route::get('/{property}/edit', [PropertyController::class, 'edit'])
+            ->middleware('verified.identity')
+            ->name('properties.edit');
+
+        Route::put('/{property}', [PropertyController::class, 'update'])
+            ->middleware('verified.identity')
+            ->name('properties.update');
+
+        Route::delete('/{property}', [PropertyController::class, 'destroy'])
+            ->middleware('verified.identity')
+            ->name('properties.destroy');
+
+        Route::post('/{property}/favorite', [PropertyController::class, 'toggleFavorite'])->name('properties.favorite.toggle');
+        Route::get('/{property}/favorite/check', [PropertyController::class, 'checkFavorite'])->name('properties.favorite.check');
+        Route::get('/{property}', [PropertyController::class, 'show'])->name('properties.show'); // ⬅️ Esta SIEMPRE al final
     });
 
-    Route::prefix('properties/{property}/images')->group(function () {
-        Route::post('/', [PropertyController::class, 'uploadImages'])->name('properties.images.upload');
-        Route::get('/', [PropertyController::class, 'getImages'])->name('properties.images.index');
-        Route::delete('/{image}', [PropertyController::class, 'deleteImage'])->name('properties.images.delete');
-        Route::patch('/{image}/primary', [PropertyController::class, 'setPrimaryImage'])->name('properties.images.primary');
-        Route::patch('/reorder', [PropertyController::class, 'reorderImages'])->name('properties.images.reorder');
-    });
+    // 🔒 Gestión de imágenes de propiedades - Requieren identidad verificada
+    Route::prefix('properties/{property}/images')
+        ->middleware('verified.identity')
+        ->group(function () {
+            Route::post('/', [PropertyController::class, 'uploadImages'])->name('properties.images.upload');
+            Route::get('/', [PropertyController::class, 'getImages'])->name('properties.images.index');
+            Route::delete('/{image}', [PropertyController::class, 'deleteImage'])->name('properties.images.delete');
+            Route::patch('/{image}/primary', [PropertyController::class, 'setPrimaryImage'])->name('properties.images.primary');
+            Route::patch('/reorder', [PropertyController::class, 'reorderImages'])->name('properties.images.reorder');
+        });
 
     // Mis propiedades
     Route::get('/my-properties', [PropertyController::class, 'myProperties'])->name('properties.my');
 
+    Route::get('/favorites', function () {
+    return view('favorites');
+    })->name('favorites');
+
+
+
+    
     // ----------------
     // ✅ Verificación de Identidad
     // ----------------
@@ -318,6 +378,16 @@ Route::get('/api/properties-map', function() {
     ]);
 });
 
+// 🔥 CHATBOT - PÚBLICO (para invitados y autenticados)
+Route::prefix('api/chatbot')
+    ->middleware(['throttle:100,1'])
+    ->group(function () {
+        Route::post('/welcome', [ChatBotController::class, 'getWelcomeMessage'])
+            ->name('api.chatbot.welcome');
+        Route::post('/message', [ChatBotController::class, 'processMessage'])
+            ->name('api.chatbot.message');
+    });
+
 // Propiedades destacadas (público)
 Route::get('/api/featured-properties', function() {
     $featuredProperties = \App\Models\Property::where('is_active', true)
@@ -429,16 +499,6 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/messages', [MessageController::class, 'store']);
 
     // ----------------
-    // 🤖 Chatbot API
-    // ----------------
-    Route::prefix('chatbot')->group(function () {
-        Route::post('/message', [ChatBotController::class, 'processMessage'])
-            ->name('api.chatbot.message');
-        Route::post('/welcome', [ChatBotController::class, 'getWelcomeMessage'])
-            ->name('api.chatbot.welcome');
-    });
-
-    // ----------------
     // ⭐ CALIFICACIONES DE USUARIOS
     // ----------------
     Route::prefix('ratings')->group(function () {
@@ -466,10 +526,9 @@ Route::prefix('api')->middleware('auth')->group(function () {
     });
 
     Route::prefix('comunidad/comments')->group(function () {
+        Route::put('/{commentId}', [ComunidadController::class, 'updateComment']); // 🆕 EDITAR COMENTARIO
         Route::delete('/{commentId}', [ComunidadController::class, 'deleteComment']);
     });
-
-    Route::post('comments/{commentId}/react', [ComunidadController::class, 'reactToComment']);
 
 }); // FIN Route::prefix('api')->middleware('auth')
 

@@ -1,24 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
- * ⚠️ IMPORTANTE - SEGURIDAD:
- * 
- * Este componente implementa validaciones en el FRONTEND para mejorar la UX,
- * pero el BACKEND debe tener sus propias validaciones porque:
- * 
- * 1. El JavaScript puede ser deshabilitado
- * 2. Cualquiera puede hacer peticiones directas a tu API
- * 3. Un atacante puede modificar el código frontend
- * 
- * BACKEND DEBE VALIDAR:
- * ✅ Autenticación (middleware auth)
- * ✅ Autorización (políticas/gates)
- * ✅ CSRF Token
- * ✅ Rate Limiting
- * ✅ Sanitización de inputs
- * ✅ Validación de datos
+ * Hook personalizado para hacer el botón arrastrable
  */
-
 const useDraggable = (initialPosition) => {
     const [position, setPosition] = useState(initialPosition);
     const [isDragging, setIsDragging] = useState(false);
@@ -38,6 +22,7 @@ const useDraggable = (initialPosition) => {
     }, []);
 
     const handleMouseDown = (e) => {
+        if (!e) return;
         e.preventDefault();
         e.stopPropagation();
         setIsDragging(true);
@@ -45,7 +30,7 @@ const useDraggable = (initialPosition) => {
     };
 
     const handleMouseMove = useCallback((e) => {
-        if (!isDragging) return;
+        if (!isDragging || !e) return;
         setDragStarted(true);
         setPosition({ x: e.clientX - 30, y: e.clientY - 30 });
     }, [isDragging]);
@@ -73,7 +58,14 @@ const useDraggable = (initialPosition) => {
     return { position, isDragging, dragStarted, handleMouseDown, elementRef };
 };
 
+/**
+ * Componente principal del ChatBot - ASISTENCIAL
+ */
 function ChatBot({ user = null }) {
+    // ============================================
+    // ESTADOS
+    // ============================================
+    
     // Estados básicos
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
@@ -90,27 +82,24 @@ function ChatBot({ user = null }) {
     const [autoScroll, setAutoScroll] = useState(true);
     
     // Estados de características
-    const [chatHistory, setChatHistory] = useState([]);
-    const [showHistory, setShowHistory] = useState(false);
     const [favorites, setFavorites] = useState([]);
     const [showFavorites, setShowFavorites] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [notificationCount, setNotificationCount] = useState(0);
     
-    // Estados de conexión y seguridad (SOLO para UX, NO para seguridad real)
+    // Estados de conexión
     const [isConnected, setIsConnected] = useState(true);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [authChecked, setAuthChecked] = useState(false);
     const [error, setError] = useState(null);
-    
-    // Rate limiting FRONTEND (solo para UX, el backend debe tener el suyo)
-    const [requestCount, setRequestCount] = useState(0);
-    const [lastRequestTime, setLastRequestTime] = useState(Date.now());
 
+    // Estado para responsive
+    const [isMobile, setIsMobile] = useState(window.innerWidth <= 640);
+
+    // Referencias
     const messagesEndRef = useRef(null);
     const chatContainerRef = useRef(null);
     const searchInputRef = useRef(null);
 
+    // Temas disponibles
     const themes = {
         emerald: 'from-emerald-500 via-teal-500 to-cyan-500',
         blue: 'from-blue-500 via-indigo-500 to-purple-500',
@@ -127,64 +116,12 @@ function ChatBot({ user = null }) {
     const { position, isDragging, dragStarted, handleMouseDown, elementRef } = useDraggable(getInitialPosition());
 
     // ============================================
-    // FUNCIONES DE SEGURIDAD (FRONTEND - SOLO UX)
+    // FUNCIONES DE UTILIDAD
     // ============================================
 
     /**
-     * ⚠️ NOTA IMPORTANTE:
-     * Estas validaciones son solo para MEJORAR LA UX.
-     * El BACKEND debe tener sus propias validaciones robustas.
+     * Sanitizar texto (prevención básica)
      */
-
-    // Verificar autenticación (FRONTEND - solo para mostrar UI correcta)
-    const checkAuthentication = useCallback(async () => {
-        try {
-            const response = await fetch('/api/auth/check', {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-                },
-                credentials: 'include'
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setIsAuthenticated(data.authenticated || false);
-            } else {
-                setIsAuthenticated(false);
-            }
-        } catch (error) {
-            console.error('Error checking authentication:', error);
-            setIsAuthenticated(false);
-        } finally {
-            setAuthChecked(true);
-        }
-    }, []);
-
-    // Rate limiting FRONTEND (solo UX - el backend debe tener throttle real)
-    const checkRateLimit = useCallback(() => {
-        const now = Date.now();
-        const timeDiff = now - lastRequestTime;
-
-        if (timeDiff > 60000) {
-            setRequestCount(1);
-            setLastRequestTime(now);
-            return true;
-        }
-
-        if (requestCount >= 10) {
-            setError('⚠️ Demasiadas solicitudes. Por favor espera un momento.');
-            return false;
-        }
-
-        setRequestCount(prev => prev + 1);
-        return true;
-    }, [requestCount, lastRequestTime]);
-
-    // Sanitizar texto (FRONTEND - solo prevención básica)
-    // ⚠️ El BACKEND debe usar htmlspecialchars o e() en Laravel
     const sanitizeText = useCallback((text) => {
         if (!text || typeof text !== 'string') return '';
         
@@ -194,10 +131,15 @@ function ChatBot({ user = null }) {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#x27;')
-            .replace(/\//g, '&#x2F;');
+            .replace(/\//g, '&#x2F;')
+            .replace(/`/g, '&#96;')
+            .replace(/\\/g, '&#92;')
+            .trim();
     }, []);
 
-    // Validar URL (FRONTEND - solo prevención básica)
+    /**
+     * Validar URL
+     */
     const isValidUrl = useCallback((url) => {
         if (!url || typeof url !== 'string') return false;
         
@@ -209,7 +151,9 @@ function ChatBot({ user = null }) {
         }
     }, []);
 
-    // Fetch con timeout (FRONTEND - mejor UX)
+    /**
+     * Fetch con timeout
+     */
     const fetchWithTimeout = useCallback(async (url, options = {}, timeout = 10000) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -230,15 +174,37 @@ function ChatBot({ user = null }) {
         }
     }, []);
 
-    // Sonido de notificación
+    /**
+     * Reproducir sonido usando Web Audio API
+     */
     const playSound = useCallback((type = 'message') => {
         if (!soundEnabled) return;
-        const audio = new Audio(type === 'message' ? '/sounds/message.mp3' : '/sounds/notification.mp3');
-        audio.volume = 0.3;
-        audio.play().catch(() => {});
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Frecuencias diferentes para cada tipo
+            oscillator.frequency.value = type === 'message' ? 800 : 600;
+            oscillator.type = 'sine';
+            
+            // Fade out para que suene más suave
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        } catch (error) {
+            console.warn('Could not play sound:', error);
+        }
     }, [soundEnabled]);
 
-    // Headers de peticiones
+    /**
+     * Headers de peticiones
+     */
     const getHeaders = useCallback(() => ({
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -246,7 +212,9 @@ function ChatBot({ user = null }) {
         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
     }), []);
 
-    // Contexto actual
+    /**
+     * Contexto actual
+     */
     const getCurrentContext = useCallback(() => ({
         current_path: window.location?.pathname || '/',
         timestamp: new Date().toISOString(),
@@ -254,124 +222,119 @@ function ChatBot({ user = null }) {
     }), [user]);
 
     // ============================================
-    // FUNCIONES DE FAVORITOS E HISTORIAL
+    // FUNCIONES DE FAVORITOS
     // ============================================
 
+    /**
+     * Toggle favorito
+     */
     const toggleFavorite = useCallback((option) => {
+        if (!option || typeof option !== 'object' || !option.id) {
+            console.warn('Invalid favorite option');
+            return;
+        }
+
         setFavorites(prev => {
             const exists = prev.find(f => f.id === option.id);
             if (exists) {
                 return prev.filter(f => f.id !== option.id);
             } else {
+                if (!option.text) {
+                    console.warn('Favorite missing text');
+                    return prev;
+                }
                 return [...prev, option];
             }
         });
     }, []);
 
+    /**
+     * Verificar si es favorito
+     */
     const isFavorite = useCallback((optionId) => {
         return favorites.some(f => f.id === optionId);
     }, [favorites]);
-
-    const addToHistory = useCallback((message) => {
-        setChatHistory(prev => {
-            const newHistory = [message, ...prev].slice(0, 20);
-            
-            try {
-                localStorage.setItem('chatbot_history', JSON.stringify(newHistory));
-            } catch (error) {
-                console.warn('Could not save to localStorage:', error);
-            }
-            
-            return newHistory;
-        });
-    }, []);
 
     // ============================================
     // FUNCIONES API
     // ============================================
 
-    // Obtener mensaje de bienvenida
+    /**
+     * Obtener mensaje de bienvenida
+     */
     const getWelcomeMessage = useCallback(async () => {
-        if (!authChecked) {
-            return null;
-        }
-
-        if (!checkRateLimit()) {
-            return null;
-        }
-
         try {
+            console.log('🔍 ChatBot - Solicitando mensaje de bienvenida');
+            console.log('🔍 Usuario prop recibido:', user);
+            
             const response = await fetchWithTimeout('/api/chatbot/welcome', {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify({ 
                     context: getCurrentContext(),
-                    user_id: user?.id || null,
-                    authenticated: isAuthenticated
+                    user_id: user?.id || null
                 }),
                 credentials: 'include'
             }, 10000);
 
             if (!response.ok) {
-                if (response.status === 401) {
-                    setIsAuthenticated(false);
-                    throw new Error('Unauthorized');
-                }
-                if (response.status === 429) {
-                    throw new Error('Too many requests');
-                }
                 throw new Error('Error');
             }
 
             const data = await response.json();
-            setIsConnected(true);
-            setError(null);
-            return data.success ? data.message : null;
-        } catch (error) {
-            console.error('Error:', error);
-            setIsConnected(false);
             
-            if (error.message === 'Unauthorized') {
-                return {
-                    text: `🔒 Por favor inicia sesión para usar el asistente.`,
-                    type: 'error',
-                    menu_id: 'auth_required',
-                    options: [
-                        { id: 'login', text: '🔑 Iniciar Sesión', icon: '🔑', action: 'url', url: '/login' },
-                        { id: 'register', text: '📝 Registrarse', icon: '📝', action: 'url', url: '/register' }
-                    ]
-                };
+            console.log('🔍 Respuesta del backend:', data);
+            console.log('🔍 Usuario desde backend:', data.user);
+            console.log('🔍 ¿Es invitado?:', data.is_guest);
+            
+            if (!data || typeof data !== 'object') {
+                throw new Error('Invalid response format');
             }
 
+            setIsConnected(true);
+            setError(null);
+            
+            if (data.is_guest) {
+                console.log('⚠️ Usuario es INVITADO - Acceso limitado');
+            } else if (data.user && data.user.name) {
+                console.log('✅ Usuario AUTENTICADO:', data.user.name);
+            }
+            
+            return data.success ? data.message : null;
+        } catch (error) {
+            console.error('❌ Error en getWelcomeMessage:', error);
+            setIsConnected(false);
+
             return {
-                text: `👋 ¡Hola${user ? ' ' + user.name : ''}! Soy tu asistente de ViveSpaces.\n\n¿En qué puedo ayudarte?`,
+                text: `👋 ¡Hola! Soy tu asistente de ViveSpaces.\n\n❓ Como invitado, solo puedes acceder a la sección de Ayuda.`,
                 type: 'menu',
-                menu_id: 'main',
+                menu_id: 'guest',
                 options: [
-                    { id: 'search_properties', text: '🏠 Buscar Propiedades', icon: '🏠' },
-                    { id: 'publish_property', text: '📝 Publicar Propiedad', icon: '📝' },
-                    { id: 'verification', text: '✅ Verificación', icon: '✅' },
-                    { id: 'messages', text: '💬 Mensajes', icon: '💬' },
-                    { id: 'my_account', text: '👤 Mi Cuenta', icon: '👤' },
-                    { id: 'stats', text: '📊 Estadísticas', icon: '📊' },
-                    { id: 'help', text: '❓ Ayuda', icon: '❓' }
+                    { id: 'help', text: '❓ Ayuda', icon: '❓' },
+                    { id: 'login_prompt', text: '🔓 Iniciar Sesión', icon: '🔓', action: 'url', url: '/login' },
                 ]
             };
         }
-    }, [getHeaders, getCurrentContext, user, isAuthenticated, authChecked, checkRateLimit, fetchWithTimeout]);
+    }, [getHeaders, getCurrentContext, user, fetchWithTimeout]);
 
-    // Enviar opción seleccionada
+    /**
+     * Enviar opción seleccionada
+     */
     const sendOption = useCallback(async (optionId) => {
         if (!optionId || typeof optionId !== 'string') {
             setError('⚠️ Opción inválida');
             return null;
         }
 
-        if (!checkRateLimit()) {
+        if (optionId.length > 200) {
+            setError('⚠️ Opción demasiado larga');
             return null;
         }
 
         try {
+            console.log('🔍 ChatBot - Enviando opción:', optionId);
+            console.log('🔍 Usuario actual:', user);
+            
             const response = await fetchWithTimeout('/api/chatbot/message', {
                 method: 'POST',
                 headers: getHeaders(),
@@ -379,43 +342,42 @@ function ChatBot({ user = null }) {
                     option_id: sanitizeText(optionId),
                     menu_id: sanitizeText(currentMenuId),
                     context: getCurrentContext(),
-                    user_id: user?.id || null,
-                    authenticated: isAuthenticated
+                    user_id: user?.id || null
                 }),
                 credentials: 'include'
             }, 10000);
 
             if (!response.ok) {
-                if (response.status === 401) {
-                    setIsAuthenticated(false);
-                    throw new Error('Unauthorized');
-                }
-                if (response.status === 403) {
-                    throw new Error('Forbidden');
-                }
-                if (response.status === 429) {
-                    throw new Error('Too many requests');
-                }
                 throw new Error('Error');
             }
 
             const data = await response.json();
+            
+            console.log('🔍 Respuesta del backend:', data);
+            console.log('🔍 Usuario desde backend:', data.user);
+            console.log('🔍 ¿Es invitado?:', data.is_guest);
+            
+            if (!data || typeof data !== 'object') {
+                throw new Error('Invalid response format');
+            }
+
             setIsConnected(true);
             setError(null);
+            
+            if (data.is_guest) {
+                console.log('⚠️ Usuario es INVITADO - Mostrar restricción');
+            } else if (data.user && data.user.name) {
+                console.log('✅ Usuario AUTENTICADO:', data.user.name);
+            }
+            
             return data.success ? data.response : null;
         } catch (error) {
-            console.error('Error:', error);
+            console.error('❌ Error en sendOption:', error);
             setIsConnected(false);
 
             let errorMessage = "⚠️ Error de conexión. Por favor, intenta de nuevo.";
             
-            if (error.message === 'Unauthorized') {
-                errorMessage = "🔒 Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
-            } else if (error.message === 'Forbidden') {
-                errorMessage = "⛔ No tienes permisos para realizar esta acción.";
-            } else if (error.message === 'Too many requests') {
-                errorMessage = "⏱️ Demasiadas solicitudes. Por favor espera un momento.";
-            } else if (error.message === 'Request timeout') {
+            if (error.message === 'Request timeout') {
                 errorMessage = "⏱️ La solicitud tardó demasiado. Por favor intenta de nuevo.";
             }
 
@@ -430,16 +392,49 @@ function ChatBot({ user = null }) {
                 ]
             };
         }
-    }, [currentMenuId, getHeaders, getCurrentContext, isAuthenticated, user, checkRateLimit, fetchWithTimeout, sanitizeText]);
+    }, [currentMenuId, getHeaders, getCurrentContext, user, fetchWithTimeout, sanitizeText]);
 
-    // Manejar clic en opción
+    /**
+     * Manejar clic en opción
+     */
     const handleOptionClick = useCallback(async (option) => {
-        if (!option || typeof option !== 'object') {
-            setError('⚠️ Opción inválida');
+        if (!option || typeof option !== 'object' || !option.id || !option.text) {
+            setError('⚠️ Opción inválida: datos incompletos');
             return;
         }
 
-        // Si es URL externa
+        if (typeof option.id !== 'string' || typeof option.text !== 'string') {
+            setError('⚠️ Opción inválida: formato incorrecto');
+            return;
+        }
+
+        // 🔒 VALIDACIÓN: Verificar identidad para "publicar propiedad"
+        if (option.id === 'publish_property') {
+            if (!user) {
+                setError('⚠️ Debes iniciar sesión para publicar propiedades');
+                setTimeout(() => window.location.href = '/login', 2000);
+                return;
+            }
+
+            if (!user.is_identity_verified) {
+                // Mostrar mensaje especial en el chat
+                const verificationMessage = {
+                    id: `bot_${Date.now()}`,
+                    text: '⚠️ **Verificación Requerida**\n\nPara publicar propiedades necesitas verificar tu identidad primero.\n\n✅ Es rápido y seguro (menos de 5 minutos)\n📱 Solo necesitas: INE + Comprobante de domicilio\n\n¿Quieres verificar tu identidad ahora?',
+                    sender: 'bot',
+                    timestamp: new Date(),
+                    options: [
+                        { id: 'verification', text: '✅ Verificar Ahora', icon: '✅' },
+                        { id: 'main', text: '⬅️ Volver al menú', icon: '⬅️' }
+                    ]
+                };
+                setMessages(prev => [...prev, verificationMessage]);
+                playSound('notification');
+                return;
+            }
+        }
+
+        // 🔥 Manejar acciones de URL (solo para enlaces esenciales)
         if (option.action === 'url' && option.url) {
             if (!isValidUrl(option.url)) {
                 setError('⚠️ URL inválida');
@@ -454,14 +449,10 @@ function ChatBot({ user = null }) {
             return;
         }
 
-        if (!option.id) {
-            setError('⚠️ Opción inválida');
-            return;
-        }
-
         setError(null);
 
-        const sanitizedText = sanitizeText(option.text || '');
+        const sanitizedText = sanitizeText(option.text);
+        const sanitizedId = sanitizeText(option.id);
         
         const userMessage = {
             id: `user_${Date.now()}`,
@@ -469,11 +460,10 @@ function ChatBot({ user = null }) {
             sender: 'user',
             timestamp: new Date(),
             icon: option.icon,
-            optionId: option.id
+            optionId: sanitizedId
         };
 
         setMessages(prev => [...prev, userMessage]);
-        addToHistory(userMessage);
         setIsTyping(true);
         playSound('message');
 
@@ -495,7 +485,6 @@ function ChatBot({ user = null }) {
             };
 
             setMessages(prev => [...prev, botMessage]);
-            addToHistory(botMessage);
             playSound('notification');
 
             if (response.menu_id && response.menu_id !== currentMenuId) {
@@ -509,9 +498,11 @@ function ChatBot({ user = null }) {
         }
 
         setIsTyping(false);
-    }, [currentMenuId, sendOption, addToHistory, playSound, isMinimized, isValidUrl, sanitizeText]);
+    }, [currentMenuId, sendOption, playSound, isMinimized, isValidUrl, sanitizeText]);
 
-    // Volver al menú anterior
+    /**
+     * Volver al menú anterior
+     */
     const handleBack = useCallback(() => {
         if (breadcrumbs.length > 1) {
             const newBreadcrumbs = breadcrumbs.slice(0, -1);
@@ -521,18 +512,31 @@ function ChatBot({ user = null }) {
         }
     }, [breadcrumbs, handleOptionClick]);
 
-    // Búsqueda en mensajes
+    /**
+     * Búsqueda en mensajes
+     */
     const filteredMessages = messages.filter(msg => {
         if (!searchQuery || msg.sender === 'user') return true;
         return msg.text.toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    // Limpiar chat
+    /**
+     * Limpiar chat
+     */
     const clearChat = useCallback(() => {
         setMessages([]);
         setCurrentMenuId('main');
         setBreadcrumbs(['main']);
         setSearchQuery('');
+        setError(null);
+        
+        try {
+            localStorage.removeItem('chatbot_messages');
+            localStorage.removeItem('chatbot_user_id');
+        } catch (e) {
+            console.warn('Error limpiando localStorage:', e);
+        }
+        
         getWelcomeMessage().then(welcome => {
             if (welcome) {
                 setMessages([{
@@ -552,26 +556,17 @@ function ChatBot({ user = null }) {
     // EFFECTS
     // ============================================
 
-    // Verificar autenticación al montar
+    /**
+     * Cargar datos guardados
+     */
     useEffect(() => {
-        checkAuthentication();
-    }, [checkAuthentication]);
-
-    // Cargar datos guardados
-    useEffect(() => {
-        try {
-            const savedHistory = localStorage.getItem('chatbot_history');
-            if (savedHistory) {
-                setChatHistory(JSON.parse(savedHistory));
-            }
-        } catch (e) {
-            console.warn('Error loading history:', e);
-        }
-
         try {
             const savedFavorites = localStorage.getItem('chatbot_favorites');
             if (savedFavorites) {
-                setFavorites(JSON.parse(savedFavorites));
+                const parsed = JSON.parse(savedFavorites);
+                if (Array.isArray(parsed)) {
+                    setFavorites(parsed);
+                }
             }
         } catch (e) {
             console.warn('Error loading favorites:', e);
@@ -585,9 +580,32 @@ function ChatBot({ user = null }) {
         } catch (e) {
             console.warn('Error loading theme:', e);
         }
-    }, []);
 
-    // Guardar favoritos
+        try {
+            const savedMessages = localStorage.getItem('chatbot_messages');
+            const savedUserId = localStorage.getItem('chatbot_user_id');
+            const currentUserId = user?.id ? String(user.id) : 'guest';
+            
+            if (savedMessages && savedUserId === currentUserId) {
+                const parsed = JSON.parse(savedMessages);
+                if (Array.isArray(parsed)) {
+                    setMessages(parsed.map(msg => ({
+                        ...msg,
+                        timestamp: new Date(msg.timestamp)
+                    })));
+                }
+            } else {
+                localStorage.removeItem('chatbot_messages');
+                localStorage.removeItem('chatbot_user_id');
+            }
+        } catch (e) {
+            console.warn('Error loading messages:', e);
+        }
+    }, [user]);
+
+    /**
+     * Guardar favoritos
+     */
     useEffect(() => {
         try {
             localStorage.setItem('chatbot_favorites', JSON.stringify(favorites));
@@ -596,12 +614,82 @@ function ChatBot({ user = null }) {
         }
     }, [favorites]);
 
-    // Inicializar chat
+    /**
+     * Guardar mensajes en localStorage
+     */
     useEffect(() => {
-        if (isOpen && messages.length === 0 && authChecked) {
+        if (messages.length > 0) {
+            try {
+                localStorage.setItem('chatbot_messages', JSON.stringify(messages));
+                localStorage.setItem('chatbot_user_id', user?.id ? String(user.id) : 'guest');
+            } catch (error) {
+                console.warn('Could not save messages to localStorage:', error);
+            }
+        }
+    }, [messages, user]);
+
+    /**
+     * Monitorear cambios en el usuario y LIMPIAR CHAT
+     */
+    useEffect(() => {
+        console.log('🔍 ChatBot - Usuario prop cambió:', user);
+        
+        if (!isOpen) {
+            return;
+        }
+        
+        if (messages.length === 0) {
+            return;
+        }
+        
+        const savedUserId = localStorage.getItem('chatbot_user_id');
+        const currentUserId = user?.id ? String(user.id) : 'guest';
+        
+        if (savedUserId !== currentUserId) {
+            console.log('🧹 Usuario cambió de', savedUserId, 'a', currentUserId, '- Limpiando chat');
+            
+            try {
+                localStorage.removeItem('chatbot_messages');
+                localStorage.removeItem('chatbot_user_id');
+            } catch (e) {
+                console.warn('Error limpiando localStorage:', e);
+            }
+            
+            setMessages([]);
+            setCurrentMenuId('main');
+            setBreadcrumbs(['main']);
+            setSearchQuery('');
+            setError(null);
+            
+            getWelcomeMessage().then(welcome => {
+                if (welcome) {
+                    setMessages([{
+                        id: 'welcome',
+                        text: welcome.text,
+                        sender: 'bot',
+                        timestamp: new Date(),
+                        type: welcome.type,
+                        menu_id: welcome.menu_id,
+                        options: welcome.options || []
+                    }]);
+                }
+            });
+        }
+    }, [user?.id, isOpen, messages.length, getWelcomeMessage]);
+
+    /**
+     * Inicializar chat
+     */
+    useEffect(() => {
+        if (isOpen && messages.length === 0) {
+            console.log('🚀 Inicializando chat...');
+            console.log('🔍 Usuario al inicializar:', user);
+            
             const init = async () => {
                 const welcome = await getWelcomeMessage();
                 if (welcome) {
+                    console.log('✅ Mensaje de bienvenida recibido:', welcome.text.substring(0, 50) + '...');
+                    
                     setMessages([{
                         id: 'welcome',
                         text: welcome.text,
@@ -616,22 +704,25 @@ function ChatBot({ user = null }) {
             };
             init();
         }
-    }, [isOpen, messages.length, authChecked, getWelcomeMessage]);
+    }, [isOpen, messages.length, getWelcomeMessage, user]);
 
-    // Scroll automático
+    /**
+     * Scroll automático
+     */
     useEffect(() => {
         if (autoScroll && messagesEndRef.current) {
             messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages, isTyping, autoScroll]);
 
-    // Cerrar con ESC
+    /**
+     * Cerrar con ESC
+     */
     useEffect(() => {
         const handleEsc = (e) => {
             if (e.key === 'Escape') {
-                if (showSettings || showHistory || showFavorites) {
+                if (showSettings || showFavorites) {
                     setShowSettings(false);
-                    setShowHistory(false);
                     setShowFavorites(false);
                 } else if (isOpen) {
                     setIsOpen(false);
@@ -640,20 +731,37 @@ function ChatBot({ user = null }) {
         };
         document.addEventListener('keydown', handleEsc);
         return () => document.removeEventListener('keydown', handleEsc);
-    }, [isOpen, showSettings, showHistory, showFavorites]);
+    }, [isOpen, showSettings, showFavorites]);
 
-    // Resetear notificaciones al abrir
+    /**
+     * Resetear notificaciones al abrir
+     */
     useEffect(() => {
         if (isOpen) {
             setNotificationCount(0);
         }
     }, [isOpen]);
 
+    /**
+     * Detectar cambios en el tamaño de pantalla para responsive
+     */
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth <= 640);
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     // ============================================
     // RENDER
     // ============================================
 
-    const modalPosition = {
+    const modalPosition = isMobile ? {
+        x: 0,
+        y: 0
+    } : {
         x: position.x < window.innerWidth / 2 ? position.x + 80 : position.x - 450,
         y: Math.min(position.y, window.innerHeight - 650)
     };
@@ -666,10 +774,13 @@ function ChatBot({ user = null }) {
     ];
 
     return (
-        <div ref={elementRef} style={{ position: 'fixed', left: position.x, top: position.y, zIndex: 9999 }}>
-            
+        <div
+            ref={elementRef}
+            style={isMobile && isOpen ? { position: 'fixed', inset: 0, zIndex: 9999 } : { position: 'fixed', left: position.x, top: position.y, zIndex: 9999 }}
+        >
+
             {/* QUICK ACTIONS */}
-            {showQuickActions && !isOpen && (
+            {showQuickActions && !isOpen && !isMobile && (
                 <div className="absolute -top-20 left-1/2 transform -translate-x-1/2 flex space-x-2 animate-fadeIn">
                     {quickActions.map((action, idx) => (
                         <button
@@ -693,10 +804,12 @@ function ChatBot({ user = null }) {
             {isOpen && (
                 <div
                     ref={chatContainerRef}
-                    className={`fixed bg-white dark:bg-gray-900 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300 ${
-                        isMinimized ? 'w-80 h-16' : 'w-96 sm:w-[450px]'
+                    className={`fixed bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300 ${
+                        isMobile
+                            ? 'inset-0 rounded-none w-full h-full max-h-screen'
+                            : `rounded-3xl ${isMinimized ? 'w-80 h-16' : 'w-96 sm:w-[450px]'}`
                     }`}
-                    style={{
+                    style={isMobile ? { maxHeight: '100vh' } : {
                         left: `${modalPosition.x}px`,
                         top: `${modalPosition.y}px`,
                         maxHeight: isMinimized ? '64px' : '650px'
@@ -725,30 +838,9 @@ function ChatBot({ user = null }) {
                         </div>
 
                         <div className="flex items-center space-x-1 relative z-10">
-                            {/* Botones de header... */}
-                            <button
-                                onClick={() => {
-                                    setShowHistory(!showHistory);
-                                    setShowFavorites(false);
-                                    setShowSettings(false);
-                                }}
-                                className={`p-2 hover:bg-white/10 rounded-lg transition relative ${showHistory ? 'bg-white/20' : ''}`}
-                                title="Historial"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                {chatHistory.length > 0 && (
-                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                                        {chatHistory.length}
-                                    </span>
-                                )}
-                            </button>
-
                             <button
                                 onClick={() => {
                                     setShowFavorites(!showFavorites);
-                                    setShowHistory(false);
                                     setShowSettings(false);
                                 }}
                                 className={`p-2 hover:bg-white/10 rounded-lg transition relative ${showFavorites ? 'bg-white/20' : ''}`}
@@ -762,20 +854,6 @@ function ChatBot({ user = null }) {
                                         {favorites.length}
                                     </span>
                                 )}
-                            </button>
-
-                            <button
-                                onClick={() => {
-                                    if (searchInputRef.current) {
-                                        searchInputRef.current.focus();
-                                    }
-                                }}
-                                className="p-2 hover:bg-white/10 rounded-lg transition"
-                                title="Buscar"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
                             </button>
 
                             {breadcrumbs.length > 1 && !isMinimized && (
@@ -808,7 +886,6 @@ function ChatBot({ user = null }) {
                             <button
                                 onClick={() => {
                                     setShowSettings(!showSettings);
-                                    setShowHistory(false);
                                     setShowFavorites(false);
                                 }}
                                 className={`p-2 hover:bg-white/10 rounded-lg transition ${showSettings ? 'bg-white/20' : ''}`}
@@ -933,48 +1010,6 @@ function ChatBot({ user = null }) {
                                         </button>
                                     </div>
 
-                                    {/* Limpiar datos */}
-                                    <div className="space-y-2">
-                                        <button
-                                            onClick={() => {
-                                                if (window.confirm('¿Limpiar historial?')) {
-                                                    setChatHistory([]);
-                                                    try {
-                                                        localStorage.removeItem('chatbot_history');
-                                                    } catch (error) {
-                                                        console.warn('Could not clear history:', error);
-                                                    }
-                                                }
-                                            }}
-                                            className="w-full p-3 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium transition"
-                                        >
-                                            🗑️ Limpiar Historial
-                                        </button>
-
-                                        <button
-                                            onClick={() => {
-                                                if (window.confirm('¿Limpiar favoritos?')) {
-                                                    setFavorites([]);
-                                                    try {
-                                                        localStorage.removeItem('chatbot_favorites');
-                                                    } catch (error) {
-                                                        console.warn('Could not clear favorites:', error);
-                                                    }
-                                                }
-                                            }}
-                                            className="w-full p-3 bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-sm font-medium transition"
-                                        >
-                                            ⭐ Limpiar Favoritos
-                                        </button>
-                                    </div>
-
-                                    {/* Tip */}
-                                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                        <p className="text-xs text-blue-600 dark:text-blue-400">
-                                            💡 <strong>Tip:</strong> Puedes arrastrar el chatbot a cualquier parte de la pantalla
-                                        </p>
-                                    </div>
-
                                     {/* Estado del sistema */}
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg space-y-2">
                                         <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">Estado del Sistema</h4>
@@ -988,77 +1023,18 @@ function ChatBot({ user = null }) {
                                         </div>
 
                                         <div className="flex items-center justify-between text-xs">
-                                            <span className="text-gray-600 dark:text-gray-400">Autenticación:</span>
-                                            <span className={`flex items-center space-x-1 ${isAuthenticated ? 'text-green-600' : 'text-yellow-600'}`}>
-                                                <div className={`w-2 h-2 rounded-full ${isAuthenticated ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                                                <span>{isAuthenticated ? 'Autenticado' : 'Invitado'}</span>
-                                            </span>
-                                        </div>
-
-                                        <div className="flex items-center justify-between text-xs">
                                             <span className="text-gray-600 dark:text-gray-400">Mensajes:</span>
                                             <span className="text-gray-700 dark:text-gray-300">{messages.length}</span>
                                         </div>
 
                                         <div className="flex items-center justify-between text-xs">
-                                            <span className="text-gray-600 dark:text-gray-400">Historial:</span>
-                                            <span className="text-gray-700 dark:text-gray-300">{chatHistory.length}/20</span>
+                                            <span className="text-gray-600 dark:text-gray-400">Usuario:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">
+                                                {user ? `${user.name} ✓` : 'Invitado'}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* PANEL DE HISTORIAL */}
-                    {!isMinimized && showHistory && (
-                        <div className="absolute inset-0 bg-white dark:bg-gray-900 z-50 overflow-y-auto">
-                            <div className="p-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">📜 Historial</h3>
-                                    <button
-                                        onClick={() => setShowHistory(false)}
-                                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                                    >
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </div>
-
-                                {chatHistory.length === 0 ? (
-                                    <div className="text-center py-8 text-gray-400">
-                                        <svg className="w-16 h-16 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <p className="text-sm">No hay historial aún</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {chatHistory.map((item, idx) => (
-                                            <button
-                                                key={`history-${idx}`}
-                                                onClick={() => {
-                                                    if (item.optionId) {
-                                                        handleOptionClick({ id: item.optionId, text: item.text, icon: item.icon });
-                                                        setShowHistory(false);
-                                                    }
-                                                }}
-                                                className="w-full p-3 text-left bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
-                                            >
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center space-x-2">
-                                                        {item.icon && <span className="text-lg">{item.icon}</span>}
-                                                        <span className="text-sm text-gray-700 dark:text-gray-300">{item.text.substring(0, 50)}...</span>
-                                                    </div>
-                                                    <span className="text-xs text-gray-400">
-                                                        {new Date(item.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         </div>
                     )}
@@ -1121,7 +1097,7 @@ function ChatBot({ user = null }) {
                     )}
 
                     {/* BARRA DE BÚSQUEDA */}
-                    {!isMinimized && !showSettings && !showHistory && !showFavorites && (
+                    {!isMinimized && !showSettings && !showFavorites && (
                         <div className="p-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                             <div className="relative">
                                 <input
@@ -1161,34 +1137,16 @@ function ChatBot({ user = null }) {
                                     </button>
                                 </div>
                             )}
-
-                            {/* Estado de autenticación */}
-                            {authChecked && !isAuthenticated && (
-                                <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-start space-x-2">
-                                    <svg className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                                        Algunas funciones requieren inicio de sesión
-                                    </p>
-                                </div>
-                            )}
                         </div>
                     )}
 
                     {/* ÁREA DE MENSAJES */}
-                    {!isMinimized && !showSettings && !showHistory && !showFavorites && (
+                    {!isMinimized && !showSettings && !showFavorites && (
                         <>
-                            <div className="h-96 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800/50">
-                                {!authChecked ? (
-                                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                                        <div className="relative w-20 h-20 mb-3">
-                                            <div className={`absolute inset-0 rounded-full bg-gradient-to-r ${themes[theme]} animate-spin`} style={{ clipPath: 'polygon(50% 50%, 100% 0, 100% 100%)' }}></div>
-                                            <div className="absolute inset-2 rounded-full bg-gray-50 dark:bg-gray-800/50"></div>
-                                        </div>
-                                        <p className="text-sm">Verificando acceso...</p>
-                                    </div>
-                                ) : filteredMessages.length === 0 && messages.length === 0 ? (
+                            <div className={`overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800/50 ${
+                                isMobile ? 'h-[calc(100vh-180px)]' : 'h-96'
+                            }`}>
+                                {filteredMessages.length === 0 && messages.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
                                         <div className={`w-20 h-20 rounded-full bg-gradient-to-r ${themes[theme]} flex items-center justify-center mb-3 animate-pulse`}>
                                             <span className="text-4xl">💬</span>
@@ -1259,10 +1217,16 @@ function ChatBot({ user = null }) {
                                                 {message.data && (
                                                     <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                                                         <div className="flex items-center space-x-4 text-xs">
-                                                            {message.data.count !== undefined && (
+                                                            {message.data.total !== undefined && (
                                                                 <div className="flex items-center space-x-1">
-                                                                    <span className="text-blue-600 dark:text-blue-400 font-bold">{message.data.count}</span>
-                                                                    <span className="text-blue-500 dark:text-blue-300">resultados</span>
+                                                                    <span className="text-blue-600 dark:text-blue-400 font-bold">{message.data.total}</span>
+                                                                    <span className="text-blue-500 dark:text-blue-300">propiedades</span>
+                                                                </div>
+                                                            )}
+                                                            {message.data.recent !== undefined && (
+                                                                <div className="flex items-center space-x-1">
+                                                                    <span className="text-green-600 dark:text-green-400 font-bold">{message.data.recent}</span>
+                                                                    <span className="text-green-500 dark:text-green-300">nuevas</span>
                                                                 </div>
                                                             )}
                                                             {message.data.avg_price && (
@@ -1281,19 +1245,6 @@ function ChatBot({ user = null }) {
                                                     }`}>
                                                         {message.timestamp.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
-
-                                                    {message.sender === 'bot' && (
-                                                        <button
-                                                            onClick={() => {
-                                                                navigator.clipboard.writeText(message.text);
-                                                                playSound('notification');
-                                                            }}
-                                                            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
-                                                            title="Copiar"
-                                                        >
-                                                            📋
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -1365,56 +1316,50 @@ function ChatBot({ user = null }) {
 
             {/* BOTÓN FLOTANTE */}
             <button
-                onMouseDown={handleMouseDown}
-                onClick={() => {
-                    if (!dragStarted) {
-                        setIsOpen(!isOpen);
-                        setShowQuickActions(false);
-                    }
-                }}
-                onContextMenu={(e) => {
-                    e.preventDefault();
-                    setShowQuickActions(!showQuickActions);
-                }}
-                className={`w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-r ${themes[theme]} text-white rounded-full shadow-2xl hover:shadow-emerald-500/50 transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center group relative overflow-hidden ${
-                    isDragging ? 'scale-110 cursor-grabbing' : 'cursor-pointer'
-                }`}
-            >
-                <div className="absolute inset-0 bg-white/20 rounded-full scale-0 group-hover:scale-100 transition-transform duration-500"></div>
-                <div className="absolute inset-0 rounded-full border-4 border-white/30 animate-ping"></div>
-                
-                <div className="relative z-10">
-                    {isOpen ? (
-                        <svg className="w-7 h-7 transform group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    ) : (
-                        <span className="text-3xl animate-bounce">💬</span>
+                    onMouseDown={!isMobile ? handleMouseDown : undefined}
+                    onClick={() => {
+                        if (!dragStarted || isMobile) {
+                            setIsOpen(!isOpen);
+                            setShowQuickActions(false);
+                        }
+                    }}
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        if (!isMobile) {
+                            setShowQuickActions(!showQuickActions);
+                        }
+                    }}
+                    className={`${isOpen && isMobile ? 'hidden' : ''} ${isOpen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-14 h-14 sm:w-16 sm:h-16'} bg-gradient-to-r ${themes[theme]} text-white rounded-full shadow-2xl hover:shadow-emerald-500/50 transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center group relative overflow-hidden ${
+                        isDragging ? 'scale-110 cursor-grabbing' : 'cursor-pointer'
+                    }`}
+                >
+                    {!isOpen && (
+                        <div className="absolute inset-0 rounded-full border-4 border-white/30 animate-ping"></div>
                     )}
-                </div>
 
-                {!isOpen && (
-                    <>
-                        {(notificationCount > 0 || messages.length > 0) && (
-                            <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse shadow-lg">
-                                {notificationCount > 0 ? notificationCount : '!'}
-                            </div>
-                        )}
-                        {!isConnected && (
-                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-white animate-pulse"></div>
-                        )}
-                    </>
-                )}
-
-                {isDragging && (
-                    <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-lg whitespace-nowrap">
-                        ✋ Arrastrando...
+                    <div className="relative z-10">
+                        <span className={`${isOpen ? 'text-2xl' : 'text-3xl'} ${!isOpen && 'animate-bounce'}`}>💬</span>
                     </div>
-                )}
-            </button>
+
+                    {(notificationCount > 0 || messages.length > 0) && (
+                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse shadow-lg">
+                            {notificationCount > 0 ? notificationCount : '!'}
+                        </div>
+                    )}
+
+                    {!isConnected && (
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-white animate-pulse"></div>
+                    )}
+
+                    {isDragging && (
+                        <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-lg whitespace-nowrap">
+                            ✋ Arrastrando...
+                        </div>
+                    )}
+                </button>
 
             {/* TOOLTIP */}
-            {!isOpen && !isDragging && (
+            {!isOpen && !isDragging && !isMobile && (
                 <div className="absolute -top-14 left-1/2 transform -translate-x-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs px-4 py-2 rounded-lg shadow-lg whitespace-nowrap pointer-events-none animate-bounce">
                     <div className="flex items-center space-x-2">
                         <span>💡</span>
@@ -1425,7 +1370,7 @@ function ChatBot({ user = null }) {
             )}
 
             {/* INDICADOR DE QUICK ACTIONS */}
-            {!isOpen && !showQuickActions && (
+            {!isOpen && !showQuickActions && !isMobile && (
                 <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 text-xs text-gray-500 whitespace-nowrap pointer-events-none">
                     <div className="bg-white dark:bg-gray-800 px-2 py-1 rounded-full shadow-md border border-gray-200 dark:border-gray-700">
                         Click derecho = Accesos rápidos

@@ -26,7 +26,8 @@
                 'last_name' => auth()->user()->last_name,
                 'email' => auth()->user()->email,
                 'role' => auth()->user()->role,
-                'profile_photo' => auth()->user()->profile_photo
+                'profile_photo' => auth()->user()->profile_photo,
+                'is_identity_verified' => auth()->user()->is_identity_verified
             ]) !!}
         @else
             null
@@ -35,7 +36,7 @@
 
     <!-- React Navbar -->
     <div id="navbar-root"></div>
-    <div id="chatbox-root"></div>
+    <div id="chatbot-root"></div>
     <div id="layout-map-root"></div> <!-- ← AGREGAR ESTA LÍNEA -->
 
 

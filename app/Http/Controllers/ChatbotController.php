@@ -6,9 +6,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use App\Models\Property;
 use App\Models\User;
 use App\Models\Message;
+use App\Models\Chatbot;
 
 class ChatBotController extends Controller
 {
@@ -20,7 +22,55 @@ class ChatBotController extends Controller
     }
 
     /**
-     * Estructura COMPLETA de menús del chatbot
+     * Guardar interacción en la base de datos
+     */
+    private function logInteraction($data)
+    {
+        try {
+            // Obtener o generar session_id para invitados
+            $sessionId = null;
+            if (!Auth::check()) {
+                $sessionId = session('chatbot_session_id');
+                if (!$sessionId) {
+                    $sessionId = 'guest_' . Str::random(32);
+                    session(['chatbot_session_id' => $sessionId]);
+                }
+            }
+
+            // Obtener el último sequence_number para esta sesión/usuario
+            $lastSequence = Chatbot::where(function($query) use ($sessionId) {
+                if (Auth::check()) {
+                    $query->where('user_id', Auth::id());
+                } else {
+                    $query->where('session_id', $sessionId);
+                }
+            })
+            ->where('created_at', '>=', now()->subHours(24)) // Solo de las últimas 24h
+            ->max('sequence_number') ?? 0;
+
+            // Crear registro
+            Chatbot::create([
+                'user_id' => Auth::id(),
+                'session_id' => $sessionId,
+                'sequence_number' => $lastSequence + 1,
+                'interaction_type' => $data['interaction_type'] ?? 'menu_click',
+                'conversation_status' => $data['conversation_status'] ?? 'active',
+                'current_menu_id' => $data['current_menu_id'] ?? null,
+                'previous_menu_id' => $data['previous_menu_id'] ?? null,
+                'user_input' => $data['user_input'] ?? null,
+                'extracted_data' => $data['extracted_data'] ?? null,
+                'bot_response' => $data['bot_response'] ?? null,
+                'metadata' => $data['metadata'] ?? null,
+            ]);
+
+        } catch (\Exception $e) {
+            // Log error pero no fallar la petición
+            Log::error('Error guardando chatbot log: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Estructura COMPLETA de menús del chatbot - MÁS ASISTENCIAL
      */
     private function initializeMenuStructure()
     {
@@ -47,28 +97,61 @@ class ChatBotController extends Controller
             'search_properties' => [
                 'text' => '🏠 **Buscar Propiedades**
 
-¿Cómo quieres buscar?',
+Para buscar propiedades, puedes usar los filtros en la página principal. 
+
+¿Qué tipo de búsqueda necesitas?',
                 'options' => [
                     ['id' => 'search_by_location', 'text' => '📍 Por Ubicación', 'icon' => '📍'],
                     ['id' => 'search_by_price', 'text' => '💰 Por Precio', 'icon' => '💰'],
                     ['id' => 'search_by_type', 'text' => '🏘️ Por Tipo', 'icon' => '🏘️'],
                     ['id' => 'search_by_rooms', 'text' => '🛏️ Por Habitaciones', 'icon' => '🛏️'],
                     ['id' => 'search_recent', 'text' => '🆕 Propiedades Nuevas', 'icon' => '🆕'],
-                    ['id' => 'search_map', 'text' => '🗺️ Ver en Mapa', 'action' => 'url', 'url' => '/properties?view=map'],
-                    ['id' => 'search_advanced', 'text' => '🔍 Búsqueda Avanzada', 'action' => 'url', 'url' => '/properties'],
+                    ['id' => 'search_how', 'text' => '❓ ¿Cómo buscar?', 'icon' => '❓'],
                 ],
                 'back' => 'main'
+            ],
+
+            'search_how' => [
+                'text' => '🔍 **Cómo Buscar Propiedades**
+
+**Pasos para buscar:**
+
+1️⃣ Ve a la página principal (icono 🏠 en el menú)
+2️⃣ Usa los filtros disponibles:
+   • 📍 Ubicación/Ciudad
+   • 💰 Rango de precio
+   • 🏘️ Tipo de propiedad
+   • 🛏️ Número de habitaciones
+   • 🚿 Baños
+   • 📐 Área (m²)
+
+3️⃣ Haz clic en "Buscar"
+4️⃣ Explora los resultados
+5️⃣ Haz clic en una propiedad para ver detalles
+
+💡 **Tips:**
+✅ Usa el mapa para ver ubicaciones
+✅ Guarda tus favoritos
+✅ Contacta directamente al propietario',
+                'options' => [
+                    ['id' => 'search_properties', 'text' => '⬅️ Volver a búsquedas', 'icon' => '⬅️'],
+                    ['id' => 'main', 'text' => '🏠 Menú principal', 'icon' => '🏠'],
+                ],
+                'back' => 'search_properties'
             ],
 
             'search_by_location' => [
                 'text' => '📍 **Buscar por Ubicación**
 
-Selecciona una zona:',
+Para buscar por ubicación:
+
+1. Ve a la página de propiedades
+2. En el filtro de "Ciudad" ingresa la ubicación
+3. Presiona "Buscar"
+
+🗺️ También puedes usar el **mapa interactivo** para explorar propiedades por zona.',
                 'options' => [
-                    ['id' => 'location_centro', 'text' => 'Centro', 'action' => 'search', 'params' => ['city' => 'centro']],
-                    ['id' => 'location_norte', 'text' => 'Zona Norte', 'action' => 'search', 'params' => ['city' => 'norte']],
-                    ['id' => 'location_sur', 'text' => 'Zona Sur', 'action' => 'search', 'params' => ['city' => 'sur']],
-                    ['id' => 'location_custom', 'text' => '✏️ Otra ubicación', 'action' => 'url', 'url' => '/properties'],
+                    ['id' => 'search_properties', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'search_properties'
             ],
@@ -76,13 +159,21 @@ Selecciona una zona:',
             'search_by_price' => [
                 'text' => '💰 **Buscar por Precio**
 
-Selecciona tu presupuesto mensual:',
+Para filtrar por precio:
+
+1. Ve a la página de propiedades
+2. Usa los campos de rango de precio:
+   • **Precio mínimo**: Desde cuánto
+   • **Precio máximo**: Hasta cuánto
+3. Aplica los filtros
+
+💡 **Rangos comunes:**
+- 💵 Económicas: Menos de $5,000
+- 💰 Medias: $5,000 - $15,000
+- 💎 Premium: Más de $15,000',
                 'options' => [
-                    ['id' => 'price_low', 'text' => '💵 Menos de $5,000', 'action' => 'search', 'params' => ['max_price' => 5000]],
-                    ['id' => 'price_mid1', 'text' => '💵 $5,000 - $10,000', 'action' => 'search', 'params' => ['min_price' => 5000, 'max_price' => 10000]],
-                    ['id' => 'price_mid2', 'text' => '💵 $10,000 - $15,000', 'action' => 'search', 'params' => ['min_price' => 10000, 'max_price' => 15000]],
-                    ['id' => 'price_high', 'text' => '💎 Más de $15,000', 'action' => 'search', 'params' => ['min_price' => 15000]],
-                    ['id' => 'price_custom', 'text' => '✏️ Rango personalizado', 'action' => 'url', 'url' => '/properties'],
+                    ['id' => 'stats_prices', 'text' => '📊 Ver precios promedio', 'icon' => '📊'],
+                    ['id' => 'search_properties', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'search_properties'
             ],
@@ -90,12 +181,19 @@ Selecciona tu presupuesto mensual:',
             'search_by_type' => [
                 'text' => '🏘️ **Buscar por Tipo**
 
-¿Qué tipo de propiedad buscas?',
+**Tipos disponibles:**
+
+🏡 **Casa** - Propiedad independiente con jardín
+🏢 **Departamento** - Vivienda en edificio
+🏠 **Estudio** - Espacio compacto, ideal para 1 persona
+🚪 **Habitación** - Espacio en propiedad compartida
+
+**Para filtrar:**
+1. Ve a la página de propiedades
+2. Selecciona el tipo en el menú desplegable
+3. Aplica los filtros',
                 'options' => [
-                    ['id' => 'type_casa', 'text' => '🏡 Casa', 'action' => 'search', 'params' => ['type' => 'casa']],
-                    ['id' => 'type_departamento', 'text' => '🏢 Departamento', 'action' => 'search', 'params' => ['type' => 'departamento']],
-                    ['id' => 'type_estudio', 'text' => '🏠 Estudio', 'action' => 'search', 'params' => ['type' => 'estudio']],
-                    ['id' => 'type_habitacion', 'text' => '🚪 Habitación', 'action' => 'search', 'params' => ['type' => 'habitacion']],
+                    ['id' => 'search_properties', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'search_properties'
             ],
@@ -103,12 +201,17 @@ Selecciona tu presupuesto mensual:',
             'search_by_rooms' => [
                 'text' => '🛏️ **Buscar por Habitaciones**
 
-¿Cuántas habitaciones necesitas?',
+Filtra propiedades según tus necesidades:
+
+**Para filtrar:**
+1. Ve a la página de propiedades
+2. Selecciona número de habitaciones
+3. También puedes filtrar por baños
+4. Aplica los filtros
+
+💡 Considera también el área (m²) para espacios más cómodos.',
                 'options' => [
-                    ['id' => 'rooms_1', 'text' => '1 Habitación', 'action' => 'search', 'params' => ['bedrooms' => 1]],
-                    ['id' => 'rooms_2', 'text' => '2 Habitaciones', 'action' => 'search', 'params' => ['bedrooms' => 2]],
-                    ['id' => 'rooms_3', 'text' => '3 Habitaciones', 'action' => 'search', 'params' => ['bedrooms' => 3]],
-                    ['id' => 'rooms_4plus', 'text' => '4+ Habitaciones', 'action' => 'search', 'params' => ['min_bedrooms' => 4]],
+                    ['id' => 'search_properties', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'search_properties'
             ],
@@ -116,11 +219,16 @@ Selecciona tu presupuesto mensual:',
             'search_recent' => [
                 'text' => '🆕 **Propiedades Nuevas**
 
-¿De cuándo quieres ver?',
+Para ver las propiedades más recientes:
+
+1. Ve a la página de propiedades
+2. Ordena por "Más recientes" en el menú de orden
+3. Las propiedades se mostrarán de más nueva a más antigua
+
+⚡ Las propiedades nuevas tienen la etiqueta "NUEVA" para que las identifiques fácilmente.',
                 'options' => [
-                    ['id' => 'recent_today', 'text' => '⚡ Hoy', 'action' => 'search', 'params' => ['days' => 0]],
-                    ['id' => 'recent_week', 'text' => '📅 Última semana', 'action' => 'search', 'params' => ['days' => 7]],
-                    ['id' => 'recent_month', 'text' => '📆 Último mes', 'action' => 'search', 'params' => ['days' => 30]],
+                    ['id' => 'stats_properties', 'text' => '📊 Ver estadísticas', 'icon' => '📊'],
+                    ['id' => 'search_properties', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'search_properties'
             ],
@@ -131,13 +239,14 @@ Selecciona tu presupuesto mensual:',
             'publish_property' => [
                 'text' => '📝 **Publicar Propiedad**
 
+Te guiaré paso a paso para publicar tu propiedad.
+
 ¿Qué necesitas saber?',
                 'options' => [
                     ['id' => 'publish_how', 'text' => '❓ ¿Cómo publicar?', 'icon' => '❓'],
                     ['id' => 'publish_requirements', 'text' => '📋 Requisitos', 'icon' => '📋'],
                     ['id' => 'publish_photos', 'text' => '📸 Guía de fotos', 'icon' => '📸'],
                     ['id' => 'publish_costs', 'text' => '💰 ¿Tiene costo?', 'icon' => '💰'],
-                    ['id' => 'publish_now', 'text' => '✅ Publicar ahora', 'action' => 'url', 'url' => '/properties/create'],
                 ],
                 'back' => 'main'
             ],
@@ -147,25 +256,39 @@ Selecciona tu presupuesto mensual:',
 
 **Proceso paso a paso:**
 
-1️⃣ **Verificar identidad** (con INE)
-2️⃣ **Ir a "Publicar Propiedad"**
-3️⃣ **Llenar información:**
-   • Título atractivo
+1️⃣ **Verifica tu identidad** (obligatorio)
+   • Ve a "Verificación" en el menú
+   • Sube tu INE (frente y reverso)
+   • Espera la aprobación (2-5 minutos)
+
+2️⃣ **Prepara la información:**
+   • Título atractivo (ej: "Hermosa casa en zona norte")
    • Ubicación exacta
    • Tipo de propiedad
    • Precio mensual
    • Habitaciones y baños
-   • Área (m²)
+   • Área en m²
+   • Descripción detallada
 
-4️⃣ **Subir fotos** (mínimo 5)
-5️⃣ **Escribir descripción**
-6️⃣ **Publicar**
+3️⃣ **Prepara las fotos** (mínimo 5)
+   • Fachada/entrada
+   • Sala
+   • Cocina
+   • Habitaciones
+   • Baños
 
-⚡ Toma solo 10 minutos!',
+4️⃣ **Publica:**
+   • Ve al menú superior
+   • Haz clic en "Publicar Propiedad"
+   • Llena el formulario
+   • Sube las fotos
+   • ¡Publica!
+
+⚡ **Tiempo estimado: 10-15 minutos**',
                 'options' => [
                     ['id' => 'publish_requirements', 'text' => '📋 Ver requisitos', 'icon' => '📋'],
                     ['id' => 'publish_photos', 'text' => '📸 Guía de fotos', 'icon' => '📸'],
-                    ['id' => 'publish_now', 'text' => '✅ Publicar ahora', 'action' => 'url', 'url' => '/properties/create'],
+                    ['id' => 'verification', 'text' => '✅ Ir a verificación', 'icon' => '✅'],
                 ],
                 'back' => 'publish_property'
             ],
@@ -173,47 +296,77 @@ Selecciona tu presupuesto mensual:',
             'publish_requirements' => [
                 'text' => '📋 **Requisitos para Publicar**
 
-**Obligatorios:**
+**OBLIGATORIOS:**
 ✅ Cuenta verificada con INE
-✅ Ser propietario o tener autorización
-✅ Información completa
-✅ Mínimo 5 fotos
-✅ Precio mensual
+✅ Ser propietario o tener autorización escrita
+✅ Información completa y veraz
+✅ Mínimo 5 fotos de calidad
+✅ Precio mensual definido
 ✅ Ubicación exacta
-✅ Descripción detallada
+✅ Descripción detallada (min. 100 caracteres)
 
-💡 Propiedades completas se rentan 3x más rápido',
+**RECOMENDADO:**
+⭐ Fotos profesionales o de alta calidad
+⭐ Descripción completa de amenidades
+⭐ Información sobre servicios incluidos
+⭐ Reglas de la propiedad
+⭐ Contacto disponible
+
+💡 **Dato importante:** Propiedades completas se rentan 3x más rápido',
                 'options' => [
                     ['id' => 'verification', 'text' => '✅ Verificar identidad', 'icon' => '✅'],
                     ['id' => 'publish_photos', 'text' => '📸 Guía de fotos', 'icon' => '📸'],
-                    ['id' => 'publish_now', 'text' => '🚀 Publicar ahora', 'action' => 'url', 'url' => '/properties/create'],
+                    ['id' => 'publish_how', 'text' => '❓ Ver proceso completo', 'icon' => '❓'],
                 ],
                 'back' => 'publish_property'
             ],
 
             'publish_photos' => [
-                'text' => '📸 **Guía de Fotos**
+                'text' => '📸 **Guía de Fotos Profesionales**
 
-**Fotos OBLIGATORIAS:**
-1. Fachada/entrada
-2. Sala principal
-3. Cocina
-4. Todas las habitaciones
-5. Baños
+**FOTOS OBLIGATORIAS (mínimo 5):**
+1. 🏠 Fachada/entrada principal
+2. 🛋️ Sala o espacio principal
+3. 🍳 Cocina completa
+4. 🛏️ Todas las habitaciones
+5. 🚿 Baños
 
-**TIPS:**
-✅ Luz natural (mañanas)
-✅ Espacios limpios
-✅ Ángulos amplios
-✅ Alta resolución
-✅ Horizontal
-❌ Evita fotos borrosas
-❌ Evita fotos oscuras
+**TIPS PARA MEJORES FOTOS:**
 
-📱 Usa tu celular en modo HDR',
+✅ **Iluminación:**
+- Toma fotos en la mañana (luz natural)
+- Abre cortinas y persianas
+- Enciende todas las luces
+
+✅ **Preparación:**
+- Limpia y ordena los espacios
+- Retira objetos personales
+- Arregla camas y cojines
+
+✅ **Técnica:**
+- Usa modo horizontal (landscape)
+- Ángulos amplios (esquinas)
+- No uses zoom, acércate
+- Mantén el teléfono recto
+- Usa modo HDR si está disponible
+
+✅ **Calidad:**
+- Resolución alta
+- Sin filtros
+- Sin marcas de agua
+- Fotos nítidas (no borrosas)
+
+❌ **EVITA:**
+- Fotos oscuras
+- Espacios desordenados
+- Fotos borrosas o movidas
+- Demasiado zoom
+- Ángulos extraños
+
+📱 **Consejo Pro:** Usa el modo retrato/paisaje de tu celular para mejores resultados.',
                 'options' => [
-                    ['id' => 'publish_requirements', 'text' => '📋 Requisitos', 'icon' => '📋'],
-                    ['id' => 'publish_now', 'text' => '🚀 Publicar ahora', 'action' => 'url', 'url' => '/properties/create'],
+                    ['id' => 'publish_requirements', 'text' => '📋 Ver requisitos', 'icon' => '📋'],
+                    ['id' => 'publish_how', 'text' => '❓ Ver proceso completo', 'icon' => '❓'],
                 ],
                 'back' => 'publish_property'
             ],
@@ -224,26 +377,35 @@ Selecciona tu presupuesto mensual:',
 🎉 **¡COMPLETAMENTE GRATIS!**
 
 **Para PROPIETARIOS:**
-✅ Publicar propiedades
-✅ Gestionar anuncios
-✅ Recibir mensajes
-✅ Editar información
-✅ Todas las funciones
+✅ Publicar propiedades ilimitadas
+✅ Gestionar todos tus anuncios
+✅ Recibir y responder mensajes
+✅ Editar información cuando quieras
+✅ Subir fotos ilimitadas
+✅ Estadísticas de visualizaciones
+✅ Todas las funciones de la plataforma
 
 **Para INQUILINOS:**
-✅ Buscar propiedades
-✅ Contactar propietarios
+✅ Buscar propiedades sin límites
+✅ Contactar propietarios directamente
 ✅ Guardar favoritos
-✅ Todas las funciones
+✅ Recibir notificaciones
+✅ Usar filtros avanzados
+✅ Ver en mapa interactivo
+✅ Todas las funciones de búsqueda
 
-**SIN:**
+**LO QUE NUNCA COBRAMOS:**
+❌ Comisiones por renta
 ❌ Cargos ocultos
-❌ Comisiones
-❌ Límites
+❌ Límites de publicaciones
+❌ Costos por mensajes
+❌ Tarifas de membresía
 
-💡 100% gratuito, siempre',
+💡 **100% gratuito, siempre**
+
+Nuestro objetivo es facilitar que encuentres o rentes tu propiedad sin intermediarios costosos.',
                 'options' => [
-                    ['id' => 'publish_now', 'text' => '🚀 Publicar ahora', 'action' => 'url', 'url' => '/properties/create'],
+                    ['id' => 'publish_how', 'text' => '📝 Ver cómo publicar', 'icon' => '📝'],
                 ],
                 'back' => 'publish_property'
             ],
@@ -254,9 +416,10 @@ Selecciona tu presupuesto mensual:',
             'verification' => [
                 'text' => '✅ **Verificación de Identidad**
 
-Verifica tu identidad para:
+La verificación te permite:
 - Publicar propiedades
-- Generar confianza
+- Generar confianza con otros usuarios
+- Badge de "Usuario Verificado"
 - Destacar en búsquedas
 
 ¿Qué necesitas saber?',
@@ -265,7 +428,6 @@ Verifica tu identidad para:
                     ['id' => 'verification_how', 'text' => '🔧 ¿Cómo verificar?', 'icon' => '🔧'],
                     ['id' => 'verification_ocr', 'text' => '🤖 ¿Qué es OCR?', 'icon' => '🤖'],
                     ['id' => 'verification_safe', 'text' => '🔒 ¿Es seguro?', 'icon' => '🔒'],
-                    ['id' => 'verification_now', 'text' => '✅ Verificar ahora', 'action' => 'url', 'url' => '/verification/identity'],
                 ],
                 'back' => 'main'
             ],
@@ -273,74 +435,112 @@ Verifica tu identidad para:
             'verification_what' => [
                 'text' => '✅ **¿Qué es la Verificación?**
 
-Proceso donde confirmas tu identidad con INE/IFE.
+Es un proceso donde confirmas tu identidad con tu INE/IFE.
 
-**Beneficios:**
-✅ Badge de "Usuario Verificado"
-✅ Más confianza
-✅ Puedes publicar propiedades
-✅ Prioridad en búsquedas
+**BENEFICIOS:**
+✅ Badge visible de "Usuario Verificado"
+✅ Genera más confianza
+✅ Requisito para publicar propiedades
+✅ Prioridad en resultados de búsqueda
+✅ Acceso a funciones premium
 
-**Tiempo:**
-⚡ 2-3 minutos
+**TIEMPO:**
+⚡ 2-3 minutos en total
+⏱️ Aprobación automática (segundos)
 
-💡 Rápido, fácil y seguro',
+**PROCESO:**
+Es completamente seguro y automático usando tecnología OCR (Reconocimiento Óptico de Caracteres).
+
+💡 Rápido, fácil y 100% seguro',
                 'options' => [
                     ['id' => 'verification_how', 'text' => '🔧 ¿Cómo hacerlo?', 'icon' => '🔧'],
-                    ['id' => 'verification_now', 'text' => '✅ Verificar ahora', 'action' => 'url', 'url' => '/verification/identity'],
+                    ['id' => 'verification_safe', 'text' => '🔒 ¿Es seguro?', 'icon' => '🔒'],
                 ],
                 'back' => 'verification'
             ],
 
             'verification_how' => [
-                'text' => '🔧 **Cómo Verificar**
+                'text' => '🔧 **Cómo Verificar tu Identidad**
 
-**Pasos:**
-1️⃣ Ten tu INE a la mano
-2️⃣ Ve a "Verificar Identidad"
-3️⃣ Sube foto del FRENTE
-4️⃣ Sube foto del REVERSO
-5️⃣ Sistema OCR lee datos
-6️⃣ Confirma y ¡listo!
+**PASOS DETALLADOS:**
 
-⚡ **Toma 2 minutos**
+1️⃣ **Prepara tu INE**
+   • Ten a la mano tu credencial vigente
+   • Limpia la superficie
+   • Busca buena iluminación
 
-**Tips:**
-✅ Foto horizontal
-✅ INE completa
-✅ Sin reflejos
-✅ Buena resolución',
+2️⃣ **Accede a verificación**
+   • Ve al menú superior
+   • Haz clic en tu foto de perfil
+   • Selecciona "Verificar Identidad"
+
+3️⃣ **Sube foto del FRENTE**
+   • Coloca tu INE horizontal
+   • Asegúrate que se vea completa
+   • Sin reflejos ni sombras
+   • Toma la foto
+
+4️⃣ **Sube foto del REVERSO**
+   • Voltea tu INE
+   • Mismos cuidados que el frente
+   • Toma la foto
+
+5️⃣ **Confirmación automática**
+   • El sistema OCR lee tus datos
+   • Revisa que la información sea correcta
+   • Confirma los datos
+   • ¡Listo! Eres usuario verificado
+
+⚡ **TIEMPO TOTAL: 2 minutos**
+
+**TIPS IMPORTANTES:**
+✅ Usa modo horizontal
+✅ INE debe verse completa
+✅ Sin reflejos ni brillos
+✅ Buena iluminación
+✅ Foto nítida (no borrosa)
+✅ INE vigente',
                 'options' => [
                     ['id' => 'verification_ocr', 'text' => '🤖 ¿Qué es OCR?', 'icon' => '🤖'],
                     ['id' => 'verification_safe', 'text' => '🔒 ¿Es seguro?', 'icon' => '🔒'],
-                    ['id' => 'verification_now', 'text' => '✅ Verificar ahora', 'action' => 'url', 'url' => '/verification/identity'],
                 ],
                 'back' => 'verification'
             ],
 
             'verification_ocr' => [
-                'text' => '🤖 **OCR - Reconocimiento Óptico**
+                'text' => '🤖 **OCR - Reconocimiento Óptico de Caracteres**
 
-**¿Qué es?**
-IA que lee tu INE automáticamente.
+**¿QUÉ ES?**
+Es tecnología de Inteligencia Artificial que lee automáticamente tu INE sin que tengas que escribir nada.
 
-**Lee:**
+**¿QUÉ LEE?**
+📄 Datos que extrae:
 - Nombre completo
 - CURP
 - Fecha de nacimiento
 - Domicilio
 - Número de credencial
+- Clave de elector
+- Vigencia
 
-**Ventajas:**
-✅ Instantáneo (segundos)
-✅ No escribes nada
-✅ Muy preciso (99%)
-✅ Seguro y encriptado
+**VENTAJAS:**
+✅ **Instantáneo** - Lectura en segundos
+✅ **Sin errores** - No escribes manualmente
+✅ **Muy preciso** - 99.9% de exactitud
+✅ **Seguro** - Datos encriptados
+✅ **Automático** - Sin intervención humana
 
-💡 Tecnología de última generación',
+**¿CÓMO FUNCIONA?**
+1. Subes la foto de tu INE
+2. La IA analiza la imagen
+3. Extrae todos los datos automáticamente
+4. Te muestra los resultados
+5. Tú solo confirmas
+
+💡 Es la misma tecnología que usan bancos y gobiernos.',
                 'options' => [
                     ['id' => 'verification_safe', 'text' => '🔒 ¿Es seguro?', 'icon' => '🔒'],
-                    ['id' => 'verification_now', 'text' => '✅ Verificar ahora', 'action' => 'url', 'url' => '/verification/identity'],
+                    ['id' => 'verification_how', 'text' => '🔧 Ver proceso completo', 'icon' => '🔧'],
                 ],
                 'back' => 'verification'
             ],
@@ -348,28 +548,47 @@ IA que lee tu INE automáticamente.
             'verification_safe' => [
                 'text' => '🔒 **Seguridad de tus Datos**
 
-**100% Seguro:**
-✅ Datos encriptados
-✅ No compartimos información
-✅ Cumplimos con GDPR
-✅ Almacenamiento seguro
-✅ Solo para verificación
+**100% SEGURO - TE LO GARANTIZAMOS**
+
+🛡️ **Protección de Datos:**
+✅ Encriptación de nivel bancario (AES-256)
+✅ Cumplimiento con GDPR y LFPDPPP
+✅ Servidores seguros
+✅ No compartimos tu información con terceros
+✅ Uso exclusivo para verificación de identidad
 
 **¿QUIÉN VE MIS DATOS?**
-- Tú (siempre)
-- Sistema automático
-- Nadie más
+👁️ **TÚ** - Siempre tienes acceso completo
+🤖 **Sistema automático** - Solo para validación
+❌ **Nadie más** - Ni staff, ni otros usuarios
 
-**PÚBLICO:**
-✅ Badge de "Verificado"
-✅ Tu nombre (si autorizas)
-❌ Número INE (nunca)
-❌ CURP (nunca)
-❌ Dirección (nunca)
+**¿QUÉ ES VISIBLE PÚBLICAMENTE?**
+✅ Badge de "Usuario Verificado"
+✅ Tu nombre (solo si autorizas)
+❌ Número de INE (NUNCA)
+❌ CURP (NUNCA)
+❌ Dirección (NUNCA)
+❌ Fecha de nacimiento (NUNCA)
+❌ Fotos de tu INE (NUNCA)
 
-💡 Tu privacidad es #1',
+**DERECHOS SOBRE TUS DATOS:**
+📝 Ver tus datos cuando quieras
+✏️ Corregir información
+🗑️ Eliminar tu cuenta y datos
+📧 Exportar tu información
+
+**SEGURIDAD ADICIONAL:**
+🔐 Autenticación de dos factores disponible
+🚨 Alertas de acceso sospechoso
+📱 Verificación por email
+🔄 Respaldo automático encriptado
+
+💡 **Tu privacidad es nuestra prioridad #1**
+
+Para más información sobre protección de datos, consulta nuestra Política de Privacidad.',
                 'options' => [
-                    ['id' => 'verification_now', 'text' => '✅ Entendido, verificar', 'action' => 'url', 'url' => '/verification/identity'],
+                    ['id' => 'verification_how', 'text' => '✅ Entiendo, ¿cómo empiezo?', 'icon' => '✅'],
+                    ['id' => 'verification', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'verification'
             ],
@@ -380,32 +599,143 @@ IA que lee tu INE automáticamente.
             'messages' => [
                 'text' => '💬 **Sistema de Mensajes**
 
+El sistema de mensajes te permite comunicarte directamente con propietarios o inquilinos.
+
 ¿Qué necesitas?',
                 'options' => [
                     ['id' => 'messages_how', 'text' => '❓ ¿Cómo funciona?', 'icon' => '❓'],
-                    ['id' => 'messages_view', 'text' => '📬 Ver mis mensajes', 'action' => 'url', 'url' => '/messages'],
+                    ['id' => 'messages_contact', 'text' => '📧 ¿Cómo contactar?', 'icon' => '📧'],
+                    ['id' => 'messages_tips', 'text' => '💡 Tips de comunicación', 'icon' => '💡'],
                 ],
                 'back' => 'main'
             ],
 
             'messages_how' => [
-                'text' => '💬 **Cómo Funciona el Chat**
+                'text' => '💬 **Cómo Funciona el Sistema de Mensajes**
 
-**Contactar propietarios:**
-1. Encuentra una propiedad
-2. Abre los detalles
-3. Clic en "Enviar Mensaje"
-4. Escribe tu consulta
-5. ¡Espera respuesta!
+**ENVIAR MENSAJE:**
+1. Busca una propiedad que te interese
+2. Abre los detalles de la propiedad
+3. Haz clic en "Contactar al propietario"
+4. Escribe tu mensaje
+5. Envía
+6. ¡Espera la respuesta!
 
-**Ver conversaciones:**
-- Ve al menú "Mensajes"
-- Todas tus conversaciones
-- Notificaciones en tiempo real
+**VER TUS CONVERSACIONES:**
+1. Ve al menú superior
+2. Haz clic en el icono de mensajes 💬
+3. Verás todas tus conversaciones
+4. Haz clic en una para ver el historial completo
 
-💡 Mensajes nuevos con 🔴',
+**CARACTERÍSTICAS:**
+✅ Mensajes en tiempo real
+✅ Notificaciones instantáneas
+✅ Historial completo
+✅ Indicador de mensajes nuevos 🔴
+✅ Marca de leído/no leído
+✅ Sistema seguro y privado
+
+**PRIVACIDAD:**
+🔒 Tus conversaciones son privadas
+🔒 No compartimos tu información
+🔒 Puedes bloquear usuarios si es necesario',
                 'options' => [
-                    ['id' => 'messages_view', 'text' => '📬 Ver mensajes', 'action' => 'url', 'url' => '/messages'],
+                    ['id' => 'messages_tips', 'text' => '💡 Tips de comunicación', 'icon' => '💡'],
+                    ['id' => 'messages', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
+                ],
+                'back' => 'messages'
+            ],
+
+            'messages_contact' => [
+                'text' => '📧 **Cómo Contactar a un Propietario**
+
+**PASO A PASO:**
+
+1️⃣ **Encuentra la propiedad**
+   • Busca propiedades que te interesen
+   • Aplica filtros según tus necesidades
+
+2️⃣ **Ve los detalles**
+   • Haz clic en la propiedad
+   • Revisa fotos, precio, ubicación
+
+3️⃣ **Inicia el contacto**
+   • Botón "Contactar al propietario"
+   • Se abre el chat
+
+4️⃣ **Escribe tu mensaje**
+   • Preséntate brevemente
+   • Menciona qué te interesa
+   • Haz preguntas específicas
+   • Sé cordial y claro
+
+5️⃣ **Envía y espera**
+   • El propietario recibirá notificación
+   • Tiempo de respuesta: 24-48 horas típicamente
+   • Recibirás notificación de respuesta
+
+💡 Tip: Revisa la sección de "Tips de comunicación" para mensajes efectivos.',
+                'options' => [
+                    ['id' => 'messages_tips', 'text' => '💡 Ver tips', 'icon' => '💡'],
+                    ['id' => 'messages', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
+                ],
+                'back' => 'messages'
+            ],
+
+            'messages_tips' => [
+                'text' => '💡 **Tips para Comunicación Efectiva**
+
+**PARA INQUILINOS:**
+
+✅ **Preséntate:**
+"Hola, mi nombre es [nombre]. Me interesa tu propiedad..."
+
+✅ **Sé específico:**
+- Fecha de mudanza deseada
+- Cuántas personas
+- Mascotas (si aplica)
+- Presupuesto
+
+✅ **Haz preguntas relevantes:**
+- ¿Servicios incluidos?
+- ¿Depósito requerido?
+- ¿Cuándo puedo ver la propiedad?
+- ¿Hay estacionamiento?
+
+❌ **Evita:**
+- Mensajes muy cortos ("¿disponible?")
+- Regatear inmediatamente
+- Solicitar datos bancarios
+- Lenguaje informal excesivo
+
+**PARA PROPIETARIOS:**
+
+✅ **Responde rápido:**
+Inquilinos serios deciden en 24-48 horas
+
+✅ **Sé profesional:**
+- Información completa
+- Responde todas las preguntas
+- Sugiere horarios para visitas
+
+✅ **Sé claro:**
+- Requisitos de renta
+- Servicios incluidos/no incluidos
+- Reglas de la propiedad
+- Proceso de aplicación
+
+❌ **Evita:**
+- Solicitar pagos fuera de la plataforma
+- Dar datos bancarios en mensajes
+- Presionar al inquilino
+
+🛡️ **SEGURIDAD:**
+- Usa solo el sistema de mensajes de la plataforma
+- No compartas datos bancarios
+- Reporta comportamiento sospechoso',
+                'options' => [
+                    ['id' => 'messages_how', 'text' => '❓ Ver cómo funciona', 'icon' => '❓'],
+                    ['id' => 'messages', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'messages'
             ],
@@ -416,33 +746,151 @@ IA que lee tu INE automáticamente.
             'my_account' => [
                 'text' => '👤 **Mi Cuenta**
 
+Administra tu perfil y configuración.
+
 ¿Qué deseas hacer?',
                 'options' => [
-                    ['id' => 'account_profile', 'text' => '✏️ Editar perfil', 'action' => 'url', 'url' => '/profile'],
-                    ['id' => 'account_properties', 'text' => '🏠 Mis propiedades', 'action' => 'url', 'url' => '/properties?owner=me'],
+                    ['id' => 'account_profile', 'text' => '✏️ ¿Cómo editar perfil?', 'icon' => '✏️'],
+                    ['id' => 'account_properties', 'text' => '🏠 Mis propiedades', 'icon' => '🏠'],
                     ['id' => 'account_password', 'text' => '🔑 Cambiar contraseña', 'icon' => '🔑'],
+                    ['id' => 'account_privacy', 'text' => '🔒 Privacidad', 'icon' => '🔒'],
                 ],
                 'back' => 'main'
+            ],
+
+            'account_profile' => [
+                'text' => '✏️ **Editar tu Perfil**
+
+**PASOS:**
+1. Haz clic en tu foto de perfil (esquina superior derecha)
+2. Selecciona "Mi Perfil"
+3. Haz clic en "Editar Perfil"
+4. Actualiza la información:
+   • Nombre
+   • Email
+   • Teléfono
+   • Foto de perfil
+   • Biografía
+5. Guarda los cambios
+
+**INFORMACIÓN QUE PUEDES EDITAR:**
+📝 Nombre completo
+📧 Email (requiere verificación)
+📞 Teléfono
+📸 Foto de perfil
+✍️ Biografía breve
+🏠 Ciudad
+
+💡 Mantén tu perfil actualizado para generar confianza.',
+                'options' => [
+                    ['id' => 'account_privacy', 'text' => '🔒 Privacidad', 'icon' => '🔒'],
+                    ['id' => 'my_account', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
+                ],
+                'back' => 'my_account'
+            ],
+
+            'account_properties' => [
+                'text' => '🏠 **Mis Propiedades**
+
+**ADMINISTRAR TUS PUBLICACIONES:**
+
+1. Ve al menú superior
+2. Haz clic en "Mis Propiedades"
+3. Verás todas tus publicaciones
+
+**ACCIONES DISPONIBLES:**
+✏️ **Editar** - Actualizar información
+👁️ **Ver** - Como lo ven los inquilinos
+📊 **Estadísticas** - Visualizaciones y contactos
+🔄 **Activar/Desactivar** - Control de visibilidad
+🗑️ **Eliminar** - Borrar publicación
+
+**TIPS:**
+- Mantén fotos actualizadas
+- Actualiza disponibilidad
+- Responde mensajes rápido
+- Edita precio si es necesario
+
+💡 Propiedades activas y con buenas fotos reciben 5x más contactos.',
+                'options' => [
+                    ['id' => 'publish_property', 'text' => '📝 Publicar nueva', 'icon' => '📝'],
+                    ['id' => 'my_account', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
+                ],
+                'back' => 'my_account'
             ],
 
             'account_password' => [
                 'text' => '🔑 **Cambiar Contraseña**
 
-**Si conoces tu contraseña:**
+**SI CONOCES TU CONTRASEÑA ACTUAL:**
 1. Ve a "Mi Perfil"
-2. "Editar Perfil"
-3. "Cambiar Contraseña"
-4. Ingresa actual y nueva
-5. Guardar
+2. Haz clic en "Editar Perfil"
+3. Busca la sección "Cambiar Contraseña"
+4. Ingresa contraseña actual
+5. Ingresa nueva contraseña
+6. Confirma nueva contraseña
+7. Guarda los cambios
 
-**Si la olvidaste:**
-1. Ve a Login
-2. "¿Olvidaste tu contraseña?"
+**SI OLVIDASTE TU CONTRASEÑA:**
+1. Ve a la página de Login
+2. Haz clic en "¿Olvidaste tu contraseña?"
 3. Ingresa tu email
-4. Revisa correo
-5. Sigue el enlace',
+4. Revisa tu correo
+5. Haz clic en el enlace recibido
+6. Crea tu nueva contraseña
+
+**CONTRASEÑA SEGURA:**
+✅ Mínimo 8 caracteres
+✅ Combina mayúsculas y minúsculas
+✅ Incluye números
+✅ Incluye símbolos (@, #, $, etc.)
+❌ No uses palabras comunes
+❌ No uses fechas de nacimiento
+❌ No la compartas con nadie',
                 'options' => [
-                    ['id' => 'account_profile', 'text' => '👤 Ir a perfil', 'action' => 'url', 'url' => '/profile'],
+                    ['id' => 'account_privacy', 'text' => '🔒 Seguridad y privacidad', 'icon' => '🔒'],
+                    ['id' => 'my_account', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
+                ],
+                'back' => 'my_account'
+            ],
+
+            'account_privacy' => [
+                'text' => '🔒 **Privacidad y Seguridad**
+
+**TU INFORMACIÓN ESTÁ PROTEGIDA:**
+
+🛡️ **Datos Privados (nunca visibles):**
+- Email completo
+- Teléfono completo
+- Datos de verificación
+- Mensajes privados
+- Historial de búsquedas
+
+👁️ **Datos Públicos (visibles):**
+- Nombre
+- Foto de perfil
+- Biografía (si la agregas)
+- Ciudad
+- Badge de verificación
+
+**CONFIGURACIÓN DE PRIVACIDAD:**
+1. Ve a "Mi Perfil"
+2. Sección "Privacidad"
+3. Ajusta qué información mostrar
+
+**OPCIONES:**
+✅ Mostrar/ocultar email
+✅ Mostrar/ocultar teléfono
+✅ Permitir/bloquear mensajes de desconocidos
+✅ Notificaciones personalizadas
+
+**REPORTAR PROBLEMAS:**
+Si encuentras contenido inapropiado o usuarios sospechosos, repórtalos inmediatamente.
+
+💡 Revisa regularmente tu configuración de privacidad.',
+                'options' => [
+                    ['id' => 'help_contact', 'text' => '📧 Contactar soporte', 'icon' => '📧'],
+                    ['id' => 'my_account', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'my_account'
             ],
@@ -452,6 +900,8 @@ IA que lee tu INE automáticamente.
             // ==========================================
             'stats' => [
                 'text' => '📊 **Estadísticas**
+
+Información actualizada sobre el mercado.
 
 ¿Qué te interesa?',
                 'options' => [
@@ -469,7 +919,8 @@ IA que lee tu INE automáticamente.
 
 ¿En qué necesitas ayuda?',
                 'options' => [
-                    ['id' => 'help_how_works', 'text' => '🚀 ¿Cómo funciona?', 'icon' => '🚀'],
+                    ['id' => 'help_how_works', 'text' => '🚀 ¿Cómo funciona ViveSpaces?', 'icon' => '🚀'],
+                    ['id' => 'help_faq', 'text' => '❓ Preguntas frecuentes', 'icon' => '❓'],
                     ['id' => 'help_contact', 'text' => '📧 Contactar soporte', 'icon' => '📧'],
                 ],
                 'back' => 'main'
@@ -478,22 +929,85 @@ IA que lee tu INE automáticamente.
             'help_how_works' => [
                 'text' => '🚀 **¿Cómo funciona ViveSpaces?**
 
-**Para inquilinos:**
-✅ Busca con filtros
-✅ Contacta directamente
-✅ Mapa interactivo
-✅ Notificaciones
+**PARA INQUILINOS:**
 
-**Para propietarios:**
-✅ Publica gratis
-✅ Verificación rápida
-✅ Gestiona mensajes
-✅ Panel de control
+1️⃣ **Busca**
+   • Usa filtros avanzados
+   • Explora el mapa interactivo
+   • Guarda tus favoritos
 
-**Todo 100% online y seguro 🔒**',
+2️⃣ **Contacta**
+   • Mensajes directos
+   • Sin intermediarios
+   • Comunicación segura
+
+3️⃣ **Visita**
+   • Coordina visitas
+   • Conoce la propiedad
+   • Toma tu decisión
+
+**PARA PROPIETARIOS:**
+
+1️⃣ **Verifica**
+   • Confirma tu identidad
+   • Genera confianza
+   • Acceso a publicar
+
+2️⃣ **Publica**
+   • Sube tu propiedad
+   • Fotos de calidad
+   • Información completa
+
+3️⃣ **Administra**
+   • Gestiona mensajes
+   • Actualiza información
+   • Ve estadísticas
+
+**TODO 100% GRATIS Y SEGURO 🔒**
+
+Sin comisiones, sin intermediarios, directo y confiable.',
                 'options' => [
-                    ['id' => 'search_properties', 'text' => '🏠 Buscar', 'icon' => '🏠'],
-                    ['id' => 'publish_property', 'text' => '📝 Publicar', 'icon' => '📝'],
+                    ['id' => 'help_faq', 'text' => '❓ Ver preguntas frecuentes', 'icon' => '❓'],
+                    ['id' => 'help', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
+                ],
+                'back' => 'help'
+            ],
+
+            'help_faq' => [
+                'text' => '❓ **Preguntas Frecuentes**
+
+**¿Es gratis usar ViveSpaces?**
+✅ Sí, 100% gratuito para todos.
+
+**¿Necesito verificarme?**
+Solo si quieres publicar propiedades.
+
+**¿Cómo contacto a un propietario?**
+Sistema de mensajes integrado.
+
+**¿Puedo publicar varias propiedades?**
+Sí, sin límite.
+
+**¿Cómo actualizo mi perfil?**
+Ve a "Mi Cuenta" → "Editar Perfil".
+
+**¿Es segura mi información?**
+Sí, encriptación bancaria.
+
+**¿Cuánto tarda la verificación?**
+2-5 minutos automático.
+
+**¿Puedo editar mi propiedad publicada?**
+Sí, cuando quieras.
+
+**¿Cómo elimino mi cuenta?**
+Contacta a soporte.
+
+**¿Hay app móvil?**
+La web es responsiva, funciona en móvil.',
+                'options' => [
+                    ['id' => 'help_contact', 'text' => '📧 Más preguntas', 'icon' => '📧'],
+                    ['id' => 'help', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'help'
             ],
@@ -501,18 +1015,36 @@ IA que lee tu INE automáticamente.
             'help_contact' => [
                 'text' => '📧 **Contactar Soporte**
 
-**Email:** vivespacessoporte@gmail.com
-**Horario:** Lun-Vie 9:00-18:00
-**Respuesta:** 24-48 horas
+**INFORMACIÓN DE CONTACTO:**
 
-💡 **Antes de contactar:**
-- Describe el problema
-- Incluye capturas
-- Menciona tu dispositivo
+📧 **Email:** vivespacessoporte@gmail.com
+⏰ **Horario:** Lun-Vie 9:00-18:00 (hora central)
+⏱️ **Tiempo de respuesta:** 24-48 horas
 
-¡Te ayudaremos pronto! 🚀',
+**ANTES DE CONTACTAR:**
+
+✅ **Prepara esta información:**
+- Descripción detallada del problema
+- Capturas de pantalla (si aplica)
+- Dispositivo que usas (móvil/PC)
+- Navegador (Chrome, Safari, etc.)
+- Tu nombre de usuario/email
+
+💡 **Consejo:** Revisa primero las preguntas frecuentes, tal vez tu duda ya está respondida.
+
+**PARA REPORTES URGENTES:**
+Si encuentras contenido inapropiado o usuarios sospechosos, menciona "URGENTE" en el asunto del correo.
+
+**NOS COMPROMETEMOS A:**
+✅ Responder en máximo 48 horas
+✅ Resolver tu problema efectivamente
+✅ Mantener tu información confidencial
+✅ Seguimiento hasta resolución
+
+¡Estamos aquí para ayudarte! 🚀',
                 'options' => [
-                    ['id' => 'contact_send', 'text' => '📧 Enviar email', 'action' => 'url', 'url' => 'mailto:vivespacessoporte@gmail.com'],
+                    ['id' => 'contact_send', 'text' => '📧 Enviar email ahora', 'action' => 'url', 'url' => 'mailto:vivespacessoporte@gmail.com'],
+                    ['id' => 'help', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
                 ],
                 'back' => 'help'
             ],
@@ -525,27 +1057,102 @@ IA que lee tu INE automáticamente.
     public function getWelcomeMessage(Request $request)
     {
         try {
+            // 🔥 IMPORTANTE: Obtener usuario autenticado CORRECTAMENTE
             $user = Auth::user();
+            
+            // 🔥 VERIFICAR que no haya problemas de caché
+            if ($user) {
+                $user->refresh();
+            }
+            
             $context = $request->input('context', []);
             
+            // 🔥 LOG para debugging - IMPORTANTE
+            Log::info('ChatBot - Welcome Message Request', [
+                'is_authenticated' => Auth::check(),
+                'user_id' => $user?->id,
+                'user_name' => $user?->name,
+                'user_email' => $user?->email,
+                'session_id' => session()->getId(),
+            ]);
+            
+            // 🔥 VALIDACIÓN ESTRICTA: Si no hay usuario autenticado
+            if (!Auth::check() || !$user || !$user->id) {
+                Log::info('ChatBot - Usuario no autenticado, mostrando menú de invitado');
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => [
+                        'text' => "👋 ¡Hola! Soy tu asistente de ViveSpaces.\n\n🔍 **Como invitado** solo puedes consultar información de ayuda.\n\n🔐 **Inicia sesión** para acceder a todas las funciones.\n\n¿En qué puedo ayudarte?",
+                        'type' => 'menu',
+                        'menu_id' => 'guest',
+                        'options' => [
+                            ['id' => 'help', 'text' => '❓ Ayuda', 'icon' => '❓'],
+                            ['id' => 'login_prompt', 'text' => '🔓 Iniciar Sesión', 'icon' => '🔓', 'action' => 'url', 'url' => '/login'],
+                            ['id' => 'register_prompt', 'text' => '📝 Registrarse', 'icon' => '📝', 'action' => 'url', 'url' => '/register'],
+                        ]
+                    ],
+                    'user' => null,
+                    'is_guest' => true
+                ]);
+            }
+            
+            // Usuario autenticado - Menú completo
             $mainMenu = $this->getPersonalizedMainMenu($user);
+            
+            // 🔥 GUARDAR inicio de conversación
+            $this->logInteraction([
+                'interaction_type' => 'conversation_start',
+                'conversation_status' => 'active',
+                'current_menu_id' => 'main',
+                'user_input' => [
+                    'type' => 'conversation_start',
+                    'context' => $context
+                ],
+                'bot_response' => [
+                    'type' => 'menu',
+                    'text' => $mainMenu['text'],
+                    'menu_id' => 'main',
+                    'options_count' => count($mainMenu['options'])
+                ],
+                'metadata' => [
+                    'user_agent' => $request->userAgent(),
+                    'ip_hash' => hash('sha256', $request->ip()),
+                    'authenticated' => true
+                ]
+            ]);
             
             return response()->json([
                 'success' => true,
-                'message' => $mainMenu
+                'message' => $mainMenu,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email
+                ],
+                'is_guest' => false
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error en getWelcomeMessage: ' . $e->getMessage());
+            Log::error('Error en getWelcomeMessage: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id()
+            ]);
 
+            // Fallback para invitados en caso de error
             return response()->json([
-                'success' => false,
+                'success' => true,
                 'message' => [
-                    'text' => '¡Hola! 👋 Soy tu asistente de ViveSpaces.',
+                    'text' => '👋 ¡Hola! Soy tu asistente de ViveSpaces.\n\n❓ Como invitado, solo puedes acceder a la sección de Ayuda.',
                     'type' => 'menu',
-                    'menu_id' => 'main',
-                    'options' => $this->menuStructure['main']['options']
-                ]
+                    'menu_id' => 'guest',
+                    'options' => [
+                        ['id' => 'help', 'text' => '❓ Ayuda', 'icon' => '❓'],
+                        ['id' => 'login_prompt', 'text' => '🔓 Iniciar Sesión', 'icon' => '🔓', 'action' => 'url', 'url' => '/login'],
+                    ]
+                ],
+                'user' => null,
+                'is_guest' => true
             ], 200);
         }
     }
@@ -556,9 +1163,32 @@ IA que lee tu INE automáticamente.
     public function processMessage(Request $request)
     {
         try {
+            // 🔥 Validación mejorada
+            $request->validate([
+                'option_id' => 'required|string|max:200',
+                'menu_id' => 'nullable|string|max:200',
+                'context' => 'nullable|array'
+            ]);
+
             $optionId = $request->input('option_id');
             $menuId = $request->input('menu_id');
             $context = $request->input('context', []);
+            
+            // 🔥 Obtener usuario autenticado
+            $user = Auth::user();
+            if ($user) {
+                $user->refresh();
+            }
+
+            // 🔥 LOG detallado
+            Log::info('ChatBot - Process Message', [
+                'is_authenticated' => Auth::check(),
+                'user_id' => $user?->id,
+                'user_name' => $user?->name,
+                'option_id' => $optionId,
+                'menu_id' => $menuId,
+                'session_id' => session()->getId()
+            ]);
 
             if (empty($optionId)) {
                 return response()->json([
@@ -567,16 +1197,92 @@ IA que lee tu INE automáticamente.
                 ], 400);
             }
 
+            // 🔥 VALIDACIÓN ESTRICTA: Opciones permitidas para invitados
+            $guestAllowedOptions = [
+                'help',
+                'help_how_works',
+                'help_faq',
+                'help_contact',
+                'contact_send'
+            ];
+
+            // 🔥 Si no está autenticado y intenta acceder a algo que NO es ayuda
+            if ((!Auth::check() || !$user || !$user->id) && !in_array($optionId, $guestAllowedOptions)) {
+                Log::warning('ChatBot - Invitado intentando acceder a opción restringida', [
+                    'option_id' => $optionId,
+                    'ip' => $request->ip()
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'response' => [
+                        'text' => "🔐 **Acceso Restringido**\n\nEsta función solo está disponible para usuarios registrados.\n\n✨ **Beneficios de crear una cuenta:**\n• Buscar y contactar propiedades\n• Publicar tus propiedades\n• Sistema de mensajería\n• Verificación de identidad\n• Y mucho más...\n\n¿Qué deseas hacer?",
+                        'type' => 'auth_required',
+                        'menu_id' => 'guest',
+                        'options' => [
+                            ['id' => 'login_prompt', 'text' => '🔓 Iniciar Sesión', 'icon' => '🔓', 'action' => 'url', 'url' => '/login'],
+                            ['id' => 'register_prompt', 'text' => '📝 Registrarse Gratis', 'icon' => '📝', 'action' => 'url', 'url' => '/register'],
+                            ['id' => 'help', 'text' => '❓ Ver Ayuda', 'icon' => '❓'],
+                        ]
+                    ],
+                    'timestamp' => now()->toIso8601String(),
+                    'user' => null,
+                    'is_guest' => true
+                ]);
+            }
+
+            $startTime = microtime(true);
             $response = $this->processOption($optionId, $context);
+            $responseTime = (microtime(true) - $startTime) * 1000;
+
+            // 🔥 GUARDAR interacción de clic en menú
+            $this->logInteraction([
+                'interaction_type' => 'menu_click',
+                'conversation_status' => 'active',
+                'current_menu_id' => $response['menu_id'] ?? $optionId,
+                'previous_menu_id' => $menuId,
+                'user_input' => [
+                    'type' => 'button',
+                    'option_id' => $optionId,
+                    'from_menu' => $menuId
+                ],
+                'bot_response' => [
+                    'type' => $response['type'] ?? 'menu',
+                    'text' => substr($response['text'] ?? '', 0, 200),
+                    'menu_id' => $response['menu_id'] ?? null,
+                    'options_count' => count($response['options'] ?? []),
+                    'has_data' => isset($response['data'])
+                ],
+                'metadata' => [
+                    'response_time_ms' => round($responseTime, 2),
+                    'authenticated' => Auth::check()
+                ]
+            ]);
 
             return response()->json([
                 'success' => true,
                 'response' => $response,
-                'timestamp' => now()->toIso8601String()
+                'timestamp' => now()->toIso8601String(),
+                'user' => $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email
+                ] : null,
+                'is_guest' => !Auth::check()
             ]);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Datos inválidos',
+                'errors' => $e->errors()
+            ], 422);
+            
         } catch (\Exception $e) {
-            Log::error('Error en processMessage: ' . $e->getMessage());
+            Log::error('Error en processMessage: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id()
+            ]);
 
             return response()->json([
                 'success' => false,
@@ -603,12 +1309,6 @@ IA que lee tu INE automáticamente.
             ];
         }
 
-        if (strpos($optionId, 'search_') === 0 || strpos($optionId, 'location_') === 0 || 
-            strpos($optionId, 'price_') === 0 || strpos($optionId, 'type_') === 0 ||
-            strpos($optionId, 'rooms_') === 0 || strpos($optionId, 'recent_') === 0) {
-            return $this->handleSearchAction($optionId);
-        }
-
         if (strpos($optionId, 'stats_') === 0) {
             return $this->handleStatsAction($optionId);
         }
@@ -618,114 +1318,6 @@ IA que lee tu INE automáticamente.
             'type' => 'menu',
             'menu_id' => 'main',
             'options' => $this->menuStructure['main']['options']
-        ];
-    }
-
-    /**
-     * Manejar acciones de búsqueda
-     */
-    private function handleSearchAction($optionId)
-    {
-        $searchParams = [];
-        $locationName = '';
-
-        if (strpos($optionId, 'location_') === 0) {
-            $location = str_replace('location_', '', $optionId);
-            $searchParams['city'] = $location;
-            $locationName = ucfirst($location);
-        } elseif (strpos($optionId, 'price_') === 0) {
-            $priceRanges = [
-                'price_low' => ['max' => 5000, 'label' => 'menos de $5,000'],
-                'price_mid1' => ['min' => 5000, 'max' => 10000, 'label' => '$5,000 - $10,000'],
-                'price_mid2' => ['min' => 10000, 'max' => 15000, 'label' => '$10,000 - $15,000'],
-                'price_high' => ['min' => 15000, 'label' => 'más de $15,000'],
-            ];
-            if (isset($priceRanges[$optionId])) {
-                $range = $priceRanges[$optionId];
-                if (isset($range['min'])) $searchParams['min_price'] = $range['min'];
-                if (isset($range['max'])) $searchParams['max_price'] = $range['max'];
-                $locationName = $range['label'];
-            }
-        } elseif (strpos($optionId, 'type_') === 0) {
-            $type = str_replace('type_', '', $optionId);
-            $searchParams['type'] = $type;
-            $locationName = ucfirst($type);
-        } elseif (strpos($optionId, 'rooms_') === 0) {
-            if ($optionId === 'rooms_4plus') {
-                $searchParams['min_bedrooms'] = 4;
-                $locationName = '4+ habitaciones';
-            } else {
-                $rooms = str_replace('rooms_', '', $optionId);
-                $searchParams['bedrooms'] = $rooms;
-                $locationName = $rooms . ' habitación(es)';
-            }
-        } elseif (strpos($optionId, 'recent_') === 0) {
-            $daysMap = [
-                'recent_today' => 0,
-                'recent_week' => 7,
-                'recent_month' => 30,
-            ];
-            if (isset($daysMap[$optionId])) {
-                $searchParams['days'] = $daysMap[$optionId];
-                $labels = [
-                    'recent_today' => 'hoy',
-                    'recent_week' => 'última semana',
-                    'recent_month' => 'último mes',
-                ];
-                $locationName = $labels[$optionId];
-            }
-        }
-
-        $properties = $this->searchProperties($searchParams);
-
-        $text = "🔍 **Resultados de Búsqueda**\n\n";
-        
-        if ($properties['count'] > 0) {
-            $text .= "Encontré **{$properties['count']} propiedades** ";
-            if ($locationName) {
-                $text .= "en **{$locationName}**\n\n";
-            } else {
-                $text .= "\n\n";
-            }
-            
-            $text .= "💡 Haz clic en el botón para ver todas.";
-        } else {
-            $text .= "No encontré propiedades con esos criterios.\n\n";
-            $text .= "💡 **Intenta:**\n";
-            $text .= "• Ampliar tu rango de precio\n";
-            $text .= "• Buscar en otras zonas\n";
-            $text .= "• Explorar otros tipos";
-        }
-
-        $queryString = http_build_query($searchParams);
-        
-        return [
-            'text' => $text,
-            'type' => 'result',
-            'data' => [
-                'count' => $properties['count'],
-                'avg_price' => $properties['avg_price'],
-                'min_price' => $properties['min_price'],
-                'max_price' => $properties['max_price'],
-            ],
-            'options' => [
-                [
-                    'id' => 'view_results',
-                    'text' => '👁️ Ver resultados (' . $properties['count'] . ')',
-                    'action' => 'url',
-                    'url' => '/properties?' . $queryString
-                ],
-                [
-                    'id' => 'search_properties',
-                    'text' => '🔄 Nueva búsqueda',
-                    'icon' => '🔄'
-                ],
-                [
-                    'id' => 'main',
-                    'text' => '🏠 Menú principal',
-                    'icon' => '🏠'
-                ],
-            ]
         ];
     }
 
@@ -744,9 +1336,13 @@ IA que lee tu INE automáticamente.
                     ->count();
                 
                 $text = "🏠 **Propiedades Disponibles**\n\n";
-                $text .= "📊 **Total:** {$total} propiedades\n";
-                $text .= "✨ **Nuevas (7 días):** {$recent} propiedades\n\n";
-                $text .= "💡 ¡Explora todas nuestras opciones!";
+                $text .= "📊 **Total:** {$total} propiedades activas\n";
+                $text .= "✨ **Nuevas (últimos 7 días):** {$recent} propiedades\n\n";
+                $text .= "💡 **¿Sabías que?**\n";
+                $text .= "• Nuevas propiedades se publican diariamente\n";
+                $text .= "• Usa los filtros para encontrar lo que buscas\n";
+                $text .= "• Guarda tus favoritas para compararlas después\n\n";
+                $text .= "¡Explora todas nuestras opciones!";
                 
                 return [
                     'text' => $text,
@@ -774,11 +1370,17 @@ IA que lee tu INE automáticamente.
                 $minPrice = Property::where('is_active', true)->min('price');
                 $maxPrice = Property::where('is_active', true)->max('price');
                 
-                $text = "💰 **Precios Promedio**\n\n";
-                $text .= "📊 **Promedio:** $" . number_format($avgPrice, 2) . "\n";
-                $text .= "💵 **Mínimo:** $" . number_format($minPrice, 2) . "\n";
-                $text .= "💎 **Máximo:** $" . number_format($maxPrice, 2) . "\n\n";
-                $text .= "💡 Los precios varían según ubicación.";
+                $text = "💰 **Análisis de Precios**\n\n";
+                $text .= "📊 **Precio promedio:** $" . number_format($avgPrice, 2) . " MXN\n";
+                $text .= "💵 **Precio mínimo:** $" . number_format($minPrice, 2) . " MXN\n";
+                $text .= "💎 **Precio máximo:** $" . number_format($maxPrice, 2) . " MXN\n\n";
+                $text .= "💡 **Nota importante:**\n";
+                $text .= "Los precios varían significativamente según:\n";
+                $text .= "• Ubicación de la propiedad\n";
+                $text .= "• Tamaño y número de habitaciones\n";
+                $text .= "• Amenidades incluidas\n";
+                $text .= "• Estado de la propiedad\n\n";
+                $text .= "Usa los filtros de precio para encontrar opciones en tu presupuesto.";
                 
                 return [
                     'text' => $text,
@@ -818,58 +1420,6 @@ IA que lee tu INE automáticamente.
     }
 
     /**
-     * Buscar propiedades según parámetros
-     */
-    private function searchProperties($params)
-    {
-        $query = Property::where('is_active', true);
-
-        if (isset($params['city'])) {
-            $query->where('city', 'LIKE', '%' . $params['city'] . '%');
-        }
-
-        if (isset($params['min_price'])) {
-            $query->where('price', '>=', $params['min_price']);
-        }
-
-        if (isset($params['max_price'])) {
-            $query->where('price', '<=', $params['max_price']);
-        }
-
-        if (isset($params['type'])) {
-            $query->where('type', 'LIKE', '%' . $params['type'] . '%');
-        }
-
-        if (isset($params['bedrooms'])) {
-            $query->where('bedrooms', $params['bedrooms']);
-        }
-
-        if (isset($params['min_bedrooms'])) {
-            $query->where('bedrooms', '>=', $params['min_bedrooms']);
-        }
-
-        if (isset($params['days']) && $params['days'] >= 0) {
-            if ($params['days'] == 0) {
-                $query->whereDate('created_at', now()->toDateString());
-            } else {
-                $query->where('created_at', '>=', now()->subDays($params['days']));
-            }
-        }
-
-        $count = $query->count();
-        $avgPrice = $query->avg('price');
-        $minPrice = $query->min('price');
-        $maxPrice = $query->max('price');
-
-        return [
-            'count' => $count,
-            'avg_price' => $avgPrice,
-            'min_price' => $minPrice,
-            'max_price' => $maxPrice,
-        ];
-    }
-
-    /**
      * Enriquecer texto con datos dinámicos
      */
     private function enrichText($text)
@@ -884,16 +1434,37 @@ IA que lee tu INE automáticamente.
      */
     private function getPersonalizedMainMenu($user)
     {
-        $greeting = "👋 ¡Hola";
-        if ($user) {
-            $greeting .= " {$user->name}";
+        // 🔥 VALIDACIÓN ESTRICTA: Verificar que el usuario sea válido
+        if (!$user || !$user->id) {
+            Log::warning('getPersonalizedMainMenu llamado sin usuario válido');
+            
+            // Retornar menú de invitado
+            return [
+                'text' => "👋 ¡Hola! Soy tu asistente de ViveSpaces.\n\n🔐 Inicia sesión para acceder a todas las funciones.",
+                'type' => 'menu',
+                'menu_id' => 'guest',
+                'options' => [
+                    ['id' => 'help', 'text' => '❓ Ayuda', 'icon' => '❓'],
+                    ['id' => 'login_prompt', 'text' => '🔓 Iniciar Sesión', 'icon' => '🔓', 'action' => 'url', 'url' => '/login'],
+                ]
+            ];
         }
+
+        $greeting = "👋 ¡Hola";
+        
+        // Verificación estricta del nombre
+        if ($user->name) {
+            $greeting .= " " . trim($user->name);
+        }
+        
         $greeting .= "! Soy tu asistente de ViveSpaces.\n\n¿En qué puedo ayudarte?";
 
         $mainMenu = $this->menuStructure['main'];
         $mainMenu['text'] = $greeting;
 
-        if ($user) {
+        // Solo personalizar si hay usuario autenticado
+        try {
+            // Mensajes sin leer
             $unreadMessages = Message::where('receiver_id', $user->id)
                 ->whereNull('read_at')
                 ->count();
@@ -907,7 +1478,11 @@ IA que lee tu INE automáticamente.
                 }
             }
 
-            $userProperties = Property::where('user_id', $user->id)->count();
+            // Propiedades del usuario
+            $userProperties = Property::where('user_id', $user->id)
+                ->where('is_active', true)
+                ->count();
+
             if ($userProperties > 0) {
                 foreach ($mainMenu['options'] as &$option) {
                     if ($option['id'] === 'my_account') {
@@ -915,6 +1490,19 @@ IA que lee tu INE automáticamente.
                     }
                 }
             }
+
+            // 🔒 Indicar si el usuario NO está verificado en opción "Publicar"
+            if (!$user->is_identity_verified) {
+                foreach ($mainMenu['options'] as &$option) {
+                    if ($option['id'] === 'publish_property') {
+                        $option['text'] = "📝 Publicar Propiedad 🔒";
+                        $option['notice'] = 'Requiere verificación';
+                    }
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::warning('Error personalizando menú: ' . $e->getMessage());
         }
 
         return [

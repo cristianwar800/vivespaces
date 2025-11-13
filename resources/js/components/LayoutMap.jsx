@@ -605,8 +605,10 @@ function LayoutMap({ user = null }) {
 
       const data = await response.json();
 
+      // 🚀 OPTIMIZACIÓN: El backend ya filtró y calculó distancias, solo validamos datos básicos
       if (data.success && Array.isArray(data.properties)) {
         const validProperties = data.properties.filter(prop => {
+          // Solo validaciones básicas de datos (backend ya filtró por distancia)
           if (!prop.id || !prop.latitude || !prop.longitude ||
               prop.latitude === 0 || prop.longitude === 0 ||
               isNaN(prop.latitude) || isNaN(prop.longitude)) {
@@ -617,30 +619,13 @@ function LayoutMap({ user = null }) {
             return false;
           }
 
-          const distance = calculateDistance(
-            lngLat.lat,
-            lngLat.lng,
-            prop.latitude,
-            prop.longitude
-          );
+          return true;
+        }).map(prop => ({
+          ...prop,
+          distance: prop.distance.toFixed(3) // Backend ya calculó distancia
+        }));
 
-          return distance <= (radius + 0.01);
-        }).map(prop => {
-          const distance = calculateDistance(
-            lngLat.lat,
-            lngLat.lng,
-            prop.latitude,
-            prop.longitude
-          );
-
-          return {
-            ...prop,
-            distance: distance.toFixed(3)
-          };
-        });
-
-        validProperties.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
-
+        // Backend ya ordenó por distancia, no es necesario ordenar aquí
         setRadarProperties(validProperties);
 
         if (validProperties.length === 0) {
@@ -667,11 +652,23 @@ function LayoutMap({ user = null }) {
     }
   }, [radarRadius, tracker, mapCenter]);
 
+  // 🚀 OPTIMIZACIÓN: Debounce para evitar búsquedas mientras mueve el slider
+  const debounceTimerRef = useRef(null);
+
   const handleRadiusChange = useCallback((newRadius) => {
     setRadarRadius(newRadius);
     setExpandedCluster(null);
+
+    // Cancelar búsqueda anterior si existe
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Esperar 500ms después de que el usuario deje de mover el slider
     if (showRadar && radarClickCoords) {
-      searchPropertiesAtPoint(radarClickCoords, newRadius);
+      debounceTimerRef.current = setTimeout(() => {
+        searchPropertiesAtPoint(radarClickCoords, newRadius);
+      }, 500);
     }
   }, [showRadar, radarClickCoords, searchPropertiesAtPoint]);
 
@@ -1306,16 +1303,11 @@ function LayoutMap({ user = null }) {
       )}
 
       {isSearchingRadar && (
-        <div className="loading-overlay">
-          <div className="loading-card">
-            <div className="loading-spinner"></div>
-            <p className="loading-text">Buscando propiedades...</p>
-            <div className="loading-dots">
-              <span style={{ animationDelay: '0s' }}></span>
-              <span style={{ animationDelay: '0.2s' }}></span>
-              <span style={{ animationDelay: '0.4s' }}></span>
-            </div>
+        <div className="loading-overlay-simple">
+          <div className="loading-bar-container">
+            <div className="loading-bar"></div>
           </div>
+          <p className="loading-text-simple">Buscando propiedades...</p>
         </div>
       )}
 
@@ -2147,57 +2139,47 @@ function LayoutMap({ user = null }) {
         }
 
         /* ========== LOADING OVERLAY ========== */
-        .loading-overlay {
+        /* ========== LOADING SIMPLE Y DISCRETO ========== */
+        .loading-overlay-simple {
           position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.8);
-          backdrop-filter: blur(8px);
+          top: 0;
+          left: 0;
+          right: 0;
           z-index: 9998;
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: center;
-          animation: fadeIn 0.3s ease-out;
+          padding-top: 20px;
+          pointer-events: none;
         }
 
-        .loading-card {
-          background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-          padding: 40px 60px;
-          border-radius: 24px;
-          border: 2px solid #06b6d4;
-          text-align: center;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-          animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        .loading-bar-container {
+          width: 300px;
+          height: 3px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 2px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
-        .loading-spinner {
-          width: 64px;
-          height: 64px;
-          border: 4px solid #374151;
-          border-top-color: #06b6d4;
-          border-radius: 50%;
-          margin: 0 auto 20px;
-          animation: spin 0.8s linear infinite;
+        .loading-bar {
+          height: 100%;
+          background: linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6);
+          background-size: 200% 100%;
+          animation: loadingSlide 1.5s ease-in-out infinite;
+          border-radius: 2px;
         }
 
-        .loading-text {
-          color: #06b6d4;
-          font-size: 18px;
-          font-weight: 700;
-          margin: 0 0 16px;
-        }
-
-        .loading-dots {
-          display: flex;
-          gap: 8px;
-          justify-content: center;
-        }
-
-        .loading-dots span {
-          width: 10px;
-          height: 10px;
-          background: #06b6d4;
-          border-radius: 50%;
-          animation: bounce 1.4s ease-in-out infinite;
+        .loading-text-simple {
+          margin-top: 12px;
+          color: white;
+          font-size: 14px;
+          font-weight: 500;
+          background: rgba(0, 0, 0, 0.8);
+          backdrop-filter: blur(10px);
+          padding: 8px 16px;
+          border-radius: 20px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
 
         /* ========== TOAST ========== */
@@ -2313,6 +2295,18 @@ function LayoutMap({ user = null }) {
         @keyframes bounce {
           0%, 80%, 100% { transform: scale(0); }
           40% { transform: scale(1); }
+        }
+
+        @keyframes loadingSlide {
+          0% {
+            transform: translateX(-100%);
+          }
+          50% {
+            transform: translateX(0%);
+          }
+          100% {
+            transform: translateX(100%);
+          }
         }
 
         /* ========== CLUSTER MARKERS ========== */

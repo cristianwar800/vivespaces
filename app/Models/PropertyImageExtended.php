@@ -28,6 +28,8 @@ class PropertyImageExtended extends Model
         'last_accessed_at' => 'datetime'
     ];
 
+    protected $appends = ['url'];
+
     // Relaciones
     public function property()
     {

@@ -65,4 +65,32 @@ return [
     'key' => env('RESEND_API_KEY'),
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URL'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | ViveSpaces AI Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuración para el sistema de Inteligencia Artificial de ViveSpaces.
+    | Incluye Machine Learning (Naive Bayes, KNN, MLP) para análisis de búsquedas
+    | y generación de recomendaciones personalizadas.
+    |
+    */
+
+    'ai' => [
+        'url' => env('AI_API_URL', 'http://localhost:30801'),
+        'timeout' => env('AI_API_TIMEOUT', 15),
+        'algorithms' => [
+            'naive_bayes' => true,
+            'knn' => true,
+            'mlp' => true,
+            'ensemble' => true,
+        ],
+    ],
+
 ];

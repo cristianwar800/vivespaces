@@ -82,6 +82,30 @@ class MessageController extends Controller
     {
         \Log::info('🚀🚀🚀 CÓDIGO NUEVO EJECUTÁNDOSE - VERSIÓN ACTUALIZADA 🚀🚀🚀');
 
+        // 🔒 VALIDACIÓN DE LÍMITE DE MENSAJES PARA NO VERIFICADOS
+        $user = Auth::user();
+
+        if (!$user->is_identity_verified && !$user->canSendMessage()) {
+            \Log::warning('⚠️ Usuario no verificado alcanzó límite de mensajes', [
+                'user_id' => $user->id,
+                'sent_messages' => $user->getSentMessagesCount(),
+                'limit' => User::FREE_MESSAGE_LIMIT
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'MESSAGE_LIMIT_REACHED',
+                'message' => 'Has alcanzado el límite de ' . User::FREE_MESSAGE_LIMIT . ' mensajes. Verifica tu identidad para enviar mensajes ilimitados.',
+                'data' => [
+                    'sent_messages' => $user->getSentMessagesCount(),
+                    'limit' => User::FREE_MESSAGE_LIMIT,
+                    'remaining' => 0,
+                    'is_verified' => false,
+                    'verification_url' => route('verification.identity')
+                ]
+            ], 403);
+        }
+
         // ✅ VERIFICACIÓN DE getID3
         try {
             $getID3 = new \getID3;
@@ -94,7 +118,10 @@ class MessageController extends Controller
         \Log::info('📥 Recibiendo mensaje:', [
             'all_data' => $request->all(),
             'files' => $request->allFiles(),
-            'has_file' => $request->hasFile('file')
+            'has_file' => $request->hasFile('file'),
+            'user_verified' => $user->is_identity_verified,
+            'messages_sent' => $user->getSentMessagesCount(),
+            'remaining_messages' => $user->getRemainingMessages()
         ]);
 
         // ✅ VALIDACIÓN ACTUALIZADA PARA AUDIO
@@ -319,9 +346,53 @@ class MessageController extends Controller
                 'duration' => $message->duration ?? 'N/A'
             ]);
 
+            // 🔔 CREAR NOTIFICACIÓN para el receptor
+            try {
+                $receiver = \App\Models\User::find($message->receiver_id);
+                $property = \App\Models\Property::find($message->property_id);
+
+                if ($receiver && $property) {
+                    $messagePreview = $message->type === 'text'
+                        ? \Illuminate\Support\Str::limit($message->message, 50)
+                        : ($message->type === 'audio' ? '🎤 Mensaje de voz' : '📎 ' . ($message->file_name ?? 'Archivo'));
+
+                    $receiver->notify(new \App\Notifications\NewMessageNotification([
+                        'type' => 'message',
+                        'title' => "💬 Nuevo mensaje de {$user->name}",
+                        'message' => $messagePreview,
+                        'action_url' => "/chat?conversation=property_{$property->id}_users_{$user->id}_{$receiver->id}",
+                        'action_text' => 'Ver mensaje',
+                        'sender_id' => $user->id,
+                        'sender_name' => $user->name . ' ' . ($user->last_name ?? ''),
+                        'property_id' => $property->id,
+                        'property_title' => $property->title,
+                        'message_type' => $message->type
+                    ]));
+
+                    \Log::info('🔔 Notificación de mensaje enviada', [
+                        'receiver_id' => $receiver->id,
+                        'sender_id' => $user->id
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::error('❌ Error enviando notificación de mensaje:', [
+                    'error' => $e->getMessage()
+                ]);
+                // No fallar el mensaje si la notificación falla
+            }
+
+            // 🔒 Información de límite de mensajes
+            $messageLimit = [
+                'remaining_messages' => $user->getRemainingMessages(),
+                'total_sent' => $user->getSentMessagesCount(),
+                'limit' => User::FREE_MESSAGE_LIMIT,
+                'is_verified' => $user->is_identity_verified
+            ];
+
             return response()->json([
                 'success' => true,
-                'message' => $formattedMessage
+                'message' => $formattedMessage,
+                'message_limit' => $messageLimit
             ]);
 
         } catch (\Exception $e) {
@@ -594,6 +665,35 @@ class MessageController extends Controller
 
             \Log::info("✅ Conversación INCLUIDA (tiene mensajes visibles)");
 
+            // 🔒 RESTRICCIÓN: Si el usuario no está verificado, verificar si tiene mensajes recibidos
+            $currentUser = Auth::user();
+            if (!$currentUser->is_identity_verified) {
+                // Contar mensajes ENVIADOS por este usuario en esta conversación
+                $sentMessagesCount = Message::where('property_id', $conversation['property_id'])
+                    ->where('sender_id', $currentUserId)
+                    ->where('receiver_id', $otherUserId)
+                    ->notDeletedBy($currentUserId)
+                    ->count();
+
+                // Contar mensajes RECIBIDOS en esta conversación
+                $receivedMessagesCount = Message::where('property_id', $conversation['property_id'])
+                    ->where('sender_id', $otherUserId)
+                    ->where('receiver_id', $currentUserId)
+                    ->notDeletedBy($currentUserId)
+                    ->count();
+
+                // Si solo tiene mensajes enviados y ninguno recibido, omitir conversación
+                if ($sentMessagesCount > 0 && $receivedMessagesCount === 0) {
+                    \Log::info("⏭️ ❌ Conversación OMITIDA (usuario no verificado sin respuestas)", [
+                        'property_id' => $conversation['property_id'],
+                        'sent_messages' => $sentMessagesCount,
+                        'received_messages' => $receivedMessagesCount,
+                        'reason' => 'Usuario no verificado sin respuestas'
+                    ]);
+                    continue;
+                }
+            }
+
             $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')
                 ->find($conversation['other_user_id']);
 
@@ -606,7 +706,7 @@ class MessageController extends Controller
 
             $conversation['property'] = Property::select('id', 'title')
                 ->find($conversation['property_id']);
-                
+
             // Obtener último mensaje NO eliminado
             $lastMessage = Message::where('property_id', $conversation['property_id'])
                 ->where(function($query) use ($currentUserId, $otherUserId) {
@@ -627,8 +727,17 @@ class MessageController extends Controller
                 'message_text' => $lastMessage?->message,
                 'created_at' => $lastMessage?->created_at
             ]);
-                
-            $conversation['last_message'] = $lastMessage;
+
+            // 🔒 BLOQUEAR contenido del último mensaje si es del otro usuario y el usuario actual no está verificado
+            if ($lastMessage && !$currentUser->is_identity_verified && $lastMessage->sender_id !== $currentUserId) {
+                // Crear una copia del mensaje con contenido bloqueado
+                $blockedMessage = clone $lastMessage;
+                $blockedMessage->message = '🔒 Verifica tu identidad para ver este mensaje';
+                $blockedMessage->is_blocked = true;
+                $conversation['last_message'] = $blockedMessage;
+            } else {
+                $conversation['last_message'] = $lastMessage;
+            }
             
             // Contar mensajes no leídos y no eliminados
             $unreadCount = Auth::user()->receivedMessages()
@@ -688,6 +797,7 @@ class MessageController extends Controller
         $userId1 = $matches[2];
         $userId2 = $matches[3];
         $currentUserId = Auth::id();
+        $currentUser = Auth::user();
 
         if ($currentUserId != $userId1 && $currentUserId != $userId2) {
             return response()->json([
@@ -708,26 +818,42 @@ class MessageController extends Controller
                                 $message->sender->avatar_url = $message->sender->avatar_url;
                             }
                         })
-                        ->map(function ($message) {
+                        ->map(function ($message) use ($currentUserId, $currentUser) {
+                            // 🔒 RESTRICCIÓN: Si no está verificado, bloquear mensajes recibidos
+                            $isBlocked = false;
+                            if (!$currentUser->is_identity_verified && $message->sender_id !== $currentUserId) {
+                                $isBlocked = true;
+                            }
+
                             return [
                                 'id' => $message->id,
                                 'sender_id' => $message->sender_id,
                                 'receiver_id' => $message->receiver_id,
-                                'message' => $message->message,
+                                'message' => $isBlocked ? null : $message->message,
                                 'type' => $message->type,
-                                'file_url' => $message->getFileUrl(),
-                                'file_name' => $message->file_name,
-                                'file_size_formatted' => $message->getFileSizeFormatted(),
+                                'file_url' => $isBlocked ? null : $message->getFileUrl(),
+                                'file_name' => $isBlocked ? null : $message->file_name,
+                                'file_size_formatted' => $isBlocked ? null : $message->getFileSizeFormatted(),
                                 'reactions' => $message->reactions ?? [],
                                 'read_at' => $message->read_at,
                                 'created_at' => $message->created_at,
-                                'sender' => $message->sender
+                                'sender' => $message->sender,
+                                'is_blocked' => $isBlocked // 🆕 Indica si está bloqueado
                             ];
                         });
 
+        // 🔒 Información de límite de mensajes
+        $messageLimit = [
+            'remaining_messages' => $currentUser->getRemainingMessages(),
+            'total_sent' => $currentUser->getSentMessagesCount(),
+            'limit' => User::FREE_MESSAGE_LIMIT,
+            'is_verified' => $currentUser->is_identity_verified
+        ];
+
         return response()->json([
             'success' => true,
-            'messages' => $messages
+            'messages' => $messages,
+            'message_limit' => $messageLimit
         ]);
     }
 

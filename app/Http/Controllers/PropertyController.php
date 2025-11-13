@@ -15,6 +15,13 @@ use Illuminate\Support\Facades\Log;
 class PropertyController extends Controller
 {
     /**
+     * Cache en memoria para búsquedas recientes
+     * Solo guarda las últimas búsquedas en memoria (sin archivos)
+     */
+    private static $searchCache = [];
+    private static $maxCacheSize = 10; // Máximo 10 búsquedas en cache
+
+    /**
      * Reglas de validación para propiedades
      */
     private function getValidationRules()
@@ -28,7 +35,7 @@ class PropertyController extends Controller
             'country' => 'nullable|string|max:255',
             'postal_code' => 'nullable|string|max:255',
             'price' => 'required|numeric|min:0|max:999999999.99',
-            'type' => 'nullable|string|max:255|in:casa,apartamento,condominio,oficina,local,terreno',
+            'type' => 'nullable|string|max:255|in:casa,apartamento,cuarto,condominio,oficina,local,terreno',
             'bedrooms' => 'nullable|integer|min:0|max:2147483647',
             'bathrooms' => 'nullable|integer|min:0|max:2147483647',
             'area' => 'nullable|integer|min:0|max:2147483647',
@@ -36,6 +43,8 @@ class PropertyController extends Controller
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
+            'pets_allowed' => 'nullable|string|in:no_pets,pets_allowed,negotiable',
+            'pets_details' => 'nullable|string|max:500',
             'images' => 'nullable|array|max:15',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:8192',
             'room_types' => 'nullable|array',
@@ -155,6 +164,7 @@ class PropertyController extends Controller
 
         return view('properties', [
             'properties' => $properties,
+            'user' => auth()->user(),
             'currentPage' => 'index',
             'mapboxToken' => config('services.mapbox.access_token')
         ]);
@@ -227,9 +237,17 @@ class PropertyController extends Controller
             return redirect()->route('login')->with('error', 'Debes iniciar sesión para crear una propiedad.');
         }
 
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
+        if (!auth()->user()->is_identity_verified) {
+            return redirect()->route('verification.identity')
+                ->with('error', 'Debes verificar tu identidad antes de publicar propiedades')
+                ->with('info', 'La verificación es rápida y segura. Solo necesitas tu INE y un comprobante de domicilio.');
+        }
+
         return view('properties', [
             'properties' => [],
             'property' => null,
+            'user' => auth()->user(),
             'currentPage' => 'create',
             'errors' => session()->get('errors', new \Illuminate\Support\MessageBag()),
             'mapboxToken' => config('services.mapbox.access_token')
@@ -256,6 +274,26 @@ class PropertyController extends Controller
                 ], 401);
             }
             return redirect()->route('login');
+        }
+
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
+        if (!auth()->user()->is_identity_verified) {
+            Log::warning('⚠️ Usuario no verificado intentó crear propiedad', [
+                'user_id' => auth()->id(),
+                'user_email' => auth()->user()->email
+            ]);
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'IDENTITY_NOT_VERIFIED',
+                    'message' => 'Debes verificar tu identidad antes de publicar propiedades',
+                    'redirect' => route('verification.identity')
+                ], 403);
+            }
+
+            return redirect()->route('verification.identity')
+                ->with('error', 'Debes verificar tu identidad antes de publicar propiedades');
         }
 
         // Validar todo (propiedad + imágenes)
@@ -480,8 +518,15 @@ class PropertyController extends Controller
             abort(403, 'No tienes permisos para editar esta propiedad.');
         }
 
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
+        if (!auth()->user()->is_identity_verified) {
+            return redirect()->route('verification.identity')
+                ->with('error', 'Debes verificar tu identidad para editar propiedades');
+        }
+
         return view('properties', [
             'property' => $property,
+            'user' => auth()->user(),
             'currentPage' => 'edit',
             'mapboxToken' => config('services.mapbox.access_token')
         ]);
@@ -500,6 +545,21 @@ class PropertyController extends Controller
                 ], 403);
             }
             abort(403);
+        }
+
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
+        if (!auth()->user()->is_identity_verified) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'IDENTITY_NOT_VERIFIED',
+                    'message' => 'Debes verificar tu identidad para editar propiedades',
+                    'redirect' => route('verification.identity')
+                ], 403);
+            }
+
+            return redirect()->route('verification.identity')
+                ->with('error', 'Debes verificar tu identidad para editar propiedades');
         }
 
         $validator = $this->validateRequest($request);
@@ -974,108 +1034,233 @@ class PropertyController extends Controller
 
             /**
  * Buscar propiedades cercanas basadas en coordenadas
+ * 🚀 OPTIMIZADO: Usa bounding box + caché para mejor rendimiento
  */
-       public function searchNearby(Request $request)
-{
-    try {
-        $validated = $request->validate([
-            'lng' => 'required|numeric|between:-180,180',
-            'lat' => 'required|numeric|between:-90,90',
-            'radius' => 'nullable|numeric|min:0.1|max:50'
-        ]);
+    public function searchNearby(Request $request)
+    {
+        try {
+            $startTotal = microtime(true);
 
-        $lng = $validated['lng'];
-        $lat = $validated['lat'];
-        $radius = $validated['radius'] ?? 3; // Cambié de 2 a 3km
+            $validated = $request->validate([
+                'lng' => 'required|numeric|between:-180,180',
+                'lat' => 'required|numeric|between:-90,90',
+                'radius' => 'nullable|numeric|min:0.1|max:50'
+            ]);
 
-        Log::info('🔍 BÚSQUEDA', [
-            'lat' => $lat,
-            'lng' => $lng,
-            'radio_km' => $radius
-        ]);
+            $lng = $validated['lng'];
+            $lat = $validated['lat'];
+            $radius = $validated['radius'] ?? 3;
 
-        $properties = Property::selectRaw("
-                id,
-                title,
-                address,
-                city,
-                state,
-                price,
-                type,
-                bedrooms,
-                bathrooms,
-                area,
-                latitude,
-                longitude,
-                image,
-                user_id,
-                (
-                    6371 * acos(
-                        cos(radians(?)) * cos(radians(latitude)) *
-                        cos(radians(longitude) - radians(?)) +
-                        sin(radians(?)) * sin(radians(latitude))
-                    )
-                ) AS distance
-            ", [$lat, $lng, $lat])
-            ->where('is_active', true)
-            ->whereNotNull('latitude')
-            ->whereNotNull('longitude')
-            ->where('latitude', '!=', 0)
-            ->where('longitude', '!=', 0)
-            ->whereBetween('latitude', [14, 33])
-            ->whereBetween('longitude', [-118, -86])
-            ->having('distance', '<=', $radius)
-            ->orderBy('distance', 'asc')
-            // ->distinct() // ← QUITA ESTO
-            ->limit(20)
-            ->with('user:id,name,last_name')
-            ->get();
+            // 🚀 OPTIMIZACIÓN 1: Cache en memoria (instantáneo, sin archivos)
+            $startCache = microtime(true);
+            $cacheKey = round($lat, 3) . '_' . round($lng, 3) . '_' . $radius;
 
-        Log::info('✅ Encontradas: ' . $properties->count());
+            // Buscar en cache en memoria
+            if (isset(self::$searchCache[$cacheKey])) {
+                $cacheTime = round((microtime(true) - $startCache) * 1000, 2);
+                $totalTime = round((microtime(true) - $startTotal) * 1000, 2);
 
-        $formattedProperties = $properties->map(function($property) {
-            return [
-                'id' => $property->id,
-                'title' => $property->title,
-                'address' => $property->address,
-                'city' => $property->city,
-                'state' => $property->state,
-                'price' => $property->price,
-                'type' => $property->type,
-                'bedrooms' => $property->bedrooms,
-                'bathrooms' => $property->bathrooms,
-                'area' => $property->area,
-                'latitude' => (float) $property->latitude,
-                'longitude' => (float) $property->longitude,
-                'distance' => round($property->distance, 2),
-                'image' => $property->image ? asset('storage/' . $property->image) : null,
-                'user' => $property->user
+                Log::info('✅ CACHE HIT - Búsqueda desde memoria', [
+                    'cache_key' => $cacheKey,
+                    'tiempo_cache' => $cacheTime . 'ms',
+                    'tiempo_total' => $totalTime . 'ms'
+                ]);
+
+                return response()->json(self::$searchCache[$cacheKey]);
+            }
+
+            $cacheTime = round((microtime(true) - $startCache) * 1000, 2);
+
+            Log::info('🔍 BÚSQUEDA INICIADA (sin caché)', [
+                'lat' => $lat,
+                'lng' => $lng,
+                'radio_km' => $radius,
+                'tiempo_cache_check' => $cacheTime . 'ms'
+            ]);
+
+            // 🚀 OPTIMIZACIÓN 2: Calcular bounding box
+            $startBbox = microtime(true);
+            $latDelta = $radius / 111.0;
+            $lngDelta = $radius / (111.0 * cos(deg2rad($lat)));
+
+            $minLat = $lat - $latDelta;
+            $maxLat = $lat + $latDelta;
+            $minLng = $lng - $lngDelta;
+            $maxLng = $lng + $lngDelta;
+            $bboxTime = round((microtime(true) - $startBbox) * 1000, 2);
+
+            Log::info('📐 Bounding box calculado', [
+                'tiempo' => $bboxTime . 'ms',
+                'lat_range' => [$minLat, $maxLat],
+                'lng_range' => [$minLng, $maxLng]
+            ]);
+
+            // 🚀 OPTIMIZACIÓN 3: Pre-filtro con bounding box (MUCHO más rápido)
+            $startQuery = microtime(true);
+            $properties = Property::selectRaw("
+                    id,
+                    title,
+                    address,
+                    city,
+                    state,
+                    price,
+                    type,
+                    bedrooms,
+                    bathrooms,
+                    area,
+                    latitude,
+                    longitude,
+                    image,
+                    user_id,
+                    (
+                        6371 * acos(
+                            cos(radians(?)) * cos(radians(latitude)) *
+                            cos(radians(longitude) - radians(?)) +
+                            sin(radians(?)) * sin(radians(latitude))
+                        )
+                    ) AS distance
+                ", [$lat, $lng, $lat])
+                ->where('is_active', true)
+                ->whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->where('latitude', '!=', 0)
+                ->where('longitude', '!=', 0)
+                // 🚀 Bounding box: filtra el 90% de propiedades ANTES de calcular distancia
+                ->whereBetween('latitude', [$minLat, $maxLat])
+                ->whereBetween('longitude', [$minLng, $maxLng])
+                ->having('distance', '<=', $radius)
+                ->orderBy('distance', 'asc')
+                ->limit(20)
+                ->with('user:id,name,last_name')
+                ->get();
+
+            $queryTime = round((microtime(true) - $startQuery) * 1000, 2);
+
+            Log::info('🗄️  QUERY ejecutado', [
+                'tiempo' => $queryTime . 'ms',
+                'resultados' => $properties->count()
+            ]);
+
+            $formattedProperties = $properties->map(function($property) {
+                return [
+                    'id' => $property->id,
+                    'title' => $property->title,
+                    'address' => $property->address,
+                    'city' => $property->city,
+                    'state' => $property->state,
+                    'price' => $property->price,
+                    'type' => $property->type,
+                    'bedrooms' => $property->bedrooms,
+                    'bathrooms' => $property->bathrooms,
+                    'area' => $property->area,
+                    'latitude' => (float) $property->latitude,
+                    'longitude' => (float) $property->longitude,
+                    'distance' => round($property->distance, 2),
+                    'image' => $property->image ? asset('storage/' . $property->image) : null,
+                    'user' => $property->user
+                ];
+            });
+
+            $startFormat = microtime(true);
+            $result = [
+                'success' => true,
+                'properties' => $formattedProperties,
+                'count' => $formattedProperties->count(),
+                'search_center' => [
+                    'lat' => $lat,
+                    'lng' => $lng
+                ],
+                'radius_km' => $radius
             ];
-        });
+            $formatTime = round((microtime(true) - $startFormat) * 1000, 2);
 
+            // 🚀 OPTIMIZACIÓN 4: Guardar en cache en memoria (instantáneo)
+            $startCacheSave = microtime(true);
+
+            // Limpiar cache si está lleno (mantener solo las últimas 10 búsquedas)
+            if (count(self::$searchCache) >= self::$maxCacheSize) {
+                array_shift(self::$searchCache); // Eliminar la más antigua
+            }
+
+            // Guardar en cache en memoria
+            self::$searchCache[$cacheKey] = $result;
+
+            $cacheSaveTime = round((microtime(true) - $startCacheSave) * 1000, 2);
+            $totalTime = round((microtime(true) - $startTotal) * 1000, 2);
+
+            Log::info('⏱️  TIEMPO TOTAL DE BÚSQUEDA', [
+                'cache_check' => $cacheTime . 'ms',
+                'bounding_box' => $bboxTime . 'ms',
+                'query_db' => $queryTime . 'ms',
+                'formateo' => $formatTime . 'ms',
+                'guardar_cache' => $cacheSaveTime . 'ms',
+                '🎯 TOTAL' => $totalTime . 'ms',
+                'resultados' => $formattedProperties->count(),
+                'cache_size' => count(self::$searchCache)
+            ]);
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('❌ ERROR', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al buscar propiedades',
+                'properties' => []
+            ], 500);
+        }
+    }
+
+
+    public function toggleFavorite(Property $property)
+    {
+        $user = auth()->user();
+        
+        // Toggle: si existe lo quita, si no existe lo agrega
+        $user->favoriteProperties()->toggle($property->id);
+        
+        // Verificar si ahora es favorito
+        $isFavorite = $user->favoriteProperties()->where('property_id', $property->id)->exists();
+        
         return response()->json([
             'success' => true,
-            'properties' => $formattedProperties,
-            'count' => $formattedProperties->count(),
-            'search_center' => [
-                'lat' => $lat,
-                'lng' => $lng
-            ],
-            'radius_km' => $radius
+            'is_favorite' => $isFavorite,
+            'message' => $isFavorite ? 'Agregado a favoritos' : 'Eliminado de favoritos'
         ]);
-
-    } catch (\Exception $e) {
-        Log::error('❌ ERROR', [
-            'error' => $e->getMessage()
-        ]);
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al buscar propiedades',
-            'properties' => []
-        ], 500);
     }
+
+/**
+ * Obtener todas las propiedades favoritas del usuario
+ */
+    public function getFavorites()
+{
+    $favorites = auth()->user()->favoriteProperties()
+        ->with(['photos', 'user'])  // ✅ Cambiado a 'photos'
+        ->get();
+    
+    return response()->json([
+        'success' => true,
+        'favorites' => $favorites
+    ]);
 }
+/**
+ * Verificar si una propiedad es favorita
+ */
+    public function checkFavorite(Property $property)
+    {
+        $isFavorite = auth()->user()
+            ->favoriteProperties()
+            ->where('property_id', $property->id)
+            ->exists();
+        
+        return response()->json([
+            'success' => true,
+            'is_favorite' => $isFavorite
+        ]);
+    }
 
 
 }

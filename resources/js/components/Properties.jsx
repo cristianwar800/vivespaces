@@ -1,5 +1,80 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
+
+const FavoriteButton = ({ propertyId, initialIsFavorite = false, onToggle }) => {
+    const [isFavorite, setIsFavorite] = useState(initialIsFavorite);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleToggle = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (isLoading) return;
+
+        setIsLoading(true);
+
+        try {
+            const response = await fetch(`/properties/${propertyId}/favorite`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                }
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setIsFavorite(data.is_favorite);
+                
+                if (onToggle) {
+                    onToggle(propertyId, data.is_favorite);
+                }
+            }
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <button
+            onClick={handleToggle}
+            disabled={isLoading}
+            className={`p-2 rounded-full transition-all duration-300 shadow-md ${
+                isFavorite 
+                    ? 'bg-red-500 text-white hover:bg-red-600' 
+                    : 'bg-white/90 text-gray-600 hover:bg-white hover:text-red-500'
+            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+        >
+            {isLoading ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            ) : (
+                <svg 
+                    className="w-5 h-5" 
+                    fill={isFavorite ? "currentColor" : "none"} 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                >
+                    <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={2} 
+                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                    />
+                </svg>
+            )}
+        </button>
+    );
+};
+
 const Toast = ({ message, type = 'success', isVisible, onClose }) => {
     useEffect(() => {
         if (isVisible) {
@@ -108,6 +183,8 @@ const LoadingSpinner = ({ message = 'Cargando...' }) => (
     </div>
 );
 
+
+
 function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'grid', currentPage }) {
     const [isHovered, setIsHovered] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
@@ -172,13 +249,14 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
         if (isHovered && totalImages > 1) {
             interval = setInterval(() => {
                 setCurrentImageIndex((prev) => (prev + 1) % totalImages);
-            }, 1500); // Cambiar cada 1.5 segundos
+            }, 1500);
         } else {
             setCurrentImageIndex(0);
         }
         return () => clearInterval(interval);
     }, [isHovered, totalImages]);
 
+    // ==================== VISTA LIST ====================
     if (viewMode === 'list') {
         return (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group border border-gray-100 dark:border-gray-700">
@@ -228,7 +306,7 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                             <span className="truncate text-sm">{property.address}, {property.city}, {property.state}</span>
                         </div>
 
-                        <div className="flex items-center gap-4 mb-5">
+                        <div className="flex items-center gap-4 mb-5 flex-wrap">
                             <div className="flex items-center bg-gray-50 dark:bg-gray-700 rounded-lg px-2.5 py-1.5">
                                 <span className="text-sm mr-1">🛏️</span>
                                 <span className="text-sm font-medium">{property.bedrooms || 0}</span>
@@ -241,6 +319,12 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                                 <span className="text-sm mr-1">📐</span>
                                 <span className="text-sm font-medium">{property.area || 0} m²</span>
                             </div>
+                            {property.pets_allowed === 'pets_allowed' && (
+                                <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg px-2.5 py-1.5 border border-emerald-200 dark:border-emerald-800">
+                                    <span className="text-sm mr-1">🐕</span>
+                                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Mascotas OK</span>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center justify-between">
@@ -248,18 +332,33 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                                 ${formatPrice(property.price)}
                             </div>
 
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                                {/* Botón de Favoritos - Solo si NO es el dueño */}
+                                {user && property.user_id !== user.id && (
+                                    <FavoriteButton 
+                                        propertyId={property.id}
+                                        initialIsFavorite={property.is_favorite || false}
+                                    />
+                                )}
+
                                 <Button variant="primary" onClick={() => navigate('show', property.id)} size="sm">
                                     Ver Detalles
                                 </Button>
 
                                 {shouldShowContactButton() && (
-                                    <Button variant="secondary" onClick={() => contactSeller(property.id, property.user_id)} size="sm">
-                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                        </svg>
-                                        Contactar
-                                    </Button>
+                                    <button
+                                        onClick={() => contactSeller(property.id, property.user_id)}
+                                        className="group relative px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-medium rounded-lg overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/50 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                        <div className="relative flex items-center justify-center space-x-2">
+                                            <svg className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                            </svg>
+                                            <span>Contactar</span>
+                                        </div>
+                                        <div className="absolute inset-0 -top-[200%] bg-gradient-to-b from-white/30 to-transparent group-hover:top-[200%] transition-all duration-700"></div>
+                                    </button>
                                 )}
 
                                 {shouldShowOwnerButtons() && (
@@ -277,7 +376,7 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
         );
     }
 
-    // VISTA GRID
+    // ==================== VISTA GRID ====================
     return (
         <div
             className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group border border-gray-100 dark:border-gray-700 hover:-translate-y-1"
@@ -349,7 +448,7 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                 </div>
 
                 <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex items-center bg-gray-50 dark:bg-gray-700 rounded-lg px-2.5 py-1.5">
                             <span className="text-sm mr-1">🛏️</span>
                             <span className="text-sm font-medium">{property.bedrooms || 0}</span>
@@ -362,6 +461,12 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                             <span className="text-sm mr-1">📐</span>
                             <span className="text-sm font-medium">{property.area || 0}m²</span>
                         </div>
+                        {property.pets_allowed === 'pets_allowed' && (
+                            <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg px-2.5 py-1.5 border border-emerald-200 dark:border-emerald-800">
+                                <span className="text-sm mr-1">🐕</span>
+                                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Mascotas OK</span>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -369,32 +474,55 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                     ${formatPrice(property.price)}
                 </div>
 
-                <div className="flex gap-2">
-                    <Button variant="primary" onClick={() => navigate('show', property.id)} className="flex-1" size="sm">
-                        Ver Detalles
-                    </Button>
-
-                    {shouldShowContactButton() && (
-                        <Button variant="secondary" onClick={() => contactSeller(property.id, property.user_id)} size="sm" className="flex-1">
-                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
-                            Contactar
-                        </Button>
+                <div className="space-y-2">
+                    {/* Botón de Favoritos - Solo si NO es el dueño */}
+                    {user && property.user_id !== user.id && (
+                        <div className="flex justify-center">
+                            <FavoriteButton 
+                                propertyId={property.id}
+                                initialIsFavorite={property.is_favorite || false}
+                            />
+                        </div>
                     )}
 
-                    {shouldShowOwnerButtons() && (
-                        <Button variant="secondary" onClick={() => navigate('edit', property.id)} size="sm" className="px-3">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
+                    {/* Botones de acción */}
+                    <div className="flex gap-2">
+                        <Button variant="primary" onClick={() => navigate('show', property.id)} className="flex-1" size="sm">
+                            Ver Detalles
                         </Button>
-                    )}
+
+                        {shouldShowContactButton() && (
+                            <button
+                                onClick={() => contactSeller(property.id, property.user_id)}
+                                className="group relative flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-medium rounded-lg overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/50 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                <div className="relative flex items-center justify-center space-x-2">
+                                    <svg className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                    <span>Contactar</span>
+                                </div>
+                                <div className="absolute inset-0 -top-[200%] bg-gradient-to-b from-white/30 to-transparent group-hover:top-[200%] transition-all duration-700"></div>
+                            </button>
+                        )}
+
+                        {shouldShowOwnerButtons() && (
+                            <Button variant="secondary" onClick={() => navigate('edit', property.id)} size="sm" className="px-3">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
+
+
+
 
 function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearchTerm, typeFilter, setTypeFilter, roomsFilter, setRoomsFilter, navigate, contactSeller, showToast, currentPage }) {
     const [isLoading, setIsLoading] = useState(false);
@@ -529,12 +657,32 @@ function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearc
                             </div>
 
                             {user && (
-                                <Button variant="primary" onClick={() => navigate('create')} className="whitespace-nowrap" size="sm">
-                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                    </svg>
-                                    Nueva Propiedad
-                                </Button>
+                                user.is_identity_verified ? (
+                                    <Button variant="primary" onClick={() => navigate('create')} className="whitespace-nowrap" size="sm">
+                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                        </svg>
+                                        Nueva Propiedad
+                                    </Button>
+                                ) : (
+                                    <div className="relative group">
+                                        <Button
+                                            variant="secondary"
+                                            disabled
+                                            className="whitespace-nowrap cursor-not-allowed opacity-60"
+                                            size="sm"
+                                        >
+                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                            </svg>
+                                            Publicar Propiedad
+                                        </Button>
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                                            Verifica tu identidad para publicar
+                                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                                        </div>
+                                    </div>
+                                )
                             )}
                         </div>
                     </div>
@@ -575,12 +723,32 @@ function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearc
                                 {getEmptyStateMessage().description}
                             </p>
                             {user && (
-                                <Button variant="primary" onClick={() => navigate('create')}>
-                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                    </svg>
-                                    {getEmptyStateMessage().buttonText}
-                                </Button>
+                                user.is_identity_verified ? (
+                                    <Button variant="primary" onClick={() => navigate('create')}>
+                                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                        </svg>
+                                        {getEmptyStateMessage().buttonText}
+                                    </Button>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <Button variant="secondary" disabled className="cursor-not-allowed opacity-60">
+                                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                            </svg>
+                                            Publicar Propiedad (Requiere verificación)
+                                        </Button>
+                                        <a
+                                            href="/verification/identity"
+                                            className="inline-flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 font-medium"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                            </svg>
+                                            <span>Verificar mi identidad ahora</span>
+                                        </a>
+                                    </div>
+                                )
                             )}
                         </div>
                     )}
@@ -1327,7 +1495,7 @@ function PropertyShow({ property, user, navigate, handleDelete, showToast }) {
     );
 }
 
-function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEdit, navigate, errors, showToast }) {
+function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEdit, navigate, errors, showToast, user }) {
     const [dragActive, setDragActive] = useState(false);
     const [previewImage, setPreviewImage] = useState(null);
     const [selectedImages, setSelectedImages] = useState([]);
@@ -1343,14 +1511,8 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
     const [isGettingLocation, setIsGettingLocation] = useState(false);
     const [selectedCoordinates, setSelectedCoordinates] = useState(null);
 
-    // Estados para redimensionar el mapa
-    const [mapWidth, setMapWidth] = useState(400);
-    const [mapHeight, setMapHeight] = useState(300);
-    const [isResizing, setIsResizing] = useState(false);
-    const [resizeDirection, setResizeDirection] = useState(null);
-    const [startPosition, setStartPosition] = useState({ x: 0, y: 0 });
-    const [startSize, setStartSize] = useState({ width: 0, height: 0 });
-    const [isExpanded, setIsExpanded] = useState(false);
+    // Estados para secciones colapsables (todo visible, más fluido)
+    const [showMapSection, setShowMapSection] = useState(false);
 
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
@@ -1576,111 +1738,15 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
         return null;
     };
 
-    // ... (Todas las demás funciones del mapa se mantienen igual)
+    // Función simplificada para mostrar/ocultar mapa
+    const toggleMapSection = () => {
+        const newState = !showMapSection;
+        setShowMapSection(newState);
 
-    const handleResizeStart = (e, direction) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsResizing(true);
-        setResizeDirection(direction);
-        setStartPosition({ x: e.clientX, y: e.clientY });
-        setStartSize({ width: mapWidth, height: mapHeight });
-
-        document.addEventListener('mousemove', handleResizeMove);
-        document.addEventListener('mouseup', handleResizeEnd);
-        document.body.style.cursor = getCursor(direction);
-        document.body.style.userSelect = 'none';
-    };
-
-    const handleResizeMove = (e) => {
-        if (!isResizing || !resizeDirection) return;
-
-        const deltaX = e.clientX - startPosition.x;
-        const deltaY = e.clientY - startPosition.y;
-
-        let newWidth = startSize.width;
-        let newHeight = startSize.height;
-
-        switch (resizeDirection) {
-            case 'se':
-                newWidth = Math.max(300, Math.min(800, startSize.width + deltaX));
-                newHeight = Math.max(200, Math.min(600, startSize.height + deltaY));
-                break;
-            case 'e':
-                newWidth = Math.max(300, Math.min(800, startSize.width + deltaX));
-                break;
-            case 's':
-                newHeight = Math.max(200, Math.min(600, startSize.height + deltaY));
-                break;
-            case 'sw':
-                newWidth = Math.max(300, Math.min(800, startSize.width - deltaX));
-                newHeight = Math.max(200, Math.min(600, startSize.height + deltaY));
-                break;
-            case 'w':
-                newWidth = Math.max(300, Math.min(800, startSize.width - deltaX));
-                break;
-        }
-
-        setMapWidth(newWidth);
-        setMapHeight(newHeight);
-
-        if (mapInstanceRef.current) {
+        // Cargar el mapa cuando se abre la sección
+        if (newState && !mapLoaded && !mapInstanceRef.current) {
             setTimeout(() => {
-                mapInstanceRef.current.resize();
-            }, 10);
-        }
-    };
-
-    const handleResizeEnd = () => {
-        setIsResizing(false);
-        setResizeDirection(null);
-        document.removeEventListener('mousemove', handleResizeMove);
-        document.removeEventListener('mouseup', handleResizeEnd);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-    };
-
-    const getCursor = (direction) => {
-        switch (direction) {
-            case 'se': return 'nw-resize';
-            case 'sw': return 'ne-resize';
-            case 'e': case 'w': return 'ew-resize';
-            case 's': return 'ns-resize';
-            default: return 'default';
-        }
-    };
-
-    const mapSizePresets = [
-        { name: 'Pequeño', width: 350, height: 250, icon: '📱' },
-        { name: 'Mediano', width: 500, height: 350, icon: '💻' },
-        { name: 'Grande', width: 650, height: 450, icon: '🖥️' },
-        { name: 'Extra Grande', width: 800, height: 550, icon: '📺' }
-    ];
-
-    const setMapSize = (width, height) => {
-        setMapWidth(width);
-        setMapHeight(height);
-        if (mapInstanceRef.current) {
-            setTimeout(() => {
-                mapInstanceRef.current.resize();
-            }, 10);
-        }
-    };
-
-    const toggleExpandMap = () => {
-        if (isExpanded) {
-            setMapWidth(400);
-            setMapHeight(300);
-            setIsExpanded(false);
-        } else {
-            setMapWidth(800);
-            setMapHeight(600);
-            setIsExpanded(true);
-        }
-
-        if (mapInstanceRef.current) {
-            setTimeout(() => {
-                mapInstanceRef.current.resize();
+                loadMapbox();
             }, 100);
         }
     };
@@ -1709,7 +1775,7 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
     };
 
     useEffect(() => {
-        loadMapbox();
+        // Cleanup al desmontar
         return () => {
             if (searchTimeoutRef.current) {
                 clearTimeout(searchTimeoutRef.current);
@@ -1717,8 +1783,6 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
             if (mapInstanceRef.current) {
                 mapInstanceRef.current.remove();
             }
-            document.removeEventListener('mousemove', handleResizeMove);
-            document.removeEventListener('mouseup', handleResizeEnd);
 
             selectedImages.forEach(img => {
                 if (img.preview) {
@@ -1728,14 +1792,6 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
         };
     }, []);
 
-    useEffect(() => {
-        if (mapInstanceRef.current) {
-            const timer = setTimeout(() => {
-                mapInstanceRef.current.resize();
-            }, 100);
-            return () => clearTimeout(timer);
-        }
-    }, [mapWidth, mapHeight]);
 
     const loadMapbox = async () => {
         try {
@@ -1775,26 +1831,35 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
             mapboxgl.accessToken = token;
 
             let defaultCenter = [-103.3496, 20.6597];
+            let defaultZoom = 13;
 
             if (formData.latitude && formData.longitude) {
                 defaultCenter = [parseFloat(formData.longitude), parseFloat(formData.latitude)];
                 setSelectedCoordinates([parseFloat(formData.latitude), parseFloat(formData.longitude)]);
+                defaultZoom = 16;
             }
 
             const map = new mapboxgl.Map({
                 container: mapRef.current,
                 style: 'mapbox://styles/mapbox/streets-v12',
                 center: defaultCenter,
-                zoom: selectedCoordinates ? 16 : 13
+                zoom: defaultZoom
             });
 
             map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
             mapInstanceRef.current = map;
 
-            if (selectedCoordinates || (formData.latitude && formData.longitude)) {
-                const coords = selectedCoordinates || [parseFloat(formData.latitude), parseFloat(formData.longitude)];
-                addMarker(coords);
-            }
+            // Esperar a que el mapa se cargue completamente
+            map.on('load', () => {
+                // Forzar resize para asegurar que el mapa se renderice correctamente
+                setTimeout(() => {
+                    map.resize();
+                }, 100);
+
+                if (formData.latitude && formData.longitude) {
+                    addMarker([parseFloat(formData.latitude), parseFloat(formData.longitude)]);
+                }
+            });
 
             map.on('click', handleMapClick);
             setMapLoaded(true);
@@ -2270,6 +2335,42 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                         Volver a Propiedades
                     </Button>
 
+                    {/* 🔒 BANNER: Usuario NO verificado */}
+                    {user && !user.is_identity_verified && (
+                        <div className="mb-6 bg-gradient-to-r from-yellow-50 via-amber-50 to-orange-50 dark:from-yellow-900/20 dark:via-amber-900/20 dark:to-orange-900/20 border-2 border-yellow-400 dark:border-yellow-600 rounded-2xl p-8 shadow-xl">
+                            <div className="flex flex-col md:flex-row items-center gap-6">
+                                <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
+                                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                </div>
+                                <div className="flex-1 text-center md:text-left">
+                                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                                        ⚠️ Verificación de Identidad Requerida
+                                    </h3>
+                                    <p className="text-gray-700 dark:text-gray-300 mb-4">
+                                        Para publicar propiedades necesitas verificar tu identidad primero.
+                                        Es un proceso rápido y seguro que toma menos de 5 minutos.
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-center md:justify-start">
+                                        <a
+                                            href="/verification/identity"
+                                            className="inline-flex items-center space-x-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all hover:scale-105"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                            </svg>
+                                            <span>Verificar mi Identidad Ahora</span>
+                                        </a>
+                                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                                            📱 Solo necesitas tu INE y un comprobante de domicilio
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700">
                         <div className="p-6 md:p-8">
                             {hasErrors && (
@@ -2296,11 +2397,11 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                 </div>
                             )}
 
-                            <form onSubmit={handleFormSubmit} className="space-y-8">
-                                {/* Información Básica */}
+                            <form onSubmit={handleFormSubmit} className="space-y-6">
+                                {/* Sección: Información Básica */}
                                 <div className="space-y-4">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                        <span className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg flex items-center justify-center mr-2 text-sm">ℹ️</span>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center border-b-2 border-emerald-500 pb-3">
+                                        <span className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">ℹ️</span>
                                         Información Básica
                                     </h3>
 
@@ -2330,10 +2431,10 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                     </div>
                                 </div>
 
-                                {/* SECCIÓN DEL MAPA */}
+                                {/* Sección: Ubicación */}
                                 <div className="space-y-4">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                        <span className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg flex items-center justify-center mr-2 text-sm">📍</span>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center border-b-2 border-emerald-500 pb-3">
+                                        <span className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">📍</span>
                                         Ubicación
                                     </h3>
 
@@ -2408,110 +2509,60 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                         </p>
                                     </div>
 
-                                    {/* Controles de tamaño del mapa */}
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                                Mapa Interactivo - {mapWidth}x{mapHeight}px
-                                            </label>
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={toggleExpandMap}
-                                                    className="px-3 py-1 text-xs bg-emerald-500 hover:bg-emerald-600 text-white rounded transition-colors"
-                                                    title={isExpanded ? "Contraer mapa" : "Expandir mapa"}
-                                                >
-                                                    {isExpanded ? "⤢ Contraer" : "⤡ Expandir"}
-                                                </button>
-                                                <span className="text-xs text-gray-500 dark:text-gray-400">Tamaños:</span>
-                                                {mapSizePresets.map((preset) => (
-                                                    <button
-                                                        key={preset.name}
-                                                        type="button"
-                                                        onClick={() => setMapSize(preset.width, preset.height)}
-                                                        className={`px-2 py-1 text-xs rounded transition-all duration-200 ${
-                                                            mapHeight === preset.height && mapWidth === preset.width
-                                                                ? 'bg-emerald-500 text-white'
-                                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/20'
-                                                        }`}
-                                                        title={`${preset.name} (${preset.width}x${preset.height}px)`}
-                                                    >
-                                                        {preset.icon}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
+                                    {/* Botón para mostrar/ocultar mapa - Simplificado */}
+                                    <div className="space-y-3">
+                                        <button
+                                            type="button"
+                                            onClick={toggleMapSection}
+                                            className="w-full px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-all duration-200 flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium"
+                                        >
+                                            {showMapSection ? (
+                                                <>
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" />
+                                                    </svg>
+                                                    Ocultar Mapa
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                                    </svg>
+                                                    Usar Mapa para Ubicación Precisa (Opcional)
+                                                </>
+                                            )}
+                                        </button>
 
-                                        {/* Contenedor del mapa redimensionable */}
-                                        <div className="flex justify-center">
-                                            <div
-                                                className="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 shadow-lg"
-                                                style={{
-                                                    width: `${mapWidth}px`,
-                                                    height: `${mapHeight}px`,
-                                                    minWidth: '300px',
-                                                    minHeight: '200px'
-                                                }}
-                                            >
-                                                {mapError ? (
-                                                    <div className="h-full flex items-center justify-center bg-red-50 dark:bg-red-900/20">
-                                                        <div className="text-center text-red-600 dark:text-red-400">
-                                                            <p className="font-medium">Error al cargar el mapa</p>
-                                                            <p className="text-sm">{mapError}</p>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <div
-                                                            ref={mapRef}
-                                                            className="w-full h-full bg-gray-100 dark:bg-gray-700"
-                                                        ></div>
-
-                                                        {!mapLoaded && (
-                                                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
-                                                                <div className="text-center">
-                                                                    <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                                                                    <p className="text-sm text-gray-600 dark:text-gray-400">Cargando mapa...</p>
-                                                                </div>
+                                        {/* Mapa simplificado - solo se muestra cuando el usuario lo activa */}
+                                        {showMapSection && (
+                                            <div className="space-y-2 animate-fadeIn">
+                                                <div className="relative rounded-lg overflow-hidden border-2 border-emerald-200 dark:border-emerald-800 shadow-lg" style={{ height: '400px' }}>
+                                                    {mapError ? (
+                                                        <div className="h-full flex items-center justify-center bg-red-50 dark:bg-red-900/20">
+                                                            <div className="text-center text-red-600 dark:text-red-400">
+                                                                <p className="font-medium">Error al cargar el mapa</p>
+                                                                <p className="text-sm">{mapError}</p>
                                                             </div>
-                                                        )}
-
-                                                        {/* Controles de redimensionamiento */}
-                                                        <div
-                                                            className="absolute top-0 right-0 w-2 h-full cursor-ew-resize hover:bg-emerald-500/20 transition-colors"
-                                                            onMouseDown={(e) => handleResizeStart(e, 'e')}
-                                                            title="Arrastrar para cambiar el ancho"
-                                                        ></div>
-
-                                                        <div
-                                                            className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize hover:bg-emerald-500/40 transition-colors"
-                                                            onMouseDown={(e) => handleResizeStart(e, 'se')}
-                                                            title="Arrastrar para redimensionar"
-                                                        >
-                                                            <div className="absolute bottom-1 right-1 w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-sm"></div>
                                                         </div>
-
-                                                        <div
-                                                            className="absolute top-0 left-0 w-2 h-full cursor-ew-resize hover:bg-emerald-500/20 transition-colors"
-                                                            onMouseDown={(e) => handleResizeStart(e, 'w')}
-                                                            title="Arrastrar para cambiar el ancho"
-                                                        ></div>
-
-                                                        <div
-                                                            className="absolute bottom-0 left-0 w-4 h-4 cursor-ne-resize hover:bg-emerald-500/40 transition-colors"
-                                                            onMouseDown={(e) => handleResizeStart(e, 'sw')}
-                                                            title="Arrastrar para redimensionar"
-                                                        ></div>
-                                                    </>
-                                                )}
+                                                    ) : (
+                                                        <>
+                                                            <div ref={mapRef} className="w-full h-full bg-gray-100 dark:bg-gray-700"></div>
+                                                            {!mapLoaded && (
+                                                                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+                                                                    <div className="text-center">
+                                                                        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                                                                        <p className="text-sm text-gray-600 dark:text-gray-400">Cargando mapa...</p>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                                                    💡 Haz clic en el mapa para marcar la ubicación exacta
+                                                </p>
                                             </div>
-                                        </div>
-
-                                        <div className="text-center">
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                Haz clic en el mapa para seleccionar ubicación. Arrastra los bordes para redimensionar.
-                                            </p>
-                                        </div>
+                                        )}
                                     </div>
 
                                     {/* Campos adicionales de ubicación */}
@@ -2563,23 +2614,31 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                         </div>
                                     </div>
 
-                                    {/* Mostrar coordenadas seleccionadas */}
+                                    {/* Campos ocultos para coordenadas */}
+                                    <input type="hidden" name="latitude" value={formData.latitude} />
+                                    <input type="hidden" name="longitude" value={formData.longitude} />
+
+                                    {/* Mostrar coordenadas seleccionadas de forma amigable */}
                                     {selectedCoordinates && (
                                         <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3">
-                                            <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
-                                                📍 Coordenadas seleccionadas:
+                                            <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200 flex items-center">
+                                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                ¡Ubicación marcada en el mapa!
                                             </p>
-                                            <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                                                Latitud: {selectedCoordinates[0].toFixed(6)} | Longitud: {selectedCoordinates[1].toFixed(6)}
+                                            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+                                                Coordenadas guardadas correctamente
                                             </p>
                                         </div>
                                     )}
+
                                 </div>
 
-                                {/* Detalles de la Propiedad */}
+                                {/* Sección: Detalles de la Propiedad */}
                                 <div className="space-y-4">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                        <span className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg flex items-center justify-center mr-2 text-sm">🏠</span>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center border-b-2 border-emerald-500 pb-3">
+                                        <span className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">🏠</span>
                                         Detalles de la Propiedad
                                     </h3>
 
@@ -2612,6 +2671,7 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                                 <option value="">Selecciona el tipo</option>
                                                 <option value="casa">🏠 Casa</option>
                                                 <option value="apartamento">🏢 Apartamento</option>
+                                                <option value="cuarto">🚪 Cuarto/Habitación</option>
                                                 <option value="condominio">🏘️ Condominio</option>
                                                 <option value="oficina">🏢 Oficina</option>
                                                 <option value="local">🏪 Local Comercial</option>
@@ -2643,7 +2703,6 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                                 className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-300"
                                                 placeholder="0"
                                                 min="0"
-                                                step="0.5"
                                             />
                                         </div>
                                         <div>
@@ -2659,13 +2718,56 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                             />
                                         </div>
                                     </div>
+
                                 </div>
 
-                                {/* SECCIÓN DE MÚLTIPLES IMÁGENES */}
+                                {/* Sección: Política de Mascotas */}
+                                <div className="space-y-4">
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center border-b-2 border-emerald-500 pb-3">
+                                        <span className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">🐕</span>
+                                        Política de Mascotas
+                                    </h3>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">¿Se permiten mascotas?</label>
+                                        <select
+                                            name="pets_allowed"
+                                            value={formData.pets_allowed || 'negotiable'}
+                                            onChange={handleInputChange}
+                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-300"
+                                        >
+                                            <option value="negotiable">🤝 Negociable</option>
+                                            <option value="pets_allowed">✅ Sí, se permiten mascotas</option>
+                                            <option value="no_pets">❌ No se permiten mascotas</option>
+                                        </select>
+                                    </div>
+
+                                    {formData.pets_allowed && formData.pets_allowed !== 'no_pets' && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                Detalles sobre mascotas (opcional)
+                                            </label>
+                                            <textarea
+                                                name="pets_details"
+                                                value={formData.pets_details || ''}
+                                                onChange={handleInputChange}
+                                                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-300 resize-none"
+                                                placeholder="Ej: Solo perros pequeños (máx 10kg). Depósito extra de $2000. No gatos."
+                                                rows="2"
+                                                maxLength="500"
+                                            />
+                                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                {(formData.pets_details || '').length}/500 caracteres
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Sección: Imágenes */}
                                 <div className="space-y-6">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between border-b-2 border-emerald-500 pb-3">
                                         <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                            <span className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg flex items-center justify-center mr-2 text-sm">📸</span>
+                                            <span className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">📸</span>
                                             Imágenes de la Propiedad
                                         </h3>
                                         <div className="text-sm text-gray-500 dark:text-gray-400">
@@ -2870,52 +2972,52 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                                             </div>
                                         </div>
                                     )}
-                                </div>
 
-                                {/* Configuración */}
-                                <div className="space-y-4">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                        <span className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg flex items-center justify-center mr-2 text-sm">⚙️</span>
-                                        Configuración
-                                    </h3>
+                                    {/* Configuración dentro del Paso 4 */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
+                                            <span className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg flex items-center justify-center mr-2 text-sm">⚙️</span>
+                                            Configuración
+                                        </h3>
 
-                                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                                        <div className="flex items-center">
-                                            <input
-                                                type="checkbox"
-                                                name="is_active"
-                                                checked={formData.is_active}
-                                                onChange={handleInputChange}
-                                                className="w-4 h-4 text-emerald-600 bg-gray-100 border-gray-300 rounded focus:ring-emerald-500 focus:ring-2"
-                                                id="is_active"
-                                            />
-                                            <label className="ml-3 block font-medium text-gray-900 dark:text-white" htmlFor="is_active">
-                                                Propiedad disponible para renta
-                                            </label>
+                                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                                            <div className="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    name="is_active"
+                                                    checked={formData.is_active}
+                                                    onChange={handleInputChange}
+                                                    className="w-4 h-4 text-emerald-600 bg-gray-100 border-gray-300 rounded focus:ring-emerald-500 focus:ring-2"
+                                                    id="is_active"
+                                                />
+                                                <label className="ml-3 block font-medium text-gray-900 dark:text-white" htmlFor="is_active">
+                                                    Propiedad disponible para renta
+                                                </label>
+                                            </div>
+                                            <p className="ml-7 mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                                Al activar esta opción, tu propiedad será visible para otros usuarios
+                                            </p>
                                         </div>
-                                        <p className="ml-7 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                            Al activar esta opción, tu propiedad será visible para otros usuarios
-                                        </p>
                                     </div>
-                                </div>
 
-                                {/* Botones de acción */}
-                                <div className="flex flex-col sm:flex-row gap-3 justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
-                                    <Button type="button" variant="ghost" onClick={() => navigate('index')} disabled={loading} className="sm:w-auto w-full">
-                                        Cancelar
-                                    </Button>
-                                    <Button
-                                        type="submit"
-                                        variant="primary"
-                                        loading={loading}
-                                        disabled={loading}
-                                        className="sm:w-auto w-full"
-                                    >
-                                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                                        </svg>
-                                        {isEdit ? 'Actualizar Propiedad' : 'Guardar Propiedad'}
-                                    </Button>
+                                    {/* Botones finales */}
+                                    <div className="flex flex-col sm:flex-row gap-3 justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
+                                        <Button type="button" variant="ghost" onClick={() => navigate('index')} disabled={loading} className="sm:w-auto w-full">
+                                            Cancelar
+                                        </Button>
+                                        <Button
+                                            type="submit"
+                                            variant="primary"
+                                            loading={loading}
+                                            disabled={loading}
+                                            className="sm:w-auto w-full"
+                                        >
+                                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                            </svg>
+                                            {isEdit ? 'Actualizar Propiedad' : 'Guardar Propiedad'}
+                                        </Button>
+                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -2927,6 +3029,19 @@ function PropertyForm({ formData, handleInputChange, handleSubmit, loading, isEd
                 @keyframes spin {
                     0% { transform: rotate(0deg); }
                     100% { transform: rotate(360deg); }
+                }
+                @keyframes fadeIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                .animate-fadeIn {
+                    animation: fadeIn 0.3s ease-out;
                 }
             `}</style>
         </>
@@ -2960,6 +3075,19 @@ function Properties() {
         latitude: '', longitude: ''
     });
 
+    // 🔒 Obtener datos del usuario autenticado
+    const user = useMemo(() => {
+        const userDataElement = document.getElementById('user-data');
+        if (userDataElement) {
+            try {
+                return JSON.parse(userDataElement.textContent || userDataElement.innerText);
+            } catch (e) {
+                return null;
+            }
+        }
+        return null;
+    }, []);
+
     useEffect(() => {
         if (appData.currentPage === 'edit' && appData.property) {
             setFormData({
@@ -2971,6 +3099,15 @@ function Properties() {
     }, [appData.currentPage, appData.property]);
 
     const navigate = useCallback((page, propertyId = null) => {
+        // 🔒 VALIDACIÓN: Verificar identidad para crear/editar propiedades
+        if ((page === 'create' || page === 'edit') && user && !user.is_identity_verified) {
+            showToast('Debes verificar tu identidad antes de publicar propiedades', 'error');
+            setTimeout(() => {
+                window.location.href = '/verification/identity';
+            }, 2000);
+            return;
+        }
+
         switch (page) {
             case 'index':
                 window.location.href = appData.routes?.index || '/properties';
@@ -2990,7 +3127,7 @@ function Properties() {
             default:
                 console.warn(`Unknown navigation page: ${page}`);
         }
-    }, [appData.routes]);
+    }, [appData.routes, user, showToast]);
 
     const contactSeller = useCallback(async (propertyId, sellerId) => {
         try {
@@ -3192,18 +3329,6 @@ function Properties() {
         }) || [];
     }, [appData.properties, searchTerm, typeFilter, roomsFilter]);
 
-    const user = useMemo(() => {
-        const userDataElement = document.getElementById('user-data');
-        if (userDataElement) {
-            try {
-                return JSON.parse(userDataElement.textContent || userDataElement.innerText);
-            } catch (e) {
-                return null;
-            }
-        }
-        return null;
-    }, []);
-
     const renderPage = useCallback(() => {
         switch (appData.currentPage) {
             case 'index':
@@ -3247,6 +3372,7 @@ function Properties() {
                         navigate={navigate}
                         errors={appData.errors || {}}
                         showToast={showToast}
+                        user={user}
                     />
                 );
             default:

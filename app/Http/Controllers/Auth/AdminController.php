@@ -166,8 +166,8 @@ class AdminController extends Controller
             return response()->json(['error' => 'No tienes permisos de administrador'], 403);
         }
 
-        // CREAR CONSULTA BASE con relación de usuario
-        $query = Property::query()->with('user');
+        // CREAR CONSULTA BASE con relación de usuario y fotos
+        $query = Property::query()->with(['user', 'photos']);
 
         // FILTRO POR BÚSQUEDA (OPCIONAL)
         if ($request->filled('search')) {
@@ -234,14 +234,18 @@ class AdminController extends Controller
                 'is_active' => (bool) $property->is_active,
                 'created_at' => $property->created_at->format('d/m/Y H:i'),
                 'updated_at' => $property->updated_at->format('d/m/Y H:i'),
-                'image_url' => $property->image ? asset('storage/' . $property->image) : null,
+                'image_url' => $property->photos->isNotEmpty()
+                    ? $property->photos->first()->url
+                    : ($property->image ? asset('storage/' . $property->image) : null),
                 'messages_count' => $property->messages()->count(),
-                'photos' => $property->image ? [
-                    [
-                        'url' => asset('storage/' . $property->image),
-                        'thumbnail' => asset('storage/' . $property->image),
-                    ]
-                ] : []
+                'photos' => $property->photos->map(function($photo) {
+                    return [
+                        'url' => $photo->url,
+                        'thumbnail' => $photo->url,
+                        'is_primary' => $photo->is_primary,
+                        'is_duplicate' => $photo->is_duplicate,
+                    ];
+                })->toArray()
             ];
         });
 
@@ -809,15 +813,20 @@ class AdminController extends Controller
             }
 
             // REVOCAR VERIFICACIÓN
-            $user->update([
-                'is_identity_verified' => false,
-                'verified_at' => null
-            ]);
+            $user->is_identity_verified = false;
+            $user->verified_at = null;
+            $user->verification_method = null;
+            $user->save();
+
+            // Refrescar el modelo para asegurar que tenemos los datos actualizados
+            $user->refresh();
 
             // LOG DE LA ACCIÓN
             Log::info('Identity verification revoked by admin', [
                 'admin_id' => auth()->id(),
                 'user_id' => $user->id,
+                'user_email' => $user->email,
+                'is_identity_verified_after' => $user->is_identity_verified,
                 'reason' => $request->reason ?? 'Revocado manualmente desde panel de administración'
             ]);
 

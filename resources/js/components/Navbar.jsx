@@ -692,17 +692,34 @@ const performSearch = async (query) => {
                                            {[
                                                { href: "/profile", label: "Mi Perfil", icon: "👤" },
                                                ...(user.role === 'admin' ? [{ href: "/admin", label: "Admin Panel", icon: "⚙️" }] : []),
+                                               {
+                                                   href: "/verification/identity",
+                                                   label: user.is_identity_verified ? "Identidad Verificada" : "Verificar Identidad",
+                                                   icon: user.is_identity_verified ? "✅" : "✓",
+                                                   highlight: !user.is_identity_verified
+                                               },
                                                { href: "/my-properties", label: "Mis Propiedades", icon: "🏠" },
                                                { href: "/chat", label: "Mensajes", icon: "💬" },
                                                { href: "/notifications", label: "Notificaciones", icon: "🔔" },
-                                               { href: "#", label: "Favoritos", icon: "❤️" }
+                                               { href: "/favorites", label: "Favoritos", icon: "❤️" }
                                            ].map((item, index) => (
                                                <a key={index}
                                                    href={item.href}
-                                                   className="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-200"
+                                                   className={`flex items-center px-4 py-2.5 text-sm transition-all duration-200 ${
+                                                       item.highlight
+                                                           ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 font-semibold'
+                                                           : 'text-gray-700 dark:text-gray-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400'
+                                                   }`}
                                                >
                                                    <span className="text-base mr-3">{item.icon}</span>
-                                                   <span className="font-medium">{item.label}</span>
+                                                   <span className="font-medium flex items-center">
+                                                       {item.label}
+                                                       {item.highlight && (
+                                                           <span className="ml-2 px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full">
+                                                               !
+                                                           </span>
+                                                       )}
+                                                   </span>
                                                </a>
                                            ))}
                                        </div>
@@ -891,7 +908,34 @@ const performSearch = async (query) => {
                                <span>Mi Perfil</span>
                            </a>
 
-                           <a href="#"
+                           <a href="/verification/identity"
+                               className={`flex items-center px-3 py-2.5 text-base font-medium rounded-lg transition-all duration-300 ${
+                                   user.is_identity_verified
+                                       ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30'
+                                       : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                               }`}
+                               onClick={() => setMobileMenuOpen(false)}
+                           >
+                               <span className="text-lg mr-3">{user.is_identity_verified ? '✅' : '✓'}</span>
+                               <span className="flex items-center">
+                                   {user.is_identity_verified ? 'Identidad Verificada' : 'Verificar Identidad'}
+                                   {!user.is_identity_verified && (
+                                       <span className="ml-2 px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full">
+                                           !
+                                       </span>
+                                   )}
+                               </span>
+                           </a>
+
+                           <a href="/my-properties"
+                               className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
+                               onClick={() => setMobileMenuOpen(false)}
+                           >
+                               <span className="text-lg mr-3">🏠</span>
+                               <span>Mis Propiedades</span>
+                           </a>
+
+                           <a href="/favorites"
                                className="flex items-center px-3 py-2.5 text-base font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-300"
                                onClick={() => setMobileMenuOpen(false)}
                            >

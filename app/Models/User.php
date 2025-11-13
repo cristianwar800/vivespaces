@@ -14,6 +14,8 @@ class User extends Authenticatable
         'name',
         'last_name',
         'email',
+        'google_id',      // 🆕 AGREGADO
+        'avatar',         // 🆕 AGREGADO
         'phone',
         'address',
         'city',
@@ -41,9 +43,11 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'suspended_at' => 'datetime',
+            'verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
+            'is_identity_verified' => 'boolean',
         ];
     }
 
@@ -121,9 +125,47 @@ class User extends Authenticatable
     // MÉTODOS DE MENSAJERÍA
     // ==========================================
 
+    // 🔒 LÍMITE DE MENSAJES PARA NO VERIFICADOS
+    const FREE_MESSAGE_LIMIT = 5;
+
     public function getUnreadMessagesCount(): int
     {
         return $this->receivedMessages()->unread($this->id)->count();
+    }
+
+    /**
+     * 🔒 Obtener cantidad de mensajes enviados (solo si no está verificado)
+     */
+    public function getSentMessagesCount(): int
+    {
+        return $this->sentMessages()->count();
+    }
+
+    /**
+     * 🔒 Verificar si puede enviar mensajes
+     */
+    public function canSendMessage(): bool
+    {
+        // Si está verificado, siempre puede enviar
+        if ($this->is_identity_verified) {
+            return true;
+        }
+
+        // Si no está verificado, verificar límite
+        return $this->getSentMessagesCount() < self::FREE_MESSAGE_LIMIT;
+    }
+
+    /**
+     * 🔒 Obtener mensajes restantes (solo para no verificados)
+     */
+    public function getRemainingMessages(): int
+    {
+        if ($this->is_identity_verified) {
+            return -1; // -1 significa ilimitado
+        }
+
+        $remaining = self::FREE_MESSAGE_LIMIT - $this->getSentMessagesCount();
+        return max(0, $remaining);
     }
 
     public function getConversationsWith(): array
@@ -361,6 +403,11 @@ class User extends Authenticatable
 
     public function getAvatarUrlAttribute(): string
     {
+        // 🔄 MODIFICADO: Priorizar avatar de Google sobre profile_photo
+        if ($this->avatar) {
+            return $this->avatar; // URL directa de Google
+        }
+
         if ($this->profile_photo) {
             return asset('storage/' . $this->profile_photo);
         }
@@ -368,5 +415,16 @@ class User extends Authenticatable
         // Avatar por defecto basado en iniciales
         $initials = strtoupper(substr($this->name, 0, 1) . substr($this->last_name, 0, 1));
         return "https://ui-avatars.com/api/?name={$initials}&background=10b981&color=ffffff&size=128";
+    }
+
+
+        public function favoriteProperties()
+    {
+        return $this->belongsToMany(
+            Property::class,           // Modelo relacionado
+            'property_favorites',      // Nombre de la tabla pivote
+            'user_id',                 // Foreign key del usuario
+            'property_id'              // Foreign key de la propiedad
+        )->withTimestamps();
     }
 }

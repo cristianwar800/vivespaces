@@ -28,6 +28,8 @@ class Property extends Model
         'image',
         'latitude',
         'longitude',
+        'pets_allowed',
+        'pets_details',
     ];
 
     // Casts DEBE ir aquí, antes de los métodos
@@ -62,6 +64,13 @@ class Property extends Model
     public function getPhotosAttribute()
     {
         return $this->photos()->orderBy('sort_order')->get();
+    }
+
+    
+        public function favoritedBy()
+    {
+        return $this->belongsToMany(User::class, 'property_favorites')
+                    ->withTimestamps();
     }
 }
 

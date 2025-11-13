@@ -24,6 +24,7 @@ import LayoutMap from './components/LayoutMap';
 import FastApiRecomendador from './components/FastApiRecomendador';
 import NotificationPanel from './components/NotificationPanel';
 import VerificationFlow from './components/verification/VerificationFlow';
+import FavoritesPage from './components/Favorites';
 
 // ==================== 🎯 CONTROL DE WIDGETS ====================
 /**
@@ -72,14 +73,115 @@ function getUserData() {
     if (userDataElement) {
         try {
             const content = userDataElement.textContent || userDataElement.innerText;
-            return content ? JSON.parse(content) : null;
+            const parsed = content ? JSON.parse(content) : null;
+            console.log('🔍 getUserData() llamado, resultado:', parsed);
+            return parsed;
         } catch (e) {
-            console.error('Error parsing user data:', e);
+            console.error('❌ Error parsing user data:', e);
             return null;
         }
     }
+    console.log('⚠️ No se encontró #user-data element');
     return null;
 }
+
+// 🔥 NUEVO: Variables globales para mantener referencias a los roots de React
+let chatbotRoot = null;
+let layoutMapRoot = null;
+let navbarRoot = null;
+
+// 🔥 NUEVO: Función para actualizar el ChatBot cuando cambia la sesión
+function updateChatBot() {
+    const chatbotContainer = document.getElementById('chatbot-root');
+    const showWidgets = shouldShowGlobalWidgets();
+    
+    if (chatbotContainer && showWidgets) {
+        const userData = getUserData();
+        console.log('🔄 Actualizando ChatBot con usuario:', userData);
+        
+        // Si ya existe un root, solo hacer re-render
+        if (chatbotRoot) {
+            chatbotRoot.render(<ChatBot user={userData} key={userData?.id || 'guest'} />);
+        } else {
+            // Crear root si no existe
+            chatbotRoot = createRoot(chatbotContainer);
+            chatbotRoot.render(<ChatBot user={userData} key={userData?.id || 'guest'} />);
+        }
+        console.log('✅ ChatBot actualizado');
+    }
+}
+
+// 🔥 NUEVO: Función para actualizar el LayoutMap cuando cambia la sesión
+function updateLayoutMap() {
+    const layoutMapContainer = document.getElementById('layout-map-root');
+    const showWidgets = shouldShowGlobalWidgets();
+    
+    if (layoutMapContainer && showWidgets) {
+        const userData = getUserData();
+        console.log('🔄 Actualizando LayoutMap con usuario:', userData);
+        
+        // Si ya existe un root, solo hacer re-render
+        if (layoutMapRoot) {
+            layoutMapRoot.render(<LayoutMap user={userData} key={userData?.id || 'guest'} />);
+        } else {
+            // Crear root si no existe
+            layoutMapRoot = createRoot(layoutMapContainer);
+            layoutMapRoot.render(<LayoutMap user={userData} key={userData?.id || 'guest'} />);
+        }
+        console.log('✅ LayoutMap actualizado');
+    }
+}
+
+// 🔥 NUEVO: Función para actualizar el Navbar cuando cambia la sesión
+function updateNavbar() {
+    const navbarContainer = document.getElementById('navbar-root');
+    
+    if (navbarContainer) {
+        const userData = getUserData();
+        console.log('🔄 Actualizando Navbar con usuario:', userData);
+        
+        // Si ya existe un root, solo hacer re-render
+        if (navbarRoot) {
+            navbarRoot.render(<Navbar user={userData} key={userData?.id || 'guest'} />);
+        } else {
+            // Crear root si no existe
+            navbarRoot = createRoot(navbarContainer);
+            navbarRoot.render(<Navbar user={userData} key={userData?.id || 'guest'} />);
+        }
+        console.log('✅ Navbar actualizado');
+    }
+}
+
+// 🔥 NUEVO: Escuchar cambios en el DOM (cuando Laravel actualiza #user-data)
+function observeUserDataChanges() {
+    const userDataElement = document.getElementById('user-data');
+    
+    if (userDataElement) {
+        // Usar MutationObserver para detectar cambios en el contenido
+        const observer = new MutationObserver((mutations) => {
+            console.log('🔔 Cambio detectado en #user-data');
+            updateChatBot();
+            updateLayoutMap();
+            updateNavbar();
+        });
+        
+        observer.observe(userDataElement, {
+            childList: true,
+            characterData: true,
+            subtree: true
+        });
+        
+        console.log('👀 Observer activo en #user-data');
+    }
+}
+
+// 🔥 NUEVO: Escuchar eventos personalizados de logout/login
+window.addEventListener('user-session-changed', function(e) {
+    console.log('🔔 Evento user-session-changed recibido:', e.detail);
+    updateChatBot();
+    updateLayoutMap();
+    updateNavbar();
+});
 
 // Renderizar según el contenedor disponible
 document.addEventListener('DOMContentLoaded', function() {
@@ -93,17 +195,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const navbarContainer = document.getElementById('navbar-root');
     if (navbarContainer) {
         const userData = getUserData();
-        const root = createRoot(navbarContainer);
-        root.render(<Navbar user={userData} />);
+        navbarRoot = createRoot(navbarContainer);
+        navbarRoot.render(<Navbar user={userData} key={userData?.id || 'guest'} />);
         console.log('✅ Navbar renderizado (incluye NotificationPanel)');
     }
 
     // ChatBot condicional según la ruta
-    const chatbotContainer = document.getElementById('chatbox-root');
+    const chatbotContainer = document.getElementById('chatbot-root');
     if (chatbotContainer && showWidgets) {
         const userData = getUserData();
-        const root = createRoot(chatbotContainer);
-        root.render(<ChatBot user={userData} />);
+        chatbotRoot = createRoot(chatbotContainer);
+        chatbotRoot.render(<ChatBot user={userData} key={userData?.id || 'guest'} />);
         console.log('✅ ChatBot renderizado');
     } else if (chatbotContainer && !showWidgets) {
         console.log('⛔ ChatBot NO renderizado (ruta oculta)');
@@ -113,12 +215,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const layoutMapContainer = document.getElementById('layout-map-root');
     if (layoutMapContainer && showWidgets) {
         const userData = getUserData();
-        const root = createRoot(layoutMapContainer);
-        root.render(<LayoutMap user={userData} />);
+        layoutMapRoot = createRoot(layoutMapContainer);
+        layoutMapRoot.render(<LayoutMap user={userData} key={userData?.id || 'guest'} />);
         console.log('✅ LayoutMap renderizado');
     } else if (layoutMapContainer && !showWidgets) {
         console.log('⛔ LayoutMap NO renderizado (ruta oculta)');
     }
+
+    // 🔥 Activar observer para detectar cambios en user-data
+    observeUserDataChanges();
 
     // Welcome content
     const welcomeContainer = document.getElementById('welcome-content');
@@ -272,6 +377,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const root = createRoot(notificationsPageContainer);
         root.render(<NotificationPanel asPage={true} />);
         console.log('✅ NotificationPanel (página) renderizado');
+        return;
+    }
+
+    // Favorites Page
+    const favoritesContainer = document.getElementById('favorites-root');
+    if (favoritesContainer) {
+        const userData = getUserData();
+        const root = createRoot(favoritesContainer);
+        root.render(<FavoritesPage user={userData} />);
+        console.log('✅ FavoritesPage renderizado');
         return;
     }
 

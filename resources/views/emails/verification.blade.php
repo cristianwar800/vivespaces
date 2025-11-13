@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Código de Verificación - ViveSpaces</title>
+    <title>{{ $type === 'password_reset' ? 'Recuperación de Contraseña' : 'Código de Verificación' }} - ViveSpaces</title>
     <style>
         * {
             margin: 0;
@@ -215,13 +215,23 @@
                     <h2 class="greeting">¡Hola!</h2>
                 @endif
 
-                <p class="message">
-                    Gracias por unirte a ViveSpaces. Para completar tu registro y comenzar a explorar las mejores propiedades, necesitamos verificar tu dirección de email.
-                </p>
+                {{-- 🆕 MENSAJE DINÁMICO SEGÚN EL TIPO --}}
+                @if($type === 'password_reset')
+                    <p class="message">
+                        Recibimos una solicitud para restablecer la contraseña de tu cuenta en ViveSpaces. 
+                        Utiliza el siguiente código para crear una nueva contraseña y recuperar el acceso a tu cuenta.
+                    </p>
+                @else
+                    <p class="message">
+                        Gracias por unirte a ViveSpaces. Para completar tu registro y comenzar a explorar las mejores propiedades, necesitamos verificar tu dirección de email.
+                    </p>
+                @endif
 
                 <!-- Código de verificación -->
                 <div class="code-container">
-                    <p class="code-label">Tu código de verificación</p>
+                    <p class="code-label">
+                        {{ $type === 'password_reset' ? 'Tu código de recuperación' : 'Tu código de verificación' }}
+                    </p>
                     <h1 class="verification-code">{{ $code }}</h1>
                 </div>
 
@@ -234,12 +244,29 @@
 
                 <div class="divider"></div>
 
-                <!-- Tip de seguridad -->
+                {{-- 🆕 TIP DE SEGURIDAD DINÁMICO --}}
                 <div class="security-tip">
                     <p class="security-tip-text">
-                        <strong>💡 Consejo de seguridad:</strong> Nunca compartas este código con nadie. ViveSpaces nunca te pedirá tu código por teléfono o email.
+                        <strong>💡 Consejo de seguridad:</strong> 
+                        @if($type === 'password_reset')
+                            Si no solicitaste restablecer tu contraseña, ignora este email y tu cuenta permanecerá segura. 
+                            Nunca compartas este código con nadie.
+                        @else
+                            Nunca compartas este código con nadie. ViveSpaces nunca te pedirá tu código por teléfono o email.
+                        @endif
                     </p>
                 </div>
+
+                {{-- 🆕 AVISO ADICIONAL SOLO PARA PASSWORD RESET --}}
+                @if($type === 'password_reset')
+                    <div style="margin-top: 20px; padding: 16px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 8px;">
+                        <p style="color: #991b1b; font-size: 14px; margin: 0;">
+                            <strong>⚠️ Nota importante:</strong> 
+                            Si no reconoces esta actividad, te recomendamos cambiar tu contraseña inmediatamente 
+                            contactando a nuestro equipo de soporte.
+                        </p>
+                    </div>
+                @endif
             </div>
 
             <!-- Footer -->

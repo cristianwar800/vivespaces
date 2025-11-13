@@ -22,3 +22,16 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Test files
+test_*.php
+test_*.ps1
+*.backup
+check_indexes.php
+toArray()
+
+# Documentation
+ANALISIS_*.md
+
+# AI/Assistant folders
+.claude/

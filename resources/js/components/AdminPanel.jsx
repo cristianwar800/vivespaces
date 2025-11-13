@@ -267,28 +267,55 @@ const AdminPanel = ({ user }) => {
   };
 
   const KPICard = ({ title, value, change, changeType, icon, color, description }) => (
-    <div className={`bg-gradient-to-br ${color} p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-white transform hover:-translate-y-1`}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-          {icon}
-        </div>
-        <div className="text-right">
-          <div className="text-xs font-medium opacity-80 uppercase tracking-wider">{title}</div>
-          <div className="text-3xl font-bold text-white mb-1">
-            {typeof value === 'number' ? value.toLocaleString() : value}
-          </div>
-          {change && (
-            <div className="flex items-center text-sm">
-              <svg className={`w-4 h-4 mr-1 ${changeType === 'increase' ? '' : 'transform rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
-              </svg>
-              <span className="opacity-90">{change}</span>
+    <div className="group relative overflow-hidden">
+      {/* Efecto de brillo animado */}
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+
+      <div className={`relative bg-gradient-to-br ${color} p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-500 text-white transform hover:-translate-y-2 hover:scale-105 border border-white/20`}>
+        {/* Decoración superior */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16"></div>
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/10 rounded-full -ml-12 -mb-12"></div>
+
+        <div className="relative z-10">
+          <div className="flex items-start justify-between mb-6">
+            <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-md shadow-lg transform group-hover:scale-110 transition-transform duration-300 border border-white/30">
+              {icon}
             </div>
-          )}
+            <div className="text-right">
+              <div className="text-xs font-bold opacity-90 uppercase tracking-widest mb-2 bg-white/10 px-3 py-1 rounded-full inline-block backdrop-blur-sm">
+                {title}
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <div className="text-4xl font-black text-white mb-2 tracking-tight">
+              {typeof value === 'number' ? value.toLocaleString() : value}
+            </div>
+
+            {change && (
+              <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                changeType === 'increase'
+                  ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/50'
+                  : 'bg-red-500/30 text-red-100 border border-red-400/50'
+              } backdrop-blur-sm`}>
+                <svg className={`w-4 h-4 mr-1 ${changeType === 'increase' ? '' : 'transform rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+                </svg>
+                <span>{change}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gradient-to-r from-white/20 to-white/5 rounded-xl p-4 backdrop-blur-md border border-white/20 shadow-inner">
+            <div className="text-sm font-medium opacity-95 flex items-center">
+              <svg className="w-4 h-4 mr-2 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {description}
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
-        <div className="text-sm opacity-90">{description}</div>
       </div>
     </div>
   );
@@ -299,18 +326,58 @@ const AdminPanel = ({ user }) => {
     const maxValue = Math.max(...data.map(d => d.value || 0));
 
     return (
-      <div className="h-64 bg-gradient-to-t from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-end justify-between h-full space-x-2">
-          {data.map((item, index) => (
-            <div key={index} className="flex-1 flex flex-col items-center">
-              <div
-                className="w-full bg-gradient-to-t from-emerald-400 to-emerald-500 rounded-t-sm transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600"
-                style={{ height: `${maxValue > 0 ? (item.value / maxValue) * 100 : 0}%` }}
-                title={`${item.label}: ${item.value}`}
-              ></div>
-              <span className="text-xs text-gray-500 mt-2 transform -rotate-45">{item.label}</span>
-            </div>
-          ))}
+      <div className="relative h-72 bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-gray-900 dark:via-blue-900/10 dark:to-purple-900/10 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-inner overflow-hidden">
+        {/* Grid de fondo */}
+        <div className="absolute inset-0 opacity-20">
+          <div className="h-full w-full" style={{
+            backgroundImage: 'linear-gradient(0deg, transparent 24%, rgba(0,0,0,.05) 25%, rgba(0,0,0,.05) 26%, transparent 27%, transparent 74%, rgba(0,0,0,.05) 75%, rgba(0,0,0,.05) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(0,0,0,.05) 25%, rgba(0,0,0,.05) 26%, transparent 27%, transparent 74%, rgba(0,0,0,.05) 75%, rgba(0,0,0,.05) 76%, transparent 77%, transparent)',
+            backgroundSize: '50px 50px'
+          }}></div>
+        </div>
+
+        <div className="relative flex items-end justify-between h-full space-x-3">
+          {data.map((item, index) => {
+            const heightPercentage = maxValue > 0 ? (item.value / maxValue) * 100 : 0;
+            const colorIndex = index % 5;
+            const gradients = [
+              'from-blue-400 via-blue-500 to-blue-600',
+              'from-emerald-400 via-emerald-500 to-emerald-600',
+              'from-purple-400 via-purple-500 to-purple-600',
+              'from-orange-400 via-orange-500 to-orange-600',
+              'from-pink-400 via-pink-500 to-pink-600'
+            ];
+
+            return (
+              <div key={index} className="group flex-1 flex flex-col items-center relative">
+                {/* Tooltip */}
+                <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap shadow-xl z-10 pointer-events-none">
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                    <span>{item.value.toLocaleString()}</span>
+                  </div>
+                  <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+                </div>
+
+                {/* Barra */}
+                <div
+                  className={`w-full bg-gradient-to-t ${gradients[colorIndex]} rounded-t-xl transition-all duration-500 hover:scale-105 transform origin-bottom shadow-lg hover:shadow-2xl relative overflow-hidden group cursor-pointer`}
+                  style={{ height: `${heightPercentage}%` }}
+                >
+                  {/* Brillo superior */}
+                  <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-white/40 to-transparent"></div>
+                  {/* Efecto de pulso */}
+                  <div className="absolute inset-0 bg-white/0 group-hover:bg-white/20 transition-colors duration-300"></div>
+                </div>
+
+                {/* Etiqueta */}
+                <span className="text-xs text-gray-600 dark:text-gray-400 font-medium mt-3 truncate max-w-full px-1 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
+                  {item.label}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -916,12 +983,17 @@ const AdminPanel = ({ user }) => {
 
           if (response.ok) {
             showNotification(data.message, 'success');
-            fetchUsers();
+            console.log('✅ Verificación revocada exitosamente:', data.user);
+            // Pequeño delay para asegurar que la BD se actualice
+            setTimeout(() => {
+              console.log('🔄 Recargando lista de usuarios...');
+              fetchUsers();
+            }, 500);
           } else {
             showNotification(data.error || 'Error al revocar verificación', 'error');
           }
         } catch (err) {
-          console.error('Error revoking verification:', err);
+          console.error('❌ Error revoking verification:', err);
           showNotification('Error de conexión', 'error');
         }
       },
@@ -1107,24 +1179,60 @@ const AdminPanel = ({ user }) => {
   // Dashboard section
   const dashboardSection = (
     <div className="p-6 sm:p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Dashboard Avanzado</h2>
-          <p className="text-gray-600 dark:text-gray-300">Análisis en tiempo real de la plataforma ViveSpaces</p>
-        </div>
-        <div className="flex space-x-4">
-          <button
-            onClick={fetchDashboardData}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-          >
-            Actualizar
-          </button>
-          <select className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-            <option value="today">Hoy</option>
-            <option value="week">Esta semana</option>
-            <option value="month">Este mes</option>
-            <option value="year">Este año</option>
-          </select>
+      {/* Header mejorado con gradiente */}
+      <div className="relative mb-10 overflow-hidden">
+        {/* Fondo decorativo */}
+        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-purple-500/10 dark:from-emerald-500/5 dark:via-blue-500/5 dark:to-purple-500/5 rounded-3xl"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-emerald-400/20 to-blue-400/20 rounded-full blur-3xl"></div>
+
+        <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-6 sm:p-8">
+          <div className="space-y-2">
+            <h2 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 dark:from-white dark:via-gray-100 dark:to-white">
+              Dashboard Avanzado
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300 flex items-center space-x-2">
+              <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span className="font-medium">Análisis en tiempo real de la plataforma ViveSpaces</span>
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={fetchDashboardData}
+              disabled={loading}
+              className="group relative px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 group-hover:translate-x-full transition-transform duration-700"></div>
+              <div className="relative flex items-center space-x-2">
+                {loading ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Actualizando...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>Actualizar</span>
+                  </>
+                )}
+              </div>
+            </button>
+
+            <select className="px-5 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-medium shadow-md hover:shadow-lg transition-all duration-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer">
+              <option value="today">📅 Hoy</option>
+              <option value="week">📊 Esta semana</option>
+              <option value="month">📈 Este mes</option>
+              <option value="year">🎯 Este año</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -1222,106 +1330,229 @@ const AdminPanel = ({ user }) => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-            <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Análisis de Usuarios</h3>
-                <div className="flex space-x-2">
-                  <button className="px-3 py-1 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">7d</button>
-                  <button className="px-3 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded-full">30d</button>
-                </div>
-              </div>
+            <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden relative">
+              {/* Decoración de fondo */}
+              <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-blue-100/50 to-transparent dark:from-blue-900/20 rounded-full -mr-20 -mt-20"></div>
 
-              <div className="grid grid-cols-3 gap-6 mb-6">
-                <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {userStats?.new_registrations || 0}
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-2xl font-black text-gray-900 dark:text-white">Análisis de Usuarios</h3>
                   </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Nuevos Registros</div>
-                  <div className="text-xs text-green-600 mt-1">
-                    {userStats?.registration_growth ? `+${userStats.registration_growth}%` : 'Sin datos'}
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-xl">
-                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {userStats?.retention_rate || 0}%
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Retención</div>
-                  <div className="text-xs text-green-600 mt-1">
-                    {userStats?.retention_change ? `${userStats.retention_change > 0 ? '+' : ''}${userStats.retention_change}%` : 'Sin cambio'}
+                  <div className="flex space-x-2">
+                    <button className="px-4 py-2 text-sm font-bold bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105">7d</button>
+                    <button className="px-4 py-2 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-300">30d</button>
                   </div>
                 </div>
-                <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl">
-                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {userStats?.avg_session_time || 0}min
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Sesión Promedio</div>
-                  <div className="text-xs text-green-600 mt-1">
-                    {userStats?.session_time_change ? `${userStats.session_time_change > 0 ? '+' : ''}${userStats.session_time_change}min` : 'Sin cambio'}
-                  </div>
-                </div>
-              </div>
 
-              {analytics?.user_activity && (
-                <ActivityChart data={analytics.user_activity} />
-              )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
+                  {/* Mini Stat Card 1 */}
+                  <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 via-blue-100/50 to-blue-50 dark:from-blue-900/30 dark:via-blue-800/20 dark:to-blue-900/30 p-6 rounded-2xl border-2 border-blue-200/50 dark:border-blue-700/50 hover:border-blue-400 dark:hover:border-blue-500 transition-all duration-300 hover:shadow-xl cursor-pointer transform hover:-translate-y-1">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-400/10 rounded-full blur-2xl group-hover:bg-blue-400/20 transition-all duration-300"></div>
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                          </svg>
+                        </div>
+                        <div className="text-xs font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded-full">
+                          {userStats?.registration_growth ? `+${userStats.registration_growth}%` : '0%'}
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-blue-700 dark:text-blue-300 mb-1">
+                        {userStats?.new_registrations || 0}
+                      </div>
+                      <div className="text-sm font-semibold text-gray-600 dark:text-gray-400">Nuevos Registros</div>
+                    </div>
+                  </div>
+
+                  {/* Mini Stat Card 2 */}
+                  <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 via-emerald-100/50 to-emerald-50 dark:from-emerald-900/30 dark:via-emerald-800/20 dark:to-emerald-900/30 p-6 rounded-2xl border-2 border-emerald-200/50 dark:border-emerald-700/50 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all duration-300 hover:shadow-xl cursor-pointer transform hover:-translate-y-1">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-400/10 rounded-full blur-2xl group-hover:bg-emerald-400/20 transition-all duration-300"></div>
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                          </svg>
+                        </div>
+                        <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-1 rounded-full">
+                          {userStats?.retention_change ? `${userStats.retention_change > 0 ? '+' : ''}${userStats.retention_change}%` : '0%'}
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-700 dark:text-emerald-300 mb-1">
+                        {userStats?.retention_rate || 0}%
+                      </div>
+                      <div className="text-sm font-semibold text-gray-600 dark:text-gray-400">Tasa de Retención</div>
+                    </div>
+                  </div>
+
+                  {/* Mini Stat Card 3 */}
+                  <div className="group relative overflow-hidden bg-gradient-to-br from-purple-50 via-purple-100/50 to-purple-50 dark:from-purple-900/30 dark:via-purple-800/20 dark:to-purple-900/30 p-6 rounded-2xl border-2 border-purple-200/50 dark:border-purple-700/50 hover:border-purple-400 dark:hover:border-purple-500 transition-all duration-300 hover:shadow-xl cursor-pointer transform hover:-translate-y-1">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-purple-400/10 rounded-full blur-2xl group-hover:bg-purple-400/20 transition-all duration-300"></div>
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2 py-1 rounded-full">
+                          {userStats?.session_time_change ? `${userStats.session_time_change > 0 ? '+' : ''}${userStats.session_time_change}m` : '0m'}
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-purple-700 dark:text-purple-300 mb-1">
+                        {userStats?.avg_session_time || 0}<span className="text-xl">min</span>
+                      </div>
+                      <div className="text-sm font-semibold text-gray-600 dark:text-gray-400">Sesión Promedio</div>
+                    </div>
+                  </div>
+                </div>
+
+                {analytics?.user_activity && (
+                  <ActivityChart data={analytics.user_activity} />
+                )}
+              </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Sistema en Tiempo Real</h3>
+            <div className="relative bg-gradient-to-br from-white via-gray-50 to-white dark:from-gray-800 dark:via-gray-850 dark:to-gray-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
+              {/* Decoración de fondo */}
+              <div className="absolute top-0 left-0 w-32 h-32 bg-gradient-to-br from-emerald-200/30 to-transparent dark:from-emerald-900/20 rounded-full -ml-16 -mt-16 blur-2xl"></div>
+              <div className="absolute bottom-0 right-0 w-32 h-32 bg-gradient-to-tl from-blue-200/30 to-transparent dark:from-blue-900/20 rounded-full -mr-16 -mb-16 blur-2xl"></div>
 
-              <div className="space-y-6">
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">CPU</span>
-                    <span className="text-sm font-bold text-emerald-600">{systemStats?.cpu_usage || 0}%</span>
+              <div className="relative z-10">
+                <div className="flex items-center space-x-3 mb-8">
+                  <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                    </svg>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${systemStats?.cpu_usage || 0}%` }}
-                    ></div>
+                  <h3 className="text-2xl font-black text-gray-900 dark:text-white">Sistema en Tiempo Real</h3>
+                </div>
+
+                <div className="space-y-6">
+                  {/* CPU Stat */}
+                  <div className="group p-4 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-2xl border-2 border-emerald-200/50 dark:border-emerald-700/50 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all duration-300 hover:shadow-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                          </svg>
+                        </div>
+                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">CPU</span>
+                      </div>
+                      <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{systemStats?.cpu_usage || 0}%</span>
+                    </div>
+                    <div className="relative w-full h-3 bg-emerald-200/30 dark:bg-emerald-900/30 rounded-full overflow-hidden">
+                      <div
+                        className="absolute h-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 rounded-full transition-all duration-700 shadow-lg"
+                        style={{ width: `${systemStats?.cpu_usage || 0}%` }}
+                      >
+                        <div className="h-full w-full bg-gradient-to-r from-white/30 to-transparent animate-pulse"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Memory Stat */}
+                  <div className="group p-4 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-2xl border-2 border-blue-200/50 dark:border-blue-700/50 hover:border-blue-400 dark:hover:border-blue-500 transition-all duration-300 hover:shadow-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                          </svg>
+                        </div>
+                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Memoria</span>
+                      </div>
+                      <span className="text-2xl font-black text-blue-600 dark:text-blue-400">{systemStats?.memory_usage || 0}%</span>
+                    </div>
+                    <div className="relative w-full h-3 bg-blue-200/30 dark:bg-blue-900/30 rounded-full overflow-hidden">
+                      <div
+                        className="absolute h-full bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 rounded-full transition-all duration-700 shadow-lg"
+                        style={{ width: `${systemStats?.memory_usage || 0}%` }}
+                      >
+                        <div className="h-full w-full bg-gradient-to-r from-white/30 to-transparent animate-pulse"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Database Connections */}
+                  <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl border-2 border-purple-200/50 dark:border-purple-700/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-gray-700 dark:text-gray-300">Base de Datos</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Conexiones activas</div>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-black text-purple-600 dark:text-purple-400">{systemStats?.db_connections || 0}</span>
+                    </div>
+                  </div>
+
+                  {/* Response Time */}
+                  <div className="p-4 bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 rounded-2xl border-2 border-orange-200/50 dark:border-orange-700/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-gray-700 dark:text-gray-300">Tiempo Respuesta</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Promedio últimas 24h</div>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-black text-orange-600 dark:text-orange-400">{systemStats?.response_time || 0}<span className="text-sm">ms</span></span>
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Memoria</span>
-                    <span className="text-sm font-bold text-blue-600">{systemStats?.memory_usage || 0}%</span>
+                {/* Health Score - Mejorado */}
+                <div className="mt-8 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-purple-500/10 animate-pulse"></div>
+                  <div className="relative p-6 bg-gradient-to-br from-emerald-50 via-blue-50 to-purple-50 dark:from-emerald-900/30 dark:via-blue-900/30 dark:to-purple-900/30 rounded-2xl border-2 border-emerald-300 dark:border-emerald-700 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center space-x-2">
+                          <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Estado General del Sistema</span>
+                        </div>
+                        <div className="text-4xl font-black bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent">
+                          {systemStats?.health_score || 0}<span className="text-2xl">/10</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`inline-block px-4 py-2 rounded-xl font-bold text-sm ${
+                          (systemStats?.health_score || 0) >= 8
+                            ? 'bg-emerald-500 text-white'
+                            : (systemStats?.health_score || 0) >= 6
+                            ? 'bg-blue-500 text-white'
+                            : (systemStats?.health_score || 0) >= 4
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-red-500 text-white'
+                        }`}>
+                          {(systemStats?.health_score || 0) >= 8 ? '🎉 Excelente' :
+                           (systemStats?.health_score || 0) >= 6 ? '👍 Bueno' :
+                           (systemStats?.health_score || 0) >= 4 ? '⚠️ Regular' : '🚨 Crítico'}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-blue-400 to-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${systemStats?.memory_usage || 0}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Base de Datos</span>
-                    <span className="text-sm font-bold text-purple-600">{systemStats?.db_connections || 0}</span>
-                  </div>
-                  <div className="text-xs text-gray-500">Conexiones activas</div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Tiempo Respuesta</span>
-                    <span className="text-sm font-bold text-orange-600">{systemStats?.response_time || 0}ms</span>
-                  </div>
-                  <div className="text-xs text-gray-500">Promedio últimas 24h</div>
-                </div>
-              </div>
-
-              <div className="mt-8 p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/20 dark:to-blue-900/20 rounded-xl">
-                <div className="text-sm font-medium text-gray-900 dark:text-white mb-1">Estado General</div>
-                <div className="text-2xl font-bold text-emerald-600">
-                  {systemStats?.health_score || 0}/10
-                </div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">
-                  {systemStats?.health_score >= 8 ? 'Excelente' :
-                   systemStats?.health_score >= 6 ? 'Bueno' :
-                   systemStats?.health_score >= 4 ? 'Regular' : 'Crítico'}
                 </div>
               </div>
             </div>
@@ -1876,7 +2107,8 @@ const AdminPanel = ({ user }) => {
                         className="w-full h-48 object-cover cursor-pointer group-hover:scale-110 transition-transform duration-300"
                         onClick={() => setViewingPhotos(property)}
                         onError={(e) => {
-                          e.target.src = '/images/no-image-placeholder.png';
+                          console.error('Error loading property image:', e.target.src);
+                          e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TaW4gaW1hZ2VuPC90ZXh0Pjwvc3ZnPg==';
                         }}
                       />
                     ) : (
@@ -2325,15 +2557,27 @@ const AdminPanel = ({ user }) => {
               {viewingPhotos.photos && viewingPhotos.photos.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {viewingPhotos.photos.map((photo, index) => (
-                    <img
-                      key={index}
-                      src={photo.url}
-                      alt={`Foto ${index + 1}`}
-                      className="w-full h-48 object-cover rounded-lg border shadow-sm"
-                      onError={(e) => {
-                        console.error(`Error loading image ${index + 1}:`, e.target.src);
-                      }}
-                    />
+                    <div key={index} className="relative">
+                      <img
+                        src={photo.url}
+                        alt={`Foto ${index + 1}`}
+                        className="w-full h-48 object-cover rounded-lg border shadow-sm hover:shadow-lg transition-shadow"
+                        onError={(e) => {
+                          console.error(`Error loading image ${index + 1}:`, e.target.src);
+                          e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5FcnJvciBlbiBpbWFnZW48L3RleHQ+PC9zdmc+';
+                        }}
+                      />
+                      {photo.is_primary && (
+                        <div className="absolute top-2 right-2 bg-emerald-500 text-white px-2 py-1 rounded text-xs font-bold">
+                          Principal
+                        </div>
+                      )}
+                      {photo.is_duplicate && (
+                        <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded text-xs font-bold">
+                          Duplicada
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               ) : (

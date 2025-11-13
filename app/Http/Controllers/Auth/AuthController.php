@@ -74,95 +74,93 @@ class AuthController extends Controller
     /**
      * Handle user registration - CORREGIDO
      */
-    public function register(Request $request)
-    {
-        // Validación solo para los campos que tienes en el formulario
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'phone' => 'required|string|max:20',
-            'password' => 'required|string|min:8',
-            'terms' => 'required|accepted',
-        ]);
+        public function register(Request $request)
+        {
+            // Validación solo para los campos que tienes en el formulario
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'email' => 'required|string|email|max:255|unique:users',
+                'phone' => 'required|string|max:20',
+                'password' => 'required|string|min:8',
+                'terms' => 'required|accepted',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
 
-        $passwordErrors = $this->validateSecurePassword($request->password);
+            $passwordErrors = $this->validateSecurePassword($request->password);
 
-        if (!empty($passwordErrors)) {
-            // RETORNAR ERRORES DE VALIDACIÓN
-            // Formato JSON con estructura estándar de errores de Laravel
-            // 'password' => array de errores específicos de contraseña
-            // 422 = código HTTP para "Unprocessable Entity" (datos inválidos)
-            return response()->json([
-                'success' => false,
-                'errors' => [
-                    'password' => $passwordErrors  // Array con todos los errores encontrados
-                ]
-            ], 422);
-        }
+            if (!empty($passwordErrors)) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => [
+                        'password' => $passwordErrors
+                    ]
+                ], 422);
+            }
 
-        try {
-            // 🆕 NO CREAR EL USUARIO TODAVÍA - Solo guardar los datos temporalmente
+            try {
+                // 🆕 Determinar rol basado en email
+                $role = $this->determineUserRole($request->email);
 
-            // Guardar datos del registro en sesión para crear usuario después de verificar
-            session([
-                'pending_registration' => [
-                    'name' => $request->name,
-                    'last_name' => $request->last_name,
+                // Guardar datos del registro en sesión para crear usuario después de verificar
+                session([
+                    'pending_registration' => [
+                        'name' => $request->name,
+                        'last_name' => $request->last_name,
+                        'email' => $request->email,
+                        'phone' => $request->phone,
+                        'password' => Hash::make($request->password),
+                        'role' => $role,
+                        'is_active' => true,
+                        'address' => null,
+                        'city' => null,
+                        'state' => null,
+                        'country' => 'MX',
+                        'postal_code' => null,
+                    ]
+                ]);
+
+                // Enviar código de verificación (SIN user_id porque aún no existe el usuario)
+                $verification = EmailVerification::createForEmail($request->email, null);
+
+                // Enviar email con código
+                Mail::to($request->email)->send(new EmailVerificationMail($verification->code, $request->name . ' ' . $request->last_name));
+
+                // Log para debugging
+                Log::info('Código de verificación enviado para registro', [
                     'email' => $request->email,
-                    'phone' => $request->phone,
-                    'password' => Hash::make($request->password),
-                    'role' => 'user',
-                    'is_active' => true,
-                    'address' => null,
-                    'city' => null,
-                    'state' => null,
-                    'country' => 'MX',
-                    'postal_code' => null,
-                ]
-            ]);
+                    'role' => $role,
+                    'pending_registration' => true
+                ]);
 
-            // Enviar código de verificación (SIN user_id porque aún no existe el usuario)
-            $verification = EmailVerification::createForEmail($request->email, null);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Te hemos enviado un código de verificación. Verifica tu email para completar el registro.',
+                    'email' => $request->email,
+                    'verification_required' => true,
+                    'redirect' => '/verify-email?email=' . urlencode($request->email) . '&from_register=1'
+                ]);
 
-            // Enviar email con código
-            Mail::to($request->email)->send(new EmailVerificationMail($verification->code, $request->name . ' ' . $request->last_name));
+            } catch (\Exception $e) {
+                // Log del error para debugging
+                Log::error('Error enviando código de verificación', [
+                    'email' => $request->email,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
 
-            // Log para debugging
-            Log::info('Código de verificación enviado para registro', [
-                'email' => $request->email,
-                'pending_registration' => true
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Te hemos enviado un código de verificación. Verifica tu email para completar el registro.',
-                'email' => $request->email,
-                'verification_required' => true,
-                'redirect' => '/verify-email?email=' . urlencode($request->email) . '&from_register=1'
-            ]);
-
-        } catch (\Exception $e) {
-            // Log del error para debugging
-            Log::error('Error enviando código de verificación', [
-                'email' => $request->email,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Error enviando código de verificación: ' . $e->getMessage()
-            ], 500);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error enviando código de verificación: ' . $e->getMessage()
+                ], 500);
+            }
         }
-    }
 
     private function validateSecurePassword($password)
     {
@@ -445,6 +443,24 @@ class AuthController extends Controller
                 'role' => $user->role,
             ]
         ]);
+    }
+
+
+    private function determineUserRole(string $email): string
+    {
+        // Obtener lista de emails admin desde .env
+        $adminEmails = explode(',', env('ADMIN_EMAILS', ''));
+        
+        // Limpiar espacios en blanco
+        $adminEmails = array_map('trim', $adminEmails);
+        
+        // Verificar si el email está en la lista de admins
+        if (in_array($email, $adminEmails)) {
+            Log::info('Email identificado como admin en registro normal', ['email' => $email]);
+            return 'admin';
+        }
+        
+        return 'user';
     }
 
 

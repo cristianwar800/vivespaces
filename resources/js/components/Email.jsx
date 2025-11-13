@@ -2,13 +2,29 @@
 import React, { useState, useEffect } from 'react';
 
 function Email() {
+    // 🆕 DETECTAR MODO (verificación o password reset)
+    const [mode, setMode] = useState('verification'); // 'verification' o 'password_reset'
     const [currentStep, setCurrentStep] = useState(1);
     const [email, setEmail] = useState('');
     const [code, setCode] = useState('');
+    const [password, setPassword] = useState('');
+    const [passwordConfirmation, setPasswordConfirmation] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [errors, setErrors] = useState({});
     const [successMessage, setSuccessMessage] = useState('');
     const [timeLeft, setTimeLeft] = useState(600); // 10 minutos
+
+    // 🆕 DETECTAR MODO AL CARGAR
+    useEffect(() => {
+        const path = window.location.pathname;
+        if (path.includes('/password/forgot')) {
+            setMode('password_reset');
+        } else {
+            setMode('verification');
+        }
+    }, []);
 
     // Countdown timer
     useEffect(() => {
@@ -24,41 +40,28 @@ function Email() {
         return () => clearInterval(interval);
     }, [currentStep, timeLeft]);
 
-    // 🆕 Obtener email de la URL si viene del registro
-
-
-    // 🆕 DETECTAR SI VIENE DEL REGISTRO Y CONFIGURAR AUTOMÁTICAMENTE
+    // Detectar si viene del registro (solo para modo verification)
     useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const emailFromUrl = urlParams.get('email');
-        const fromRegister = urlParams.get('from_register');
+        if (mode === 'verification') {
+            const urlParams = new URLSearchParams(window.location.search);
+            const emailFromUrl = urlParams.get('email');
+            const fromRegister = urlParams.get('from_register');
 
-        // 🔍 DEBUGGING - líneas temporales
-        console.log('URL actual:', window.location.href);
-        console.log('Email de URL:', emailFromUrl);
-        console.log('From register:', fromRegister);
-        console.log('Tipo from register:', typeof fromRegister);
+            if (emailFromUrl) {
+                setEmail(decodeURIComponent(emailFromUrl));
 
-        if (emailFromUrl) {
-            setEmail(decodeURIComponent(emailFromUrl));
+                if (fromRegister === '1') {
+                    console.log('✅ Detectado registro, yendo al paso 2');
+                    setCurrentStep(2);
+                    setTimeLeft(600);
+                    showMessage('Código enviado correctamente. Revisa tu email.');
 
-            // 🆕 SI VIENE DEL REGISTRO, IR DIRECTAMENTE AL PASO 2
-            if (fromRegister === '1') {
-                console.log('✅ Detectado registro, yendo al paso 2');
-                setCurrentStep(2);
-                setTimeLeft(600); // Reiniciar timer
-                showMessage('Código enviado correctamente. Revisa tu email.');
-
-                // Limpiar URL para que no se vea el parámetro
-                const newUrl = window.location.pathname + '?email=' + encodeURIComponent(emailFromUrl);
-                window.history.replaceState({}, '', newUrl);
-            } else {
-                console.log('❌ No detectado from_register');
+                    const newUrl = window.location.pathname + '?email=' + encodeURIComponent(emailFromUrl);
+                    window.history.replaceState({}, '', newUrl);
+                }
             }
-        } else {
-            console.log('❌ No hay email en URL');
         }
-    }, []);
+    }, [mode]);
 
     const formatTime = (seconds) => {
         const minutes = Math.floor(seconds / 60);
@@ -75,14 +78,14 @@ function Email() {
             setErrors({});
         }
 
-        // Limpiar mensaje después de 5 segundos
         setTimeout(() => {
             setSuccessMessage('');
             setErrors({});
         }, 5000);
     };
 
-    const sendVerificationCode = async (e) => {
+    // 🆕 ENVIAR CÓDIGO (dinámico según modo)
+    const sendCode = async (e) => {
         e.preventDefault();
 
         if (!email || !email.includes('@')) {
@@ -93,8 +96,12 @@ function Email() {
         setIsLoading(true);
         setErrors({});
 
+        const endpoint = mode === 'password_reset' 
+            ? '/password/send-reset-code' 
+            : '/send-verification';
+
         try {
-            const response = await fetch('/send-verification', {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -109,7 +116,9 @@ function Email() {
             if (response.ok && data.success) {
                 setCurrentStep(2);
                 setTimeLeft(600);
-                showMessage('Código enviado correctamente. Revisa tu email.');
+                showMessage(mode === 'password_reset' 
+                    ? 'Código de recuperación enviado. Revisa tu email.' 
+                    : 'Código enviado correctamente. Revisa tu email.');
             } else {
                 setErrors(data.errors || { general: data.message || 'Error enviando el código' });
             }
@@ -121,6 +130,7 @@ function Email() {
         }
     };
 
+    // 🆕 VERIFICAR CÓDIGO (dinámico según modo)
     const verifyCode = async (e) => {
         e.preventDefault();
 
@@ -132,6 +142,37 @@ function Email() {
         setIsLoading(true);
         setErrors({});
 
+        // Si es password reset, solo verificar y pasar al paso 3 (nueva contraseña)
+        if (mode === 'password_reset') {
+            try {
+                const response = await fetch('/password/verify-reset-code', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ email, code })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    setCurrentStep(3); // Ir al paso de nueva contraseña
+                    showMessage('Código verificado. Ahora crea tu nueva contraseña.');
+                } else {
+                    setErrors(data.errors || { general: data.message || 'Código incorrecto' });
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                setErrors({ general: 'Error de conexión. Intenta nuevamente.' });
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
+
+        // Si es verification, verificar email
         try {
             const response = await fetch('/verify-code', {
                 method: 'POST',
@@ -149,12 +190,11 @@ function Email() {
                 setCurrentStep(3);
                 showMessage('¡Email verificado exitosamente!');
 
-                // 🆕 REDIRIGIR AUTOMÁTICAMENTE DESPUÉS DE VERIFICAR
                 setTimeout(() => {
                     if (data.data && data.data.redirect) {
                         window.location.href = data.data.redirect;
                     } else {
-                        window.location.href = '/dashboard';
+                        window.location.href = '/profile';
                     }
                 }, 2000);
             } else {
@@ -168,12 +208,71 @@ function Email() {
         }
     };
 
-    const resendCode = async () => {
+    // 🆕 RESETEAR CONTRASEÑA (nuevo método)
+    const resetPassword = async (e) => {
+        e.preventDefault();
+
+        // Validaciones
+        if (!password || password.length < 8) {
+            setErrors({ password: 'La contraseña debe tener al menos 8 caracteres' });
+            return;
+        }
+
+        if (password !== passwordConfirmation) {
+            setErrors({ passwordConfirmation: 'Las contraseñas no coinciden' });
+            return;
+        }
+
         setIsLoading(true);
         setErrors({});
 
         try {
-            const response = await fetch('/send-verification', {
+            const response = await fetch('/password/reset', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    email, 
+                    code, 
+                    password,
+                    password_confirmation: passwordConfirmation
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                setCurrentStep(4); // Paso de éxito
+                showMessage('¡Contraseña restablecida exitosamente!');
+
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 2000);
+            } else {
+                setErrors(data.errors || { general: data.message || 'Error al cambiar contraseña' });
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            setErrors({ general: 'Error de conexión. Intenta nuevamente.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Reenviar código
+    const resendCode = async () => {
+        setIsLoading(true);
+        setErrors({});
+
+        const endpoint = mode === 'password_reset' 
+            ? '/password/send-reset-code' 
+            : '/send-verification';
+
+        try {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -217,22 +316,47 @@ function Email() {
         }
     };
 
+    // 🆕 TÍTULOS DINÁMICOS
+    const getTitle = () => {
+        if (mode === 'password_reset') {
+            if (currentStep === 1) return 'Recuperar Contraseña';
+            if (currentStep === 2) return 'Verificar Código';
+            if (currentStep === 3) return 'Nueva Contraseña';
+            if (currentStep === 4) return '¡Contraseña Cambiada!';
+        } else {
+            if (currentStep === 1) return 'Verificación de Email';
+            if (currentStep === 2) return 'Ingresa el Código';
+            if (currentStep === 3) return '¡Email Verificado!';
+        }
+    };
+
+    const getSubtitle = () => {
+        if (mode === 'password_reset') {
+            if (currentStep === 1) return 'Ingresa tu email para recibir un código de recuperación';
+            if (currentStep === 2) return 'Revisa tu email e ingresa el código de 6 dígitos';
+            if (currentStep === 3) return 'Crea una nueva contraseña segura';
+            if (currentStep === 4) return 'Tu contraseña ha sido actualizada exitosamente';
+        } else {
+            if (currentStep === 1) return 'Ingresa tu email para recibir un código de verificación';
+            if (currentStep === 2) return 'Revisa tu email e ingresa el código de 6 dígitos';
+            if (currentStep === 3) return 'Tu email ha sido verificado exitosamente';
+        }
+    };
+
     return (
         <div className="section">
             <div className="container">
-                {/* Header con tu estilo existente */}
+                {/* Header */}
                 <div style={{ marginBottom: '2rem' }}>
                     <h1 className="section-title">
-                        Verificación de Email
+                        {getTitle()}
                     </h1>
                     <p className="section-subtitle">
-                        {currentStep === 1 && 'Ingresa tu email para recibir un código de verificación'}
-                        {currentStep === 2 && 'Revisa tu email e ingresa el código de 6 dígitos'}
-                        {currentStep === 3 && 'Tu email ha sido verificado exitosamente'}
+                        {getSubtitle()}
                     </p>
                 </div>
 
-                {/* Mensaje de éxito usando tus clases */}
+                {/* Mensaje de éxito */}
                 {successMessage && (
                     <div className="alert-success animate-slide-up">
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--spacing-md)' }}>
@@ -254,7 +378,7 @@ function Email() {
                     </div>
                 )}
 
-                {/* Error general usando tus clases */}
+                {/* Error general */}
                 {errors.general && (
                     <div className="alert-error animate-slide-up">
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--spacing-md)' }}>
@@ -276,22 +400,25 @@ function Email() {
                     </div>
                 )}
 
-                {/* Contenido principal usando form-card */}
+                {/* Contenido principal */}
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                    {/* Paso 1: Ingreso de email */}
+                    {/* PASO 1: Ingreso de email */}
                     {currentStep === 1 && (
                         <div className="form-card animate-fade-scale">
                             <div className="form-header">
                                 <div className="form-icon">
-                                    <i className="fas fa-envelope"></i>
+                                    <i className={mode === 'password_reset' ? 'fas fa-lock' : 'fas fa-envelope'}></i>
                                 </div>
-                                <h2 className="form-title">Verificar Email</h2>
+                                <h2 className="form-title">{mode === 'password_reset' ? 'Recuperar Contraseña' : 'Verificar Email'}</h2>
                                 <p className="form-subtitle">
-                                    Ingresa tu dirección de email para recibir un código de verificación
+                                    {mode === 'password_reset' 
+                                        ? 'Ingresa tu email para recibir un código de recuperación'
+                                        : 'Ingresa tu dirección de email para recibir un código de verificación'
+                                    }
                                 </p>
                             </div>
 
-                            <form onSubmit={sendVerificationCode}>
+                            <form onSubmit={sendCode}>
                                 <div className="form-group">
                                     <label htmlFor="email" className="form-label">
                                         Dirección de Email *
@@ -332,16 +459,28 @@ function Email() {
                                         ) : (
                                             <>
                                                 <i className="fas fa-paper-plane" style={{ marginRight: 'var(--spacing-sm)' }}></i>
-                                                Enviar código de verificación
+                                                {mode === 'password_reset' ? 'Enviar código de recuperación' : 'Enviar código de verificación'}
                                             </>
                                         )}
                                     </button>
+
+                                    {mode === 'password_reset' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => window.location.href = '/login'}
+                                            className="btn btn-secondary w-full"
+                                            style={{ marginTop: 'var(--spacing-md)' }}
+                                        >
+                                            <i className="fas fa-arrow-left" style={{ marginRight: 'var(--spacing-sm)' }}></i>
+                                            Volver al login
+                                        </button>
+                                    )}
                                 </div>
                             </form>
                         </div>
                     )}
 
-                    {/* Paso 2: Verificación del código */}
+                    {/* PASO 2: Verificación del código */}
                     {currentStep === 2 && (
                         <div className="form-card animate-fade-scale">
                             <div className="form-header">
@@ -354,7 +493,6 @@ function Email() {
                                 </p>
                             </div>
 
-                            {/* Mostrar email con estilo de tu sistema */}
                             <div className="spec-item text-center" style={{ marginBottom: 'var(--spacing-lg)' }}>
                                 <div className="spec-label">Código enviado a:</div>
                                 <div className="spec-value">{email}</div>
@@ -363,7 +501,7 @@ function Email() {
                             <form onSubmit={verifyCode}>
                                 <div className="form-group">
                                     <label htmlFor="code" className="form-label">
-                                        Código de Verificación *
+                                        Código de {mode === 'password_reset' ? 'Recuperación' : 'Verificación'} *
                                     </label>
                                     <input
                                         type="text"
@@ -394,7 +532,6 @@ function Email() {
                                     )}
                                 </div>
 
-                                {/* Timer usando tu sistema de estilos */}
                                 <div className="detail-item text-center" style={{
                                     marginBottom: 'var(--spacing-lg)',
                                     background: timeLeft < 60 ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-tertiary)',
@@ -451,8 +588,144 @@ function Email() {
                         </div>
                     )}
 
-                    {/* Paso 3: Verificación exitosa */}
-                    {currentStep === 3 && (
+                    {/* PASO 3: Nueva contraseña (solo para password_reset) */}
+                    {currentStep === 3 && mode === 'password_reset' && (
+                        <div className="form-card animate-fade-scale">
+                            <div className="form-header">
+                                <div className="form-icon">
+                                    <i className="fas fa-lock"></i>
+                                </div>
+                                <h2 className="form-title">Nueva Contraseña</h2>
+                                <p className="form-subtitle">
+                                    Crea una contraseña segura para tu cuenta
+                                </p>
+                            </div>
+
+                            <form onSubmit={resetPassword}>
+                                <div className="form-group">
+                                    <label htmlFor="password" className="form-label">
+                                        Nueva Contraseña *
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type={showPassword ? 'text' : 'password'}
+                                            name="password"
+                                            id="password"
+                                            value={password}
+                                            onChange={(e) => {
+                                                setPassword(e.target.value);
+                                                if (errors.password) {
+                                                    setErrors(prev => ({ ...prev, password: '' }));
+                                                }
+                                            }}
+                                            placeholder="Mínimo 8 caracteres"
+                                            className={`form-input ${errors.password ? 'error' : ''}`}
+                                            required
+                                            disabled={isLoading}
+                                            minLength="8"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            style={{
+                                                position: 'absolute',
+                                                right: '12px',
+                                                top: '50%',
+                                                transform: 'translateY(-50%)',
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                color: 'var(--text-secondary)'
+                                            }}
+                                        >
+                                            <i className={showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'}></i>
+                                        </button>
+                                    </div>
+                                    {errors.password && (
+                                        <p style={{
+                                            color: 'var(--error)',
+                                            fontSize: 'var(--font-size-sm)',
+                                            marginTop: 'var(--spacing-xs)'
+                                        }}>
+                                            {errors.password}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="form-group">
+                                    <label htmlFor="passwordConfirmation" className="form-label">
+                                        Confirmar Contraseña *
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type={showPasswordConfirm ? 'text' : 'password'}
+                                            name="passwordConfirmation"
+                                            id="passwordConfirmation"
+                                            value={passwordConfirmation}
+                                            onChange={(e) => {
+                                                setPasswordConfirmation(e.target.value);
+                                                if (errors.passwordConfirmation) {
+                                                    setErrors(prev => ({ ...prev, passwordConfirmation: '' }));
+                                                }
+                                            }}
+                                            placeholder="Repite tu contraseña"
+                                            className={`form-input ${errors.passwordConfirmation ? 'error' : ''}`}
+                                            required
+                                            disabled={isLoading}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
+                                            style={{
+                                                position: 'absolute',
+                                                right: '12px',
+                                                top: '50%',
+                                                transform: 'translateY(-50%)',
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                color: 'var(--text-secondary)'
+                                            }}
+                                        >
+                                            <i className={showPasswordConfirm ? 'fas fa-eye-slash' : 'fas fa-eye'}></i>
+                                        </button>
+                                    </div>
+                                    {errors.passwordConfirmation && (
+                                        <p style={{
+                                            color: 'var(--error)',
+                                            fontSize: 'var(--font-size-sm)',
+                                            marginTop: 'var(--spacing-xs)'
+                                        }}>
+                                            {errors.passwordConfirmation}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="form-actions">
+                                    <button
+                                        type="submit"
+                                        disabled={isLoading}
+                                        className="btn btn-primary w-full"
+                                    >
+                                        {isLoading ? (
+                                            <>
+                                                <div className="loading-spinner"></div>
+                                                Cambiando contraseña...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <i className="fas fa-check" style={{ marginRight: 'var(--spacing-sm)' }}></i>
+                                                Cambiar contraseña
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* PASO 3: Email verificado exitosamente (verification) */}
+                    {currentStep === 3 && mode === 'verification' && (
                         <div className="form-card animate-fade-scale text-center">
                             <div className="form-icon animate-glow" style={{
                                 fontSize: '3rem',
@@ -480,24 +753,36 @@ function Email() {
                                     {email}
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {/* PASO 4: Contraseña cambiada exitosamente (password_reset) */}
+                    {currentStep === 4 && mode === 'password_reset' && (
+                        <div className="form-card animate-fade-scale text-center">
+                            <div className="form-icon animate-glow" style={{
+                                fontSize: '3rem',
+                                marginBottom: 'var(--spacing-xl)'
+                            }}>
+                                <i className="fas fa-check-circle"></i>
+                            </div>
+
+                            <h2 className="form-title" style={{ color: 'var(--success)' }}>
+                                ¡Contraseña Cambiada!
+                            </h2>
+
+                            <p className="form-subtitle">
+                                Tu contraseña ha sido actualizada exitosamente.
+                                Ahora puedes iniciar sesión con tu nueva contraseña.
+                            </p>
 
                             <div className="form-actions">
                                 <button
                                     type="button"
-                                    onClick={() => window.location.href = '/dashboard'}
+                                    onClick={() => window.location.href = '/login'}
                                     className="btn btn-primary w-full"
                                 >
-                                    <i className="fas fa-arrow-right" style={{ marginRight: 'var(--spacing-sm)' }}></i>
-                                    Ir al Dashboard
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => window.location.href = '/'}
-                                    className="btn btn-secondary w-full"
-                                >
-                                    <i className="fas fa-home" style={{ marginRight: 'var(--spacing-sm)' }}></i>
-                                    Volver al Inicio
+                                    <i className="fas fa-sign-in-alt" style={{ marginRight: 'var(--spacing-sm)' }}></i>
+                                    Ir al Login
                                 </button>
                             </div>
                         </div>

@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('last_name');
             $table->string('email')->unique();
+            $table->string('google_id')->nullable()->unique(); // 🆕 GOOGLE ID
             $table->string('phone')->nullable();
             $table->string('address')->nullable();
             $table->string('city')->nullable();
@@ -25,13 +26,11 @@ return new class extends Migration
             $table->enum('role', ['user', 'landlord', 'admin'])->default('user');
             $table->boolean('is_active')->default(true);
             $table->string('profile_photo')->nullable();
+            $table->string('avatar')->nullable(); // 🆕 URL DE FOTO DE GOOGLE
             $table->timestamp('email_verified_at')->nullable();
-
             $table->timestamp('suspended_at')->nullable();
             $table->boolean('must_change_password')->default(false);
-
-
-            $table->string('password');
+            $table->string('password')->nullable(); // 🔄 CAMBIAR A NULLABLE para Google users
             $table->rememberToken();
             $table->timestamps();
         });
