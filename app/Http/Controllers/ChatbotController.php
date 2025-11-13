@@ -12,7 +12,7 @@ use App\Models\User;
 use App\Models\Message;
 use App\Models\Chatbot;
 
-class ChatBotController extends Controller
+class ChatbotController extends Controller
 {
     private $menuStructure;
 

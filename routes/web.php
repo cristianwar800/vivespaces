@@ -14,7 +14,7 @@ use App\Http\Controllers\NotificationController;
 use Illuminate\Http\Request;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Http;
-use App\Http\Controllers\ChatBotController;
+use App\Http\Controllers\ChatbotController;
 use App\Http\Controllers\ContactoController;
 use App\Http\Controllers\UserRatingController;
 use Inertia\Inertia;
@@ -382,9 +382,9 @@ Route::get('/api/properties-map', function() {
 Route::prefix('api/chatbot')
     ->middleware(['throttle:100,1'])
     ->group(function () {
-        Route::post('/welcome', [ChatBotController::class, 'getWelcomeMessage'])
+        Route::post('/welcome', [ChatbotController::class, 'getWelcomeMessage'])
             ->name('api.chatbot.welcome');
-        Route::post('/message', [ChatBotController::class, 'processMessage'])
+        Route::post('/message', [ChatbotController::class, 'processMessage'])
             ->name('api.chatbot.message');
     });
 
