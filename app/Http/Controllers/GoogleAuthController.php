@@ -18,9 +18,22 @@ class GoogleAuthController extends Controller
     public function redirectToGoogle()
     {
         try {
+            Log::info('🔵 GOOGLE AUTH - Iniciando redirección a Google', [
+                'app_url' => config('app.url'),
+                'google_client_id' => config('services.google.client_id'),
+                'google_redirect' => config('services.google.redirect'),
+                'session_domain' => config('session.domain'),
+                'session_secure' => config('session.secure'),
+                'session_same_site' => config('session.same_site'),
+            ]);
+
             return Socialite::driver('google')->redirect();
         } catch (Exception $e) {
-            Log::error('Error redirigiendo a Google: ' . $e->getMessage());
+            Log::error('❌ GOOGLE AUTH - Error redirigiendo a Google', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return redirect()->route('login')
                            ->with('error', 'Error al conectar con Google. Verifica tu configuración.');
         }
@@ -37,13 +50,24 @@ class GoogleAuthController extends Controller
     public function handleGoogleCallback()
     {
         try {
+            Log::info('🟢 GOOGLE CALLBACK - Recibiendo callback de Google', [
+                'request_url' => request()->fullUrl(),
+                'request_method' => request()->method(),
+                'has_code' => request()->has('code'),
+                'has_error' => request()->has('error'),
+                'error_param' => request()->get('error'),
+                'session_id' => session()->getId(),
+                'headers' => request()->headers->all(),
+            ]);
+
             // Obtener usuario de Google
             $googleUser = Socialite::driver('google')->user();
-            
-            Log::info('Usuario de Google obtenido', [
+
+            Log::info('✅ GOOGLE CALLBACK - Usuario de Google obtenido exitosamente', [
                 'email' => $googleUser->email,
                 'name' => $googleUser->name,
-                'google_id' => $googleUser->id
+                'google_id' => $googleUser->id,
+                'avatar' => $googleUser->avatar,
             ]);
             
             // 🆕 DETERMINAR EL ROL DEL USUARIO
@@ -56,27 +80,37 @@ class GoogleAuthController extends Controller
             
             if ($user) {
                 // Usuario existe - actualizar google_id y avatar si no los tiene
-                Log::info('Usuario encontrado, actualizando datos', ['user_id' => $user->id]);
-                
+                Log::info('👤 GOOGLE CALLBACK - Usuario encontrado en BD', [
+                    'user_id' => $user->id,
+                    'user_email' => $user->email,
+                    'user_role' => $user->role,
+                    'has_google_id' => !empty($user->google_id)
+                ]);
+
                 if (!$user->google_id) {
                     $user->update([
                         'google_id' => $googleUser->id,
                         'avatar' => $googleUser->avatar,
                     ]);
+                    Log::info('✏️ GOOGLE CALLBACK - Google ID y avatar actualizados', ['user_id' => $user->id]);
                 }
 
                 // 🆕 ACTUALIZAR ROL SI ES ADMIN (solo si aún no es admin)
                 if ($role === 'admin' && $user->role !== 'admin') {
                     $user->update(['role' => 'admin']);
-                    Log::info('Usuario promovido a admin', ['user_id' => $user->id, 'email' => $user->email]);
+                    Log::info('⭐ GOOGLE CALLBACK - Usuario promovido a admin', ['user_id' => $user->id, 'email' => $user->email]);
                 }
-                
+
             } else {
                 // Usuario NO existe - crear nuevo
-                Log::info('Creando nuevo usuario desde Google', ['role' => $role]);
-                
+                Log::info('🆕 GOOGLE CALLBACK - Creando nuevo usuario', [
+                    'email' => $googleUser->email,
+                    'name' => $googleUser->name,
+                    'role' => $role
+                ]);
+
                 $nameParts = explode(' ', $googleUser->name, 2);
-                
+
                 $user = User::create([
                     'name' => $nameParts[0] ?? $googleUser->name,
                     'last_name' => $nameParts[1] ?? '',
@@ -89,29 +123,45 @@ class GoogleAuthController extends Controller
                     'is_active' => true,
                     'country' => 'MX',
                 ]);
-                
-                Log::info('Usuario creado exitosamente', [
+
+                Log::info('✅ GOOGLE CALLBACK - Usuario creado exitosamente', [
                     'user_id' => $user->id,
                     'role' => $user->role,
                     'email' => $user->email
                 ]);
             }
-            
+
             // Login automático
             Auth::login($user, true);
-            
-            Log::info('Login exitoso con Google', [
+
+            Log::info('🔓 GOOGLE CALLBACK - Login exitoso, sesión creada', [
                 'user_id' => $user->id,
-                'role' => $user->role
+                'user_email' => $user->email,
+                'user_role' => $user->role,
+                'session_id' => session()->getId(),
+                'auth_check' => Auth::check(),
+                'auth_id' => Auth::id(),
             ]);
-            
+
             // Redirigir a welcome
+            Log::info('🔄 GOOGLE CALLBACK - Redirigiendo a welcome', [
+                'redirect_route' => route('welcome'),
+                'user_id' => $user->id
+            ]);
+
             return redirect()->route('welcome');
             
         } catch (Exception $e) {
-            Log::error('Google login error: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+            Log::error('❌ GOOGLE CALLBACK - Error fatal en callback', [
+                'error_message' => $e->getMessage(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'request_url' => request()->fullUrl(),
+                'has_code' => request()->has('code'),
+                'error_param' => request()->get('error'),
+                'stack_trace' => $e->getTraceAsString(),
+            ]);
+
             return redirect()->route('login')
                         ->with('error', 'Error al iniciar sesión con Google. Intenta de nuevo.');
         }

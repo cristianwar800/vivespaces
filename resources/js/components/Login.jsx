@@ -14,6 +14,18 @@ function Login() {
     const [successMessage, setSuccessMessage] = useState('');
 
     useEffect(() => {
+        // 🔍 LOGS DE GOOGLE CALLBACK
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('code') || urlParams.has('error')) {
+            console.log('🟢 FRONTEND - Detectado callback de Google');
+            console.log('🟢 FRONTEND - URL completa:', window.location.href);
+            console.log('🟢 FRONTEND - Tiene code:', urlParams.has('code'));
+            console.log('🟢 FRONTEND - Tiene error:', urlParams.has('error'));
+            console.log('🟢 FRONTEND - Error value:', urlParams.get('error'));
+            console.log('🟢 FRONTEND - Cookies actuales:', document.cookie);
+            console.log('🟢 FRONTEND - Referer:', document.referrer);
+        }
+
         // Aplicar tema inicial
         const savedTheme = localStorage.getItem('theme') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -238,7 +250,15 @@ function Login() {
                                 <div className="mb-6">
                                     <button
                                         type="button"
-                                        onClick={() => window.location.href = '/auth/google'}
+                                        onClick={() => {
+                                            console.log('🔵 FRONTEND - Botón de Google clickeado');
+                                            console.log('🔵 FRONTEND - URL actual:', window.location.href);
+                                            console.log('🔵 FRONTEND - Redirigiendo a: /auth/google');
+                                            console.log('🔵 FRONTEND - Session Storage:', sessionStorage);
+                                            console.log('🔵 FRONTEND - Local Storage:', localStorage);
+                                            console.log('🔵 FRONTEND - Cookies:', document.cookie);
+                                            window.location.href = '/auth/google';
+                                        }}
                                         className="google-btn-hover w-full flex justify-center items-center py-4 px-4 border-2 border-gray-300 dark:border-gray-600 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800 transition-all duration-300 shadow-lg hover:shadow-xl group"
                                     >
                                         <svg className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
