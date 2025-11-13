@@ -10,6 +10,7 @@
                 'property' => $property ?? null,
                 'currentPage' => $currentPage ?? 'index',
                 'csrfToken' => csrf_token(),
+                'verificationRequired' => $verificationRequired ?? true,
                 'routes' => [
                     'index' => route('properties'),
                     'store' => route('properties.store'),

@@ -524,7 +524,7 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
 
 
 
-function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearchTerm, typeFilter, setTypeFilter, roomsFilter, setRoomsFilter, navigate, contactSeller, showToast, currentPage }) {
+function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearchTerm, typeFilter, setTypeFilter, roomsFilter, setRoomsFilter, navigate, contactSeller, showToast, currentPage, verificationRequired }) {
     const [isLoading, setIsLoading] = useState(false);
     const [viewMode, setViewMode] = useState('grid');
 
@@ -657,7 +657,7 @@ function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearc
                             </div>
 
                             {user && (
-                                user.is_identity_verified ? (
+                                (!verificationRequired || user.is_identity_verified) ? (
                                     <Button variant="primary" onClick={() => navigate('create')} className="whitespace-nowrap" size="sm">
                                         <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -723,7 +723,7 @@ function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearc
                                 {getEmptyStateMessage().description}
                             </p>
                             {user && (
-                                user.is_identity_verified ? (
+                                (!verificationRequired || user.is_identity_verified) ? (
                                     <Button variant="primary" onClick={() => navigate('create')}>
                                         <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -3099,8 +3099,8 @@ function Properties() {
     }, [appData.currentPage, appData.property]);
 
     const navigate = useCallback((page, propertyId = null) => {
-        // 🔒 VALIDACIÓN: Verificar identidad para crear/editar propiedades
-        if ((page === 'create' || page === 'edit') && user && !user.is_identity_verified) {
+        // 🔒 VALIDACIÓN: Verificar identidad para crear/editar propiedades (solo si está habilitado en configuración)
+        if ((page === 'create' || page === 'edit') && user && appData.verificationRequired && !user.is_identity_verified) {
             showToast('Debes verificar tu identidad antes de publicar propiedades', 'error');
             setTimeout(() => {
                 window.location.href = '/verification/identity';
@@ -3127,7 +3127,7 @@ function Properties() {
             default:
                 console.warn(`Unknown navigation page: ${page}`);
         }
-    }, [appData.routes, user, showToast]);
+    }, [appData.routes, appData.verificationRequired, user, showToast]);
 
     const contactSeller = useCallback(async (propertyId, sellerId) => {
         try {
@@ -3348,6 +3348,7 @@ function Properties() {
                         contactSeller={contactSeller}
                         showToast={showToast}
                         currentPage={appData.currentPage}
+                        verificationRequired={appData.verificationRequired ?? true}
                     />
                 );
             case 'show':
@@ -3391,6 +3392,7 @@ function Properties() {
                         contactSeller={contactSeller}
                         showToast={showToast}
                         currentPage={appData.currentPage}
+                        verificationRequired={appData.verificationRequired ?? true}
                     />
                 );
         }

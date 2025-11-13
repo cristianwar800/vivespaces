@@ -207,6 +207,25 @@ function Navbar({ user = null }) {
    const [dropdownOpen, setDropdownOpen] = useState(false);
    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
    const [isScrolled, setIsScrolled] = useState(false);
+
+   // Notificar cuando el menú móvil cambia de estado
+   useEffect(() => {
+       const event = new CustomEvent('mobile-menu-toggle', {
+           detail: { isOpen: mobileMenuOpen }
+       });
+       window.dispatchEvent(event);
+
+       // Bloquear scroll del body cuando el menú móvil está abierto
+       if (mobileMenuOpen) {
+           document.body.style.overflow = 'hidden';
+           document.body.style.position = 'fixed';
+           document.body.style.width = '100%';
+       } else {
+           document.body.style.overflow = '';
+           document.body.style.position = '';
+           document.body.style.width = '';
+       }
+   }, [mobileMenuOpen]);
    const [searchQuery, setSearchQuery] = useState('');
    const [searchResults, setSearchResults] = useState([]);
    const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -313,6 +332,11 @@ const performSearch = async (query) => {
                setDropdownOpen(false);
                setIsSearchOpen(false);
                setIsSearchExpanded(false);
+
+               // Restaurar scroll del body inmediatamente al cambiar a desktop
+               document.body.style.overflow = '';
+               document.body.style.position = '';
+               document.body.style.width = '';
            }
        };
 
@@ -400,7 +424,7 @@ const performSearch = async (query) => {
 
    return (
        <>
-       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+       <nav className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${
            isScrolled
                ? 'backdrop-blur-xl bg-white/95 dark:bg-gray-900/95 shadow-xl border-b border-gray-200/50 dark:border-gray-700/50'
                : 'backdrop-blur-lg bg-white/90 dark:bg-gray-900/90 shadow-lg border-b border-gray-200/30 dark:border-gray-700/30'
@@ -850,7 +874,11 @@ const performSearch = async (query) => {
 
            {/* MENÚ MÓVIL */}
            <div className={`xl:hidden transition-all duration-300 ease-in-out ${mobileMenuOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-               <div className="px-4 pt-4 pb-6 space-y-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50" ref={mobileMenuRef}>
+               <div
+                   className="px-4 pt-4 pb-6 space-y-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50 overflow-y-auto max-h-[calc(100vh-80px)]"
+                   ref={mobileMenuRef}
+                   style={{ maxHeight: mobileMenuOpen ? 'calc(100vh - 80px)' : '0' }}
+               >
 
                    {user && (
                        <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-lg mb-4">

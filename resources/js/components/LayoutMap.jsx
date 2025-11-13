@@ -436,6 +436,9 @@ function LayoutMap({ user = null }) {
   // 🔥 NUEVO: Estado para el tracker
   const [tracker, setTracker] = useState(null);
 
+  // Estado para detectar si el menú móvil del navbar está abierto
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const userMarkerRef = useRef(null);
@@ -450,13 +453,28 @@ function LayoutMap({ user = null }) {
     console.log('✅ Search Tracker inicializado en LayoutMap');
   }, []);
 
+  // Escuchar cuando se abre/cierra el menú móvil del navbar
+  useEffect(() => {
+    const handleMobileMenuToggle = (event) => {
+      setIsMobileMenuOpen(event.detail.isOpen);
+    };
+
+    window.addEventListener('mobile-menu-toggle', handleMobileMenuToggle);
+    return () => window.removeEventListener('mobile-menu-toggle', handleMobileMenuToggle);
+  }, []);
+
   const getInitialPosition = useCallback(() => {
     const buttonSize = 56;
     const margin = 20;
+    const isMobileDevice = window.innerWidth <= 768;
 
+    // En móvil: posicionarlo más arriba para evitar conflicto con chatbot
+    // En desktop: posición normal en la izquierda
     return {
       x: margin,
-      y: window.innerHeight - buttonSize - margin - 80
+      y: isMobileDevice
+        ? window.innerHeight - buttonSize - margin - 160  // Más arriba en móvil (160px en lugar de 80px)
+        : window.innerHeight - buttonSize - margin - 80
     };
   }, []);
 
@@ -1128,7 +1146,8 @@ function LayoutMap({ user = null }) {
           position: 'fixed',
           left: `${position.x}px`,
           top: `${position.y}px`,
-          zIndex: 50
+          zIndex: 50,  // Por encima del navbar (40) pero debajo del chatbot (9999)
+          display: isMobileMenuOpen ? 'none' : 'block'  // Ocultar cuando el menú móvil esté abierto
         }}
       >
         <button

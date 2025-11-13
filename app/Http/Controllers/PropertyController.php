@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Models\SystemConfig;
 
 class PropertyController extends Controller
 {
@@ -166,7 +167,8 @@ class PropertyController extends Controller
             'properties' => $properties,
             'user' => auth()->user(),
             'currentPage' => 'index',
-            'mapboxToken' => config('services.mapbox.access_token')
+            'mapboxToken' => config('services.mapbox.access_token'),
+            'verificationRequired' => SystemConfig::isVerificationRequiredForPublish()
         ]);
     }
 
@@ -206,7 +208,8 @@ class PropertyController extends Controller
             'properties' => $myProperties,
             'user' => $user,
             'currentPage' => 'my-properties',
-            'mapboxToken' => config('services.mapbox.access_token')
+            'mapboxToken' => config('services.mapbox.access_token'),
+            'verificationRequired' => SystemConfig::isVerificationRequiredForPublish()
         ]);
     }
 
@@ -224,7 +227,8 @@ class PropertyController extends Controller
         return view('properties', [
             'property' => $property,
             'currentPage' => 'show',
-            'mapboxToken' => config('services.mapbox.access_token')
+            'mapboxToken' => config('services.mapbox.access_token'),
+            'verificationRequired' => SystemConfig::isVerificationRequiredForPublish()
         ]);
     }
 
@@ -237,8 +241,8 @@ class PropertyController extends Controller
             return redirect()->route('login')->with('error', 'Debes iniciar sesión para crear una propiedad.');
         }
 
-        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
-        if (!auth()->user()->is_identity_verified) {
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada (solo si está habilitado en configuración)
+        if (SystemConfig::isVerificationRequiredForPublish() && !auth()->user()->is_identity_verified) {
             return redirect()->route('verification.identity')
                 ->with('error', 'Debes verificar tu identidad antes de publicar propiedades')
                 ->with('info', 'La verificación es rápida y segura. Solo necesitas tu INE y un comprobante de domicilio.');
@@ -250,7 +254,8 @@ class PropertyController extends Controller
             'user' => auth()->user(),
             'currentPage' => 'create',
             'errors' => session()->get('errors', new \Illuminate\Support\MessageBag()),
-            'mapboxToken' => config('services.mapbox.access_token')
+            'mapboxToken' => config('services.mapbox.access_token'),
+            'verificationRequired' => SystemConfig::isVerificationRequiredForPublish()
         ]);
     }
 
@@ -276,11 +281,12 @@ class PropertyController extends Controller
             return redirect()->route('login');
         }
 
-        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
-        if (!auth()->user()->is_identity_verified) {
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada (solo si está habilitado en configuración)
+        if (SystemConfig::isVerificationRequiredForPublish() && !auth()->user()->is_identity_verified) {
             Log::warning('⚠️ Usuario no verificado intentó crear propiedad', [
                 'user_id' => auth()->id(),
-                'user_email' => auth()->user()->email
+                'user_email' => auth()->user()->email,
+                'verification_required' => true
             ]);
 
             if ($request->expectsJson() || $request->ajax()) {
@@ -518,8 +524,8 @@ class PropertyController extends Controller
             abort(403, 'No tienes permisos para editar esta propiedad.');
         }
 
-        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
-        if (!auth()->user()->is_identity_verified) {
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada (solo si está habilitado en configuración)
+        if (SystemConfig::isVerificationRequiredForPublish() && !auth()->user()->is_identity_verified) {
             return redirect()->route('verification.identity')
                 ->with('error', 'Debes verificar tu identidad para editar propiedades');
         }
@@ -528,7 +534,8 @@ class PropertyController extends Controller
             'property' => $property,
             'user' => auth()->user(),
             'currentPage' => 'edit',
-            'mapboxToken' => config('services.mapbox.access_token')
+            'mapboxToken' => config('services.mapbox.access_token'),
+            'verificationRequired' => SystemConfig::isVerificationRequiredForPublish()
         ]);
     }
 
@@ -547,8 +554,8 @@ class PropertyController extends Controller
             abort(403);
         }
 
-        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada
-        if (!auth()->user()->is_identity_verified) {
+        // 🔒 VALIDACIÓN: Usuario debe tener identidad verificada (solo si está habilitado en configuración)
+        if (SystemConfig::isVerificationRequiredForPublish() && !auth()->user()->is_identity_verified) {
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'success' => false,

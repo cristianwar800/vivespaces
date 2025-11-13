@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Http;
 use App\Http\Controllers\ChatbotController;
 use App\Http\Controllers\ContactoController;
 use App\Http\Controllers\UserRatingController;
+use App\Http\Controllers\SystemConfigController;
 use Inertia\Inertia;
 
 /*
@@ -358,6 +359,13 @@ Route::middleware('auth')->group(function () {
             Route::patch('/{propertyId}', [AdminController::class, 'updateProperty'])->name('admin.properties.update');
             Route::delete('/{propertyId}', [AdminController::class, 'deleteProperty'])->name('admin.properties.delete');
         });
+
+        // Configuración del sistema
+        Route::prefix('config')->group(function () {
+            Route::get('/', [SystemConfigController::class, 'index'])->name('admin.config.index');
+            Route::post('/update', [SystemConfigController::class, 'update'])->name('admin.config.update');
+            Route::post('/update-batch', [SystemConfigController::class, 'updateBatch'])->name('admin.config.update-batch');
+        });
     });
 
 }); // FIN Route::middleware('auth')
@@ -365,6 +373,9 @@ Route::middleware('auth')->group(function () {
 // ==========================================
 // 🌐 API ROUTES PÚBLICAS (Sin autenticación)
 // ==========================================
+
+// Configuraciones públicas del sistema
+Route::get('/api/public-config', [SystemConfigController::class, 'getPublicConfigs'])->name('public.config');
 
 // Propiedades para el mapa (público)
 Route::get('/api/properties-map', function() {

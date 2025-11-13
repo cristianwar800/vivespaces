@@ -11,9 +11,6 @@ function Profile({ user = null }) {
        state: '',
        country: 'MX',
        postal_code: '',
-       current_password: '',
-       new_password: '',
-       new_password_confirmation: '',
        profile_photo: null,
        remove_photo: false
    });
@@ -21,8 +18,6 @@ function Profile({ user = null }) {
    const [errors, setErrors] = useState({});
    const [isLoading, setIsLoading] = useState(false);
    const [isLoadingData, setIsLoadingData] = useState(true);
-   const [showPassword, setShowPassword] = useState(false);
-   const [showNewPassword, setShowNewPassword] = useState(false);
    const [successMessage, setSuccessMessage] = useState('');
    const [previewImage, setPreviewImage] = useState('');
    const [showImagePreview, setShowImagePreview] = useState(false);
@@ -56,9 +51,6 @@ function Profile({ user = null }) {
                    state: userData.state || '',
                    country: userData.country || 'MX',
                    postal_code: userData.postal_code || '',
-                   current_password: '',
-                   new_password: '',
-                   new_password_confirmation: '',
                    profile_photo: null,
                    remove_photo: false
                });
@@ -209,9 +201,6 @@ function Profile({ user = null }) {
                setSuccessMessage('Perfil actualizado exitosamente');
                setFormData(prev => ({
                    ...prev,
-                   current_password: '',
-                   new_password: '',
-                   new_password_confirmation: '',
                    remove_photo: false
                }));
 
@@ -664,143 +653,6 @@ function Profile({ user = null }) {
                                        className={`form-input ${errors.postal_code ? 'error' : ''}`}
                                    />
                                    {errors.postal_code && <p className="error-text">{errors.postal_code}</p>}
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-
-                   {/* Cambio de Contraseña */}
-                   <div className="form-card" style={{ marginBottom: '2rem' }}>
-                       <div style={{
-                           padding: 'var(--spacing-lg)',
-                           borderBottom: '1px solid var(--border-primary)',
-                           marginBottom: 'var(--spacing-lg)'
-                       }}>
-                           <h3 style={{
-                               fontSize: 'var(--font-size-xl)',
-                               fontWeight: '600',
-                               color: 'var(--text-primary)',
-                               margin: 0,
-                               marginBottom: 'var(--spacing-xs)'
-                           }}>
-                               Cambiar Contraseña
-                           </h3>
-                           <p style={{
-                               fontSize: 'var(--font-size-sm)',
-                               color: 'var(--text-tertiary)',
-                               margin: 0
-                           }}>
-                               Deja en blanco si no quieres cambiar la contraseña
-                           </p>
-                       </div>
-
-                       <div>
-                           <div className="form-group" style={{ marginBottom: 'var(--spacing-lg)' }}>
-                               <label htmlFor="current_password" className="form-label">
-                                   Contraseña Actual
-                               </label>
-                               <div style={{ position: 'relative' }}>
-                                   <input
-                                       type={showPassword ? "text" : "password"}
-                                       name="current_password"
-                                       id="current_password"
-                                       value={formData.current_password}
-                                       onChange={handleInputChange}
-                                       className={`form-input ${errors.current_password ? 'error' : ''}`}
-                                       style={{ paddingRight: '2.5rem' }}
-                                   />
-                                   <button
-                                       type="button"
-                                       style={{
-                                           position: 'absolute',
-                                           right: 0,
-                                           top: 0,
-                                           height: '100%',
-                                           padding: '0 0.75rem',
-                                           display: 'flex',
-                                           alignItems: 'center',
-                                           background: 'none',
-                                           border: 'none',
-                                           cursor: 'pointer',
-                                           color: 'var(--text-tertiary)'
-                                       }}
-                                       onClick={() => setShowPassword(!showPassword)}
-                                   >
-                                       {showPassword ? (
-                                           <svg style={{ width: '1.25rem', height: '1.25rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                                           </svg>
-                                       ) : (
-                                           <svg style={{ width: '1.25rem', height: '1.25rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                           </svg>
-                                       )}
-                                   </button>
-                               </div>
-                               {errors.current_password && <p className="error-text">{errors.current_password}</p>}
-                           </div>
-
-                           <div className="form-row">
-                               <div className="form-group">
-                                   <label htmlFor="new_password" className="form-label">
-                                       Nueva Contraseña
-                                   </label>
-                                   <div style={{ position: 'relative' }}>
-                                       <input
-                                           type={showNewPassword ? "text" : "password"}
-                                           name="new_password"
-                                           id="new_password"
-                                           value={formData.new_password}
-                                           onChange={handleInputChange}
-                                           className={`form-input ${errors.new_password ? 'error' : ''}`}
-                                           style={{ paddingRight: '2.5rem' }}
-                                       />
-                                       <button
-                                           type="button"
-                                           style={{
-                                               position: 'absolute',
-                                               right: 0,
-                                               top: 0,
-                                               height: '100%',
-                                               padding: '0 0.75rem',
-                                               display: 'flex',
-                                               alignItems: 'center',
-                                               background: 'none',
-                                               border: 'none',
-                                               cursor: 'pointer',
-                                               color: 'var(--text-tertiary)'
-                                           }}
-                                           onClick={() => setShowNewPassword(!showNewPassword)}
-                                       >
-                                           {showNewPassword ? (
-                                               <svg style={{ width: '1.25rem', height: '1.25rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                                               </svg>
-                                           ) : (
-                                               <svg style={{ width: '1.25rem', height: '1.25rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                               </svg>
-                                           )}
-                                       </button>
-                                   </div>
-                                   {errors.new_password && <p className="error-text">{errors.new_password}</p>}
-                               </div>
-
-                               <div className="form-group">
-                                   <label htmlFor="new_password_confirmation" className="form-label">
-                                       Confirmar Nueva Contraseña
-                                   </label>
-                                   <input
-                                       type="password"
-                                       name="new_password_confirmation"
-                                       id="new_password_confirmation"
-                                       value={formData.new_password_confirmation}
-                                       onChange={handleInputChange}
-                                       className={`form-input ${errors.new_password_confirmation ? 'error' : ''}`}
-                                   />
-                                   {errors.new_password_confirmation && <p className="error-text">{errors.new_password_confirmation}</p>}
                                </div>
                            </div>
                        </div>

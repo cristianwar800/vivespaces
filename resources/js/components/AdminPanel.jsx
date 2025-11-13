@@ -34,6 +34,10 @@ const AdminPanel = ({ user }) => {
   const [mlResult, setMlResult] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
 
+  // Estados para Configuración del Sistema
+  const [systemConfigs, setSystemConfigs] = useState([]);
+  const [configsLoading, setConfigsLoading] = useState(false);
+
   // Componentes auxiliares
   const Notification = ({ message, type, onClose }) => (
     <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-xl border transform transition-all duration-300 ${type === 'success'
@@ -786,6 +790,64 @@ const AdminPanel = ({ user }) => {
     }
   };
 
+  // Funciones para Configuración del Sistema
+  const fetchSystemConfigs = async () => {
+    setConfigsLoading(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+      const response = await fetch('/admin/config', {
+        method: 'GET',
+        headers: {
+          'X-CSRF-TOKEN': csrfToken,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSystemConfigs(data.configs);
+      } else {
+        showNotification('Error al cargar configuraciones', 'error');
+      }
+    } catch (err) {
+      console.error('Error fetching system configs:', err);
+      showNotification('Error de conexión al cargar configuraciones', 'error');
+    } finally {
+      setConfigsLoading(false);
+    }
+  };
+
+  const updateSystemConfig = async (key, value) => {
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+      const response = await fetch('/admin/config/update', {
+        method: 'POST',
+        headers: {
+          'X-CSRF-TOKEN': csrfToken,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ key, value })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showNotification(data.message, 'success');
+        fetchSystemConfigs();
+      } else {
+        showNotification(data.error || 'Error al actualizar configuración', 'error');
+      }
+    } catch (err) {
+      console.error('Error updating system config:', err);
+      showNotification('Error de conexión al actualizar configuración', 'error');
+    }
+  };
+
   // Funciones de utilidad
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -1127,6 +1189,8 @@ const AdminPanel = ({ user }) => {
     } else if (activeSection === 'ai-test') {
       loadAiConfig();
       checkAiConnection();
+    } else if (activeSection === 'system-config') {
+      fetchSystemConfigs();
     }
   }, [activeSection]);
 
@@ -2499,12 +2563,172 @@ const AdminPanel = ({ user }) => {
     </div>
   );
 
+  // Sección de Configuración del Sistema
+  const systemConfigSection = (
+    <div className="p-6 sm:p-8">
+      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-8 mb-8">
+        <h2 className="text-4xl font-bold text-white mb-2">
+          ⚙️ Configuración del Sistema
+        </h2>
+        <p className="text-emerald-100">
+          Controla las configuraciones globales del sistema de verificación
+        </p>
+      </div>
+
+      {configsLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Configuraciones Públicas */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 p-4">
+              <h3 className="text-xl font-bold text-white">Configuraciones Públicas</h3>
+              <p className="text-emerald-100 text-sm">Accesibles sin autenticación</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {systemConfigs
+                .filter(config => config.is_public)
+                .map(config => (
+                  <div
+                    key={config.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                  >
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900 dark:text-white">
+                        {config.key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {config.description}
+                      </p>
+                    </div>
+
+                    <div className="ml-4">
+                      {config.type === 'boolean' ? (
+                        <button
+                          onClick={() => updateSystemConfig(config.key, config.value === 'true' ? 'false' : 'true')}
+                          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-200 ${
+                            config.value === 'true'
+                              ? 'bg-emerald-600'
+                              : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform duration-200 ${
+                              config.value === 'true' ? 'translate-x-7' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <input
+                          type={config.type === 'integer' ? 'number' : 'text'}
+                          value={config.value}
+                          onChange={(e) => updateSystemConfig(config.key, e.target.value)}
+                          className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white w-24"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* Configuraciones Privadas */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-500 to-pink-500 p-4">
+              <h3 className="text-xl font-bold text-white">Configuraciones Privadas</h3>
+              <p className="text-purple-100 text-sm">Solo accesibles para administradores</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {systemConfigs
+                .filter(config => !config.is_public)
+                .map(config => (
+                  <div
+                    key={config.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                  >
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900 dark:text-white">
+                        {config.key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {config.description}
+                      </p>
+                    </div>
+
+                    <div className="ml-4">
+                      {config.type === 'boolean' ? (
+                        <button
+                          onClick={() => updateSystemConfig(config.key, config.value === 'true' ? 'false' : 'true')}
+                          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-200 ${
+                            config.value === 'true'
+                              ? 'bg-purple-600'
+                              : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform duration-200 ${
+                              config.value === 'true' ? 'translate-x-7' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : config.type === 'integer' ? (
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={config.value}
+                            onChange={(e) => updateSystemConfig(config.key, e.target.value)}
+                            className="w-32"
+                          />
+                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 w-12 text-center">
+                            {config.value}%
+                          </span>
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={config.value}
+                          onChange={(e) => updateSystemConfig(config.key, e.target.value)}
+                          className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white w-32"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* Información adicional */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-start">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h4 className="font-semibold text-blue-900 dark:text-blue-200 mb-1">Información</h4>
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  Los cambios en las configuraciones se aplican inmediatamente. Las configuraciones públicas están disponibles para todos los usuarios, mientras que las privadas solo son accesibles desde el panel de administración.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // Definir las secciones
   const sections = {
     dashboard: dashboardSection,
     users: usersSection,
     properties: propertiesSection,
     'ai-test': aiTestSection,
+    'system-config': systemConfigSection,
   };
 
   return (
@@ -2660,14 +2884,20 @@ const AdminPanel = ({ user }) => {
               Test AI / FastAPI
             </li>
 
-            <li className="flex items-center gap-3 p-3 rounded-lg cursor-pointer text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200">
-              <a href="/logout" className="flex items-center gap-3 w-full">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                Cerrar Sesión
-              </a>
+            <li
+              className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 ${activeSection === 'system-config'
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              onClick={() => setActiveSection('system-config')}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Configuración del Sistema
             </li>
+
           </ul>
         </nav>
       </div>

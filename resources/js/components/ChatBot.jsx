@@ -21,41 +21,79 @@ const useDraggable = (initialPosition) => {
         return { x: newX, y: newY };
     }, []);
 
-    const handleMouseDown = (e) => {
-        if (!e) return;
-        e.preventDefault();
-        e.stopPropagation();
+    const handleStart = useCallback((clientX, clientY) => {
         setIsDragging(true);
         setDragStarted(false);
-    };
+    }, []);
 
-    const handleMouseMove = useCallback((e) => {
-        if (!isDragging || !e) return;
+    const handleMove = useCallback((clientX, clientY) => {
+        if (!isDragging) return;
         setDragStarted(true);
-        setPosition({ x: e.clientX - 30, y: e.clientY - 30 });
+        const buttonSize = 60;
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        let newX = clientX - buttonSize / 2;
+        let newY = clientY - buttonSize / 2;
+
+        // Restringir dentro de los límites de la ventana
+        newX = Math.max(0, Math.min(newX, windowWidth - buttonSize));
+        newY = Math.max(80, Math.min(newY, windowHeight - buttonSize));
+
+        setPosition({ x: newX, y: newY });
     }, [isDragging]);
 
-    const handleMouseUp = useCallback(() => {
+    const handleEnd = useCallback(() => {
         if (isDragging) {
             setIsDragging(false);
             if (dragStarted) {
-                setTimeout(() => setPosition(magnetToEdge(position)), 100);
+                setTimeout(() => setPosition(magnetToEdge(position)), 150);
             }
         }
     }, [isDragging, dragStarted, position, magnetToEdge]);
 
     useEffect(() => {
         if (isDragging) {
+            const handleMouseMove = (e) => handleMove(e.clientX, e.clientY);
+            const handleTouchMove = (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                handleMove(touch.clientX, touch.clientY);
+            };
+
             document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
+            document.addEventListener('mouseup', handleEnd);
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+            document.addEventListener('touchend', handleEnd);
+
+            // Prevenir selección de texto mientras se arrastra
+            document.body.style.userSelect = 'none';
+
             return () => {
                 document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
+                document.removeEventListener('mouseup', handleEnd);
+                document.removeEventListener('touchmove', handleTouchMove);
+                document.removeEventListener('touchend', handleEnd);
+                document.body.style.userSelect = '';
             };
         }
-    }, [isDragging, handleMouseMove, handleMouseUp]);
+    }, [isDragging, handleMove, handleEnd]);
 
-    return { position, isDragging, dragStarted, handleMouseDown, elementRef };
+    const dragHandlers = {
+        onMouseDown: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleStart(e.clientX, e.clientY);
+        },
+        onTouchStart: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const touch = e.touches[0];
+            handleStart(touch.clientX, touch.clientY);
+        }
+    };
+
+    return { position, isDragging, dragStarted, dragHandlers, elementRef };
 };
 
 /**
@@ -91,8 +129,11 @@ function ChatBot({ user = null }) {
     const [isConnected, setIsConnected] = useState(true);
     const [error, setError] = useState(null);
 
-    // Estado para responsive
-    const [isMobile, setIsMobile] = useState(window.innerWidth <= 640);
+    // Estado para responsive (768px es el breakpoint estándar md: de Tailwind)
+    const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+    // Estado para detectar si el menú móvil del navbar está abierto
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     // Referencias
     const messagesEndRef = useRef(null);
@@ -108,12 +149,25 @@ function ChatBot({ user = null }) {
         dark: 'from-gray-700 via-gray-800 to-gray-900'
     };
 
-    const getInitialPosition = () => ({
-        x: window.innerWidth - 80,
-        y: window.innerHeight - 80
-    });
+    const getInitialPosition = () => {
+        const isMobileDevice = window.innerWidth <= 768;
 
-    const { position, isDragging, dragStarted, handleMouseDown, elementRef } = useDraggable(getInitialPosition());
+        if (isMobileDevice) {
+            // En móvil: posición fija en la esquina inferior derecha visible
+            return {
+                x: window.innerWidth - 80,  // 80px desde el borde derecho
+                y: window.innerHeight - 100  // 100px desde el borde inferior (más margen)
+            };
+        } else {
+            // En desktop: posición normal
+            return {
+                x: window.innerWidth - 80,
+                y: window.innerHeight - 80
+            };
+        }
+    };
+
+    const { position, isDragging, dragStarted, dragHandlers, elementRef } = useDraggable(getInitialPosition());
 
     // ============================================
     // FUNCIONES DE UTILIDAD
@@ -747,24 +801,69 @@ function ChatBot({ user = null }) {
      */
     useEffect(() => {
         const handleResize = () => {
-            setIsMobile(window.innerWidth <= 640);
+            setIsMobile(window.innerWidth <= 768);
         };
 
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    /**
+     * Escuchar cuando se abre/cierra el menú móvil del navbar
+     */
+    useEffect(() => {
+        const handleMobileMenuToggle = (event) => {
+            setIsMobileMenuOpen(event.detail.isOpen);
+        };
+
+        window.addEventListener('mobile-menu-toggle', handleMobileMenuToggle);
+        return () => window.removeEventListener('mobile-menu-toggle', handleMobileMenuToggle);
+    }, []);
+
     // ============================================
     // RENDER
     // ============================================
 
-    const modalPosition = isMobile ? {
-        x: 0,
-        y: 0
-    } : {
-        x: position.x < window.innerWidth / 2 ? position.x + 80 : position.x - 450,
-        y: Math.min(position.y, window.innerHeight - 650)
+    const calculateModalPosition = () => {
+        if (isMobile) return { x: 0, y: 0 };
+
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        const buttonSize = 60;
+        const margin = 20;
+        const navbarHeight = 80;
+
+        const modalWidth = Math.min(450, windowWidth - 40);
+        const modalHeight = Math.min(650, windowHeight - navbarHeight - 40);
+
+        let modalX, modalY;
+
+        // Posicionar a la izquierda o derecha según posición del botón
+        if (position.x < windowWidth / 2) {
+            modalX = position.x + buttonSize + margin;
+            if (modalX + modalWidth > windowWidth - margin) {
+                modalX = Math.max(margin, windowWidth - modalWidth - margin);
+            }
+        } else {
+            modalX = position.x - modalWidth - margin;
+            if (modalX < margin) {
+                modalX = margin;
+            }
+        }
+
+        // Posicionar verticalmente
+        modalY = position.y;
+        if (modalY + modalHeight > windowHeight - margin) {
+            modalY = windowHeight - modalHeight - margin;
+        }
+        if (modalY < navbarHeight + margin) {
+            modalY = navbarHeight + margin;
+        }
+
+        return { x: modalX, y: modalY };
     };
+
+    const modalPosition = calculateModalPosition();
 
     const quickActions = [
         { id: 'search_properties', text: 'Buscar', icon: '🔍', color: 'bg-blue-500' },
@@ -776,7 +875,23 @@ function ChatBot({ user = null }) {
     return (
         <div
             ref={elementRef}
-            style={isMobile && isOpen ? { position: 'fixed', inset: 0, zIndex: 9999 } : { position: 'fixed', left: position.x, top: position.y, zIndex: 9999 }}
+            style={
+                isMobile && isOpen
+                    ? { position: 'fixed', inset: 0, zIndex: 9999 }
+                    : {
+                        position: 'fixed',
+                        left: `${position.x}px`,
+                        top: `${position.y}px`,
+                        zIndex: 9999,
+                        // En móvil, asegurar que el botón esté visible
+                        ...(isMobile && !isOpen ? {
+                            right: '20px',
+                            bottom: '20px',
+                            left: 'auto',
+                            top: 'auto'
+                        } : {})
+                    }
+            }
         >
 
             {/* QUICK ACTIONS */}
@@ -807,16 +922,16 @@ function ChatBot({ user = null }) {
                     className={`fixed bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300 ${
                         isMobile
                             ? 'inset-0 rounded-none w-full h-full max-h-screen'
-                            : `rounded-3xl ${isMinimized ? 'w-80 h-16' : 'w-96 sm:w-[450px]'}`
+                            : `rounded-3xl ${isMinimized ? 'w-80 h-16' : 'w-[90vw] max-w-md'}`
                     }`}
                     style={isMobile ? { maxHeight: '100vh' } : {
                         left: `${modalPosition.x}px`,
                         top: `${modalPosition.y}px`,
-                        maxHeight: isMinimized ? '64px' : '650px'
+                        maxHeight: isMinimized ? '64px' : 'min(650px, 80vh)'
                     }}
                 >
                     {/* HEADER */}
-                    <div className={`flex items-center justify-between p-4 bg-gradient-to-r ${themes[theme]} text-white relative overflow-hidden`}>
+                    <div className={`flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r ${themes[theme]} text-white relative overflow-hidden`}>
                         <div className="absolute inset-0 opacity-10">
                             <div className="absolute inset-0" style={{
                                 backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
@@ -824,29 +939,29 @@ function ChatBot({ user = null }) {
                             }}></div>
                         </div>
 
-                        <div className="flex items-center space-x-3 relative z-10">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center animate-pulse">
-                                <span className="text-2xl">🤖</span>
+                        <div className="flex items-center space-x-2 sm:space-x-3 relative z-10">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center animate-pulse flex-shrink-0">
+                                <span className="text-xl sm:text-2xl">🤖</span>
                             </div>
-                            <div>
-                                <h3 className="font-bold text-sm">Asistente ViveSpaces</h3>
+                            <div className="min-w-0">
+                                <h3 className="font-bold text-xs sm:text-sm truncate">Asistente ViveSpaces</h3>
                                 <div className="flex items-center space-x-1">
-                                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-                                    <p className="text-xs text-white/80">{isConnected ? 'En línea' : 'Sin conexión'}</p>
+                                    <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'} flex-shrink-0`}></div>
+                                    <p className="text-xs text-white/80 truncate">{isConnected ? 'En línea' : 'Sin conexión'}</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-1 relative z-10">
+                        <div className="flex items-center space-x-0.5 sm:space-x-1 relative z-10 flex-shrink-0">
                             <button
                                 onClick={() => {
                                     setShowFavorites(!showFavorites);
                                     setShowSettings(false);
                                 }}
-                                className={`p-2 hover:bg-white/10 rounded-lg transition relative ${showFavorites ? 'bg-white/20' : ''}`}
+                                className={`p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition relative ${showFavorites ? 'bg-white/20' : ''}`}
                                 title="Favoritos"
                             >
-                                <svg className="w-5 h-5" fill={showFavorites ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill={showFavorites ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                 </svg>
                                 {favorites.length > 0 && (
@@ -859,39 +974,41 @@ function ChatBot({ user = null }) {
                             {breadcrumbs.length > 1 && !isMinimized && (
                                 <button
                                     onClick={handleBack}
-                                    className="p-2 hover:bg-white/10 rounded-lg transition"
+                                    className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition"
                                     title="Volver"
                                 >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                                     </svg>
                                 </button>
                             )}
 
-                            <button
-                                onClick={() => setIsMinimized(!isMinimized)}
-                                className="p-2 hover:bg-white/10 rounded-lg transition relative"
-                                title={isMinimized ? "Maximizar" : "Minimizar"}
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
-                                </svg>
-                                {isMinimized && notificationCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-bounce">
-                                        {notificationCount}
-                                    </span>
-                                )}
-                            </button>
+                            {!isMobile && (
+                                <button
+                                    onClick={() => setIsMinimized(!isMinimized)}
+                                    className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition relative"
+                                    title={isMinimized ? "Maximizar" : "Minimizar"}
+                                >
+                                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                                    </svg>
+                                    {isMinimized && notificationCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-bounce">
+                                            {notificationCount}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
 
                             <button
                                 onClick={() => {
                                     setShowSettings(!showSettings);
                                     setShowFavorites(false);
                                 }}
-                                className={`p-2 hover:bg-white/10 rounded-lg transition ${showSettings ? 'bg-white/20' : ''}`}
+                                className={`p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition ${showSettings ? 'bg-white/20' : ''}`}
                                 title="Configuración"
                             >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
@@ -903,20 +1020,20 @@ function ChatBot({ user = null }) {
                                         clearChat();
                                     }
                                 }}
-                                className="p-2 hover:bg-white/10 rounded-lg transition"
+                                className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition hidden sm:block"
                                 title="Reiniciar"
                             >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                             </button>
 
                             <button
                                 onClick={() => setIsOpen(false)}
-                                className="p-2 hover:bg-white/10 rounded-lg transition"
+                                className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition"
                                 title="Cerrar"
                             >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
@@ -1098,15 +1215,15 @@ function ChatBot({ user = null }) {
 
                     {/* BARRA DE BÚSQUEDA */}
                     {!isMinimized && !showSettings && !showFavorites && (
-                        <div className="p-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                        <div className="p-2 sm:p-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                             <div className="relative">
                                 <input
                                     ref={searchInputRef}
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="🔍 Buscar en la conversación..."
-                                    className="w-full pl-4 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100"
+                                    placeholder="🔍 Buscar..."
+                                    className="w-full pl-3 sm:pl-4 pr-10 py-1.5 sm:py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100"
                                 />
                                 {searchQuery && (
                                     <button
@@ -1143,8 +1260,8 @@ function ChatBot({ user = null }) {
                     {/* ÁREA DE MENSAJES */}
                     {!isMinimized && !showSettings && !showFavorites && (
                         <>
-                            <div className={`overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800/50 ${
-                                isMobile ? 'h-[calc(100vh-180px)]' : 'h-96'
+                            <div className={`overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3 bg-gray-50 dark:bg-gray-800/50 ${
+                                isMobile ? 'h-[calc(100vh-180px)]' : 'max-h-[calc(80vh-240px)] min-h-[300px]'
                             }`}>
                                 {filteredMessages.length === 0 && messages.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -1163,16 +1280,16 @@ function ChatBot({ user = null }) {
                                 ) : (
                                     filteredMessages.map((message) => (
                                         <div key={message.id} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} group`}>
-                                            <div className={`max-w-[85%] rounded-2xl p-3 shadow-md hover:shadow-lg transition-all duration-200 ${
+                                            <div className={`max-w-[90%] sm:max-w-[85%] rounded-2xl p-2.5 sm:p-3 shadow-md hover:shadow-lg transition-all duration-200 ${
                                                 message.sender === 'user'
                                                     ? `bg-gradient-to-r ${themes[theme]} text-white`
                                                     : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
                                             }`}>
                                                 {message.icon && message.sender === 'user' && (
-                                                    <span className="text-2xl mb-2 block">{message.icon}</span>
+                                                    <span className="text-xl sm:text-2xl mb-1 sm:mb-2 block">{message.icon}</span>
                                                 )}
-                                                
-                                                <p className={`text-sm whitespace-pre-line leading-relaxed ${message.sender === 'bot' ? 'text-gray-700 dark:text-gray-300' : ''}`}>
+
+                                                <p className={`text-xs sm:text-sm whitespace-pre-line leading-relaxed ${message.sender === 'bot' ? 'text-gray-700 dark:text-gray-300' : ''}`}>
                                                     {message.text}
                                                 </p>
 
@@ -1183,14 +1300,14 @@ function ChatBot({ user = null }) {
                                                             <div key={`opt-${idx}`} className="flex items-center space-x-2">
                                                                 <button
                                                                     onClick={() => handleOptionClick(option)}
-                                                                    className="flex-1 flex items-center space-x-2 p-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-left border border-gray-200 dark:border-gray-600 group"
+                                                                    className="flex-1 flex items-center space-x-2 p-2.5 sm:p-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-left border border-gray-200 dark:border-gray-600 group min-h-[44px]"
                                                                 >
-                                                                    {option.icon && <span className="text-xl group-hover:scale-110 transition-transform">{option.icon}</span>}
-                                                                    <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">{option.text}</span>
+                                                                    {option.icon && <span className="text-lg sm:text-xl group-hover:scale-110 transition-transform flex-shrink-0">{option.icon}</span>}
+                                                                    <span className="flex-1 text-xs sm:text-sm font-medium text-gray-800 dark:text-gray-200 leading-tight break-words">{option.text}</span>
                                                                     {option.badge && (
-                                                                        <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">{option.badge}</span>
+                                                                        <span className="bg-red-500 text-white text-xs px-1.5 sm:px-2 py-0.5 rounded-full animate-pulse flex-shrink-0">{option.badge}</span>
                                                                     )}
-                                                                    <svg className="w-4 h-4 text-gray-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 group-hover:translate-x-1 transition-transform flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                                                                     </svg>
                                                                 </button>
@@ -1201,10 +1318,10 @@ function ChatBot({ user = null }) {
                                                                         toggleFavorite(option);
                                                                         playSound('notification');
                                                                     }}
-                                                                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition"
+                                                                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition flex-shrink-0"
                                                                     title={isFavorite(option.id) ? "Quitar de favoritos" : "Agregar a favoritos"}
                                                                 >
-                                                                    <svg className={`w-5 h-5 ${isFavorite(option.id) ? 'text-yellow-500 fill-current' : 'text-gray-400'}`} fill={isFavorite(option.id) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <svg className={`w-4 h-4 sm:w-5 sm:h-5 ${isFavorite(option.id) ? 'text-yellow-500 fill-current' : 'text-gray-400'}`} fill={isFavorite(option.id) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                                                     </svg>
                                                                 </button>
@@ -1271,39 +1388,41 @@ function ChatBot({ user = null }) {
                             </div>
 
                             {/* FOOTER */}
-                            <div className="p-3 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+                            <div className="p-2 sm:p-3 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
                                 {breadcrumbs.length > 1 && (
-                                    <div className="mb-2 flex items-center text-xs text-gray-500 dark:text-gray-400 overflow-x-auto pb-1">
-                                        <span className="text-gray-400 mr-1">📍</span>
-                                        {breadcrumbs.map((crumb, idx) => (
-                                            <span key={crumb} className="flex items-center flex-shrink-0">
-                                                {idx > 0 && <span className="mx-1">›</span>}
-                                                <span className={idx === breadcrumbs.length - 1 ? 'font-semibold text-gray-700 dark:text-gray-300' : ''}>
-                                                    {crumb === 'main' ? 'Inicio' : crumb.replace(/_/g, ' ')}
+                                    <div className="mb-2 flex items-center text-xs text-gray-500 dark:text-gray-400 overflow-x-auto scrollbar-hide pb-1">
+                                        <span className="text-gray-400 mr-1 flex-shrink-0">📍</span>
+                                        <div className="flex items-center whitespace-nowrap">
+                                            {breadcrumbs.map((crumb, idx) => (
+                                                <span key={crumb} className="flex items-center flex-shrink-0">
+                                                    {idx > 0 && <span className="mx-1">›</span>}
+                                                    <span className={`${idx === breadcrumbs.length - 1 ? 'font-semibold text-gray-700 dark:text-gray-300' : ''} truncate max-w-[80px]`}>
+                                                        {crumb === 'main' ? 'Inicio' : crumb.replace(/_/g, ' ')}
+                                                    </span>
                                                 </span>
-                                            </span>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
-                                
-                                <div className="flex items-center justify-between">
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center space-x-1">
+
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center space-x-1 flex-shrink-0">
                                         <span>✨</span>
-                                        <span>Selecciona una opción</span>
+                                        <span className="hidden sm:inline">Selecciona una opción</span>
                                     </p>
-                                    <div className="flex items-center space-x-2">
+                                    <div className="flex items-center space-x-2 text-xs">
                                         {messages.length > 0 && (
-                                            <span className="text-xs text-gray-400">{messages.length} mensajes</span>
+                                            <span className="text-gray-400 hidden sm:inline">{messages.length} mensajes</span>
                                         )}
                                         {isConnected ? (
-                                            <span className="flex items-center space-x-1 text-xs text-green-600">
+                                            <span className="flex items-center space-x-1 text-green-600">
                                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                                <span>Online</span>
+                                                <span className="hidden xs:inline">Online</span>
                                             </span>
                                         ) : (
-                                            <span className="flex items-center space-x-1 text-xs text-red-600">
+                                            <span className="flex items-center space-x-1 text-red-600">
                                                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                                                <span>Offline</span>
+                                                <span className="hidden xs:inline">Offline</span>
                                             </span>
                                         )}
                                     </div>
@@ -1316,7 +1435,7 @@ function ChatBot({ user = null }) {
 
             {/* BOTÓN FLOTANTE */}
             <button
-                    onMouseDown={!isMobile ? handleMouseDown : undefined}
+                    {...(!isMobile ? dragHandlers : {})}
                     onClick={() => {
                         if (!dragStarted || isMobile) {
                             setIsOpen(!isOpen);
@@ -1329,7 +1448,7 @@ function ChatBot({ user = null }) {
                             setShowQuickActions(!showQuickActions);
                         }
                     }}
-                    className={`${isOpen && isMobile ? 'hidden' : ''} ${isOpen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-14 h-14 sm:w-16 sm:h-16'} bg-gradient-to-r ${themes[theme]} text-white rounded-full shadow-2xl hover:shadow-emerald-500/50 transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center group relative overflow-hidden ${
+                    className={`${(isOpen && isMobile) || isMobileMenuOpen ? 'hidden' : ''} ${isOpen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-14 h-14 sm:w-16 sm:h-16'} bg-gradient-to-r ${themes[theme]} text-white rounded-full shadow-2xl hover:shadow-emerald-500/50 transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center group relative overflow-hidden ${
                         isDragging ? 'scale-110 cursor-grabbing' : 'cursor-pointer'
                     }`}
                 >

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use App\Models\SystemConfig;
 
 class MessageController extends Controller
 {
@@ -702,11 +703,11 @@ class MessageController extends Controller
                 'created_at' => $lastMessage?->created_at
             ]);
 
-            // 🔒 BLOQUEAR contenido del último mensaje si es del otro usuario y el usuario actual no está verificado
-            if ($lastMessage && !$currentUser->is_identity_verified && $lastMessage->sender_id !== $currentUserId) {
+            // 🔒 BLOQUEAR contenido del último mensaje si es del otro usuario y el usuario actual no está verificado (solo si la verificación está habilitada)
+            if ($lastMessage && SystemConfig::isVerificationRequiredForPublish() && !$currentUser->is_identity_verified && $lastMessage->sender_id !== $currentUserId) {
                 // Crear una copia del mensaje con contenido bloqueado
                 $blockedMessage = clone $lastMessage;
-                $blockedMessage->message = '🔒 Verifica tu identidad para ver este mensaje';
+                $blockedMessage->message = '📨 Nuevo mensaje';
                 $blockedMessage->is_blocked = true;
                 $conversation['last_message'] = $blockedMessage;
             } else {
@@ -793,9 +794,9 @@ class MessageController extends Controller
                             }
                         })
                         ->map(function ($message) use ($currentUserId, $currentUser) {
-                            // 🔒 RESTRICCIÓN: Si no está verificado, bloquear mensajes recibidos
+                            // 🔒 RESTRICCIÓN: Si no está verificado, bloquear mensajes recibidos (solo si la verificación está habilitada)
                             $isBlocked = false;
-                            if (!$currentUser->is_identity_verified && $message->sender_id !== $currentUserId) {
+                            if (SystemConfig::isVerificationRequiredForPublish() && !$currentUser->is_identity_verified && $message->sender_id !== $currentUserId) {
                                 $isBlocked = true;
                             }
 

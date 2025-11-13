@@ -11,6 +11,7 @@ use App\Models\Property;
 use App\Models\User;
 use App\Models\Message;
 use App\Models\Chatbot;
+use App\Models\SystemConfig;
 
 class ChatbotController extends Controller
 {
@@ -125,7 +126,7 @@ Para buscar propiedades, puedes usar los filtros en la página principal.
    • 🚿 Baños
    • 📐 Área (m²)
 
-3️⃣ Haz clic en "Buscar"
+3️⃣ Haz clic en Buscar
 4️⃣ Explora los resultados
 5️⃣ Haz clic en una propiedad para ver detalles
 
@@ -146,8 +147,8 @@ Para buscar propiedades, puedes usar los filtros en la página principal.
 Para buscar por ubicación:
 
 1. Ve a la página de propiedades
-2. En el filtro de "Ciudad" ingresa la ubicación
-3. Presiona "Buscar"
+2. En el filtro de Ciudad ingresa la ubicación
+3. Presiona Buscar
 
 🗺️ También puedes usar el **mapa interactivo** para explorar propiedades por zona.',
                 'options' => [
@@ -222,10 +223,10 @@ Filtra propiedades según tus necesidades:
 Para ver las propiedades más recientes:
 
 1. Ve a la página de propiedades
-2. Ordena por "Más recientes" en el menú de orden
+2. Ordena por Más recientes en el menú de orden
 3. Las propiedades se mostrarán de más nueva a más antigua
 
-⚡ Las propiedades nuevas tienen la etiqueta "NUEVA" para que las identifiques fácilmente.',
+⚡ Las propiedades nuevas tienen la etiqueta NUEVA para que las identifiques fácilmente.',
                 'options' => [
                     ['id' => 'stats_properties', 'text' => '📊 Ver estadísticas', 'icon' => '📊'],
                     ['id' => 'search_properties', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
@@ -257,12 +258,12 @@ Te guiaré paso a paso para publicar tu propiedad.
 **Proceso paso a paso:**
 
 1️⃣ **Verifica tu identidad** (obligatorio)
-   • Ve a "Verificación" en el menú
+   • Ve a Verificación en el menú
    • Sube tu INE (frente y reverso)
    • Espera la aprobación (2-5 minutos)
 
 2️⃣ **Prepara la información:**
-   • Título atractivo (ej: "Hermosa casa en zona norte")
+   • Título atractivo (ej: Hermosa casa en zona norte)
    • Ubicación exacta
    • Tipo de propiedad
    • Precio mensual
@@ -279,7 +280,7 @@ Te guiaré paso a paso para publicar tu propiedad.
 
 4️⃣ **Publica:**
    • Ve al menú superior
-   • Haz clic en "Publicar Propiedad"
+   • Haz clic en Publicar Propiedad
    • Llena el formulario
    • Sube las fotos
    • ¡Publica!
@@ -419,7 +420,7 @@ Nuestro objetivo es facilitar que encuentres o rentes tu propiedad sin intermedi
 La verificación te permite:
 - Publicar propiedades
 - Generar confianza con otros usuarios
-- Badge de "Usuario Verificado"
+- Badge de Usuario Verificado
 - Destacar en búsquedas
 
 ¿Qué necesitas saber?',
@@ -438,7 +439,7 @@ La verificación te permite:
 Es un proceso donde confirmas tu identidad con tu INE/IFE.
 
 **BENEFICIOS:**
-✅ Badge visible de "Usuario Verificado"
+✅ Badge visible de Usuario Verificado
 ✅ Genera más confianza
 ✅ Requisito para publicar propiedades
 ✅ Prioridad en resultados de búsqueda
@@ -472,7 +473,7 @@ Es completamente seguro y automático usando tecnología OCR (Reconocimiento Óp
 2️⃣ **Accede a verificación**
    • Ve al menú superior
    • Haz clic en tu foto de perfil
-   • Selecciona "Verificar Identidad"
+   • Selecciona Verificar Identidad
 
 3️⃣ **Sube foto del FRENTE**
    • Coloca tu INE horizontal
@@ -616,7 +617,7 @@ El sistema de mensajes te permite comunicarte directamente con propietarios o in
 **ENVIAR MENSAJE:**
 1. Busca una propiedad que te interese
 2. Abre los detalles de la propiedad
-3. Haz clic en "Contactar al propietario"
+3. Haz clic en Contactar al propietario
 4. Escribe tu mensaje
 5. Envía
 6. ¡Espera la respuesta!
@@ -660,7 +661,7 @@ El sistema de mensajes te permite comunicarte directamente con propietarios o in
    • Revisa fotos, precio, ubicación
 
 3️⃣ **Inicia el contacto**
-   • Botón "Contactar al propietario"
+   • Botón Contactar al propietario
    • Se abre el chat
 
 4️⃣ **Escribe tu mensaje**
@@ -674,7 +675,7 @@ El sistema de mensajes te permite comunicarte directamente con propietarios o in
    • Tiempo de respuesta: 24-48 horas típicamente
    • Recibirás notificación de respuesta
 
-💡 Tip: Revisa la sección de "Tips de comunicación" para mensajes efectivos.',
+💡 Tip: Revisa la sección de Tips de comunicación para mensajes efectivos.',
                 'options' => [
                     ['id' => 'messages_tips', 'text' => '💡 Ver tips', 'icon' => '💡'],
                     ['id' => 'messages', 'text' => '⬅️ Volver', 'icon' => '⬅️'],
@@ -688,7 +689,7 @@ El sistema de mensajes te permite comunicarte directamente con propietarios o in
 **PARA INQUILINOS:**
 
 ✅ **Preséntate:**
-"Hola, mi nombre es [nombre]. Me interesa tu propiedad..."
+Hola, mi nombre es [nombre]. Me interesa tu propiedad...
 
 ✅ **Sé específico:**
 - Fecha de mudanza deseada
@@ -703,7 +704,7 @@ El sistema de mensajes te permite comunicarte directamente con propietarios o in
 - ¿Hay estacionamiento?
 
 ❌ **Evita:**
-- Mensajes muy cortos ("¿disponible?")
+- Mensajes muy cortos (ej: ¿disponible?)
 - Regatear inmediatamente
 - Solicitar datos bancarios
 - Lenguaje informal excesivo
@@ -763,8 +764,8 @@ Administra tu perfil y configuración.
 
 **PASOS:**
 1. Haz clic en tu foto de perfil (esquina superior derecha)
-2. Selecciona "Mi Perfil"
-3. Haz clic en "Editar Perfil"
+2. Selecciona Mi Perfil
+3. Haz clic en Editar Perfil
 4. Actualiza la información:
    • Nombre
    • Email
@@ -795,7 +796,7 @@ Administra tu perfil y configuración.
 **ADMINISTRAR TUS PUBLICACIONES:**
 
 1. Ve al menú superior
-2. Haz clic en "Mis Propiedades"
+2. Haz clic en Mis Propiedades
 3. Verás todas tus publicaciones
 
 **ACCIONES DISPONIBLES:**
@@ -825,7 +826,7 @@ Administra tu perfil y configuración.
 **SI CONOCES TU CONTRASEÑA ACTUAL:**
 1. Ve a "Mi Perfil"
 2. Haz clic en "Editar Perfil"
-3. Busca la sección "Cambiar Contraseña"
+3. Busca la sección Cambiar Contraseña
 4. Ingresa contraseña actual
 5. Ingresa nueva contraseña
 6. Confirma nueva contraseña
@@ -833,7 +834,7 @@ Administra tu perfil y configuración.
 
 **SI OLVIDASTE TU CONTRASEÑA:**
 1. Ve a la página de Login
-2. Haz clic en "¿Olvidaste tu contraseña?"
+2. Haz clic en ¿Olvidaste tu contraseña?
 3. Ingresa tu email
 4. Revisa tu correo
 5. Haz clic en el enlace recibido
@@ -874,14 +875,14 @@ Administra tu perfil y configuración.
 - Badge de verificación
 
 **CONFIGURACIÓN DE PRIVACIDAD:**
-1. Ve a "Mi Perfil"
-2. Sección "Privacidad"
+1. Ve a Mi Perfil
+2. Sección Privacidad
 3. Ajusta qué información mostrar
 
 **OPCIONES:**
-✅ Mostrar/ocultar email
-✅ Mostrar/ocultar teléfono
-✅ Permitir/bloquear mensajes de desconocidos
+✅ Mostrar u ocultar email
+✅ Mostrar u ocultar teléfono
+✅ Permitir o bloquear mensajes de desconocidos
 ✅ Notificaciones personalizadas
 
 **REPORTAR PROBLEMAS:**
@@ -989,7 +990,7 @@ Sistema de mensajes integrado.
 Sí, sin límite.
 
 **¿Cómo actualizo mi perfil?**
-Ve a "Mi Cuenta" → "Editar Perfil".
+Ve a Mi Cuenta → Editar Perfil.
 
 **¿Es segura mi información?**
 Sí, encriptación bancaria.
@@ -1033,7 +1034,7 @@ La web es responsiva, funciona en móvil.',
 💡 **Consejo:** Revisa primero las preguntas frecuentes, tal vez tu duda ya está respondida.
 
 **PARA REPORTES URGENTES:**
-Si encuentras contenido inapropiado o usuarios sospechosos, menciona "URGENTE" en el asunto del correo.
+Si encuentras contenido inapropiado o usuarios sospechosos, menciona URGENTE en el asunto del correo.
 
 **NOS COMPROMETEMOS A:**
 ✅ Responder en máximo 48 horas
@@ -1299,9 +1300,63 @@ Si encuentras contenido inapropiado o usuarios sospechosos, menciona "URGENTE" e
     {
         if (isset($this->menuStructure[$optionId])) {
             $menu = $this->menuStructure[$optionId];
-            
+
+            // Personalizar texto dinámicamente basado en configuración del sistema
+            $text = $this->enrichText($menu['text']);
+
+            // Si es la sección de "publish_how" o "publish_requirements", ajustar según configuración
+            if ($optionId === 'publish_how' && !SystemConfig::isVerificationRequiredForPublish()) {
+                $text = '✅ **Cómo Publicar una Propiedad**
+
+**Proceso paso a paso:**
+
+1️⃣ **Prepara la información:**
+   • Título atractivo (ej: Hermosa casa en zona norte)
+   • Ubicación exacta
+   • Tipo de propiedad
+   • Precio mensual
+   • Habitaciones y baños
+   • Área en m²
+   • Descripción detallada
+
+2️⃣ **Prepara las fotos** (mínimo 5)
+   • Fachada/entrada
+   • Sala
+   • Cocina
+   • Habitaciones
+   • Baños
+
+3️⃣ **Publica:**
+   • Ve al menú superior
+   • Haz clic en Publicar Propiedad
+   • Llena el formulario
+   • Sube las fotos
+   • ¡Publica!
+
+⚡ **Tiempo estimado: 10-15 minutos**';
+            } elseif ($optionId === 'publish_requirements' && !SystemConfig::isVerificationRequiredForPublish()) {
+                $text = '📋 **Requisitos para Publicar**
+
+**OBLIGATORIOS:**
+✅ Ser propietario o tener autorización escrita
+✅ Información completa y veraz
+✅ Mínimo 5 fotos de calidad
+✅ Precio mensual definido
+✅ Ubicación exacta
+✅ Descripción detallada (min. 100 caracteres)
+
+**RECOMENDADO:**
+⭐ Fotos profesionales o de alta calidad
+⭐ Descripción completa de amenidades
+⭐ Información sobre servicios incluidos
+⭐ Reglas de la propiedad
+⭐ Contacto disponible
+
+💡 **Dato importante:** Propiedades completas se rentan 3x más rápido';
+            }
+
             return [
-                'text' => $this->enrichText($menu['text']),
+                'text' => $text,
                 'type' => 'menu',
                 'menu_id' => $optionId,
                 'options' => $menu['options'],
@@ -1491,8 +1546,8 @@ Si encuentras contenido inapropiado o usuarios sospechosos, menciona "URGENTE" e
                 }
             }
 
-            // 🔒 Indicar si el usuario NO está verificado en opción "Publicar"
-            if (!$user->is_identity_verified) {
+            // 🔒 Indicar si el usuario NO está verificado en opción "Publicar" (solo si la verificación está habilitada)
+            if (SystemConfig::isVerificationRequiredForPublish() && !$user->is_identity_verified) {
                 foreach ($mainMenu['options'] as &$option) {
                     if ($option['id'] === 'publish_property') {
                         $option['text'] = "📝 Publicar Propiedad 🔒";
