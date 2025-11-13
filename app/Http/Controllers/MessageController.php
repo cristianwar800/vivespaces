@@ -665,34 +665,8 @@ class MessageController extends Controller
 
             \Log::info("✅ Conversación INCLUIDA (tiene mensajes visibles)");
 
-            // 🔒 RESTRICCIÓN: Si el usuario no está verificado, verificar si tiene mensajes recibidos
+            // Obtener usuario actual para verificaciones posteriores
             $currentUser = Auth::user();
-            if (!$currentUser->is_identity_verified) {
-                // Contar mensajes ENVIADOS por este usuario en esta conversación
-                $sentMessagesCount = Message::where('property_id', $conversation['property_id'])
-                    ->where('sender_id', $currentUserId)
-                    ->where('receiver_id', $otherUserId)
-                    ->notDeletedBy($currentUserId)
-                    ->count();
-
-                // Contar mensajes RECIBIDOS en esta conversación
-                $receivedMessagesCount = Message::where('property_id', $conversation['property_id'])
-                    ->where('sender_id', $otherUserId)
-                    ->where('receiver_id', $currentUserId)
-                    ->notDeletedBy($currentUserId)
-                    ->count();
-
-                // Si solo tiene mensajes enviados y ninguno recibido, omitir conversación
-                if ($sentMessagesCount > 0 && $receivedMessagesCount === 0) {
-                    \Log::info("⏭️ ❌ Conversación OMITIDA (usuario no verificado sin respuestas)", [
-                        'property_id' => $conversation['property_id'],
-                        'sent_messages' => $sentMessagesCount,
-                        'received_messages' => $receivedMessagesCount,
-                        'reason' => 'Usuario no verificado sin respuestas'
-                    ]);
-                    continue;
-                }
-            }
 
             $otherUser = User::select('id', 'name', 'last_name', 'profile_photo')
                 ->find($conversation['other_user_id']);
