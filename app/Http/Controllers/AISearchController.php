@@ -503,14 +503,14 @@ public function trackSearch(Request $request)
                 ]);
 
                 if ($shouldSchedule) {
-                    // 🔥 DELAY MÁS RÁPIDO: entre 30 segundos y 2 minutos
-                    $minDelay = 30;   // 30 segundos
-                    $maxDelay = 120;  // 2 minutos
+                    // 🔥 DELAY ULTRA RÁPIDO: entre 10-30 segundos
+                    $minDelay = 10;   // 10 segundos
+                    $maxDelay = 30;   // 30 segundos
 
-                    // En local: más rápido para testing
+                    // En local: super rápido para testing
                     if (app()->environment('local')) {
-                        $minDelay = 15;   // 15 segundos
-                        $maxDelay = 60;   // 1 minuto
+                        $minDelay = 5;    // 5 segundos
+                        $maxDelay = 15;   // 15 segundos
                     }
 
                     $delay = rand($minDelay, $maxDelay);
@@ -647,98 +647,26 @@ public function processRecommendations(Request $request)
             ], 404);
         }
 
-        // 🔥 VALIDAR BÚSQUEDAS REPETIDAS (solo si son idénticas en los últimos 10 minutos)
+        // 🔥 SIN RESTRICCIONES - Sistema ultra sensible
+        // Solo registramos las búsquedas para análisis, pero NO bloqueamos
         $recentSearches = \DB::table('search_events')
             ->where('user_id', $userId)
-            ->where('search_query', $searchQuery)  // Búsqueda exacta
-            ->where('created_at', '>', now()->subMinutes(10))  // Solo últimos 10 minutos
+            ->where('search_query', $searchQuery)
+            ->where('created_at', '>', now()->subMinutes(10))
             ->count();
 
-        if ($recentSearches >= 5) {  // Permitir hasta 5 búsquedas idénticas
-            Log::info('⏸️ Usuario buscó exactamente lo mismo muchas veces - Omitiendo notificación', [
-                'user_id' => $userId,
-                'query' => $searchQuery,
-                'repeticiones' => $recentSearches
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Búsqueda repetida detectada',
-                'repeated_searches' => $recentSearches,
-                'recommendation_sent' => false
-            ]);
-        }
-
-        // 🔥 RATE LIMITING MÁS FLEXIBLE (5 minutos)
-        $lastNotification = $user->notifications()
-            ->where('type', 'App\Notifications\TestNotification')
-            ->where('created_at', '>', now()->subMinutes(5))  // Reducido de 15 a 5 minutos
-            ->first();
-
-        if ($lastNotification) {
-            $minutesAgo = $lastNotification->created_at->diffInMinutes(now());
-            Log::info('⏸️ Cooldown activo', [
-                'user_id' => $userId,
-                'cooldown_remaining' => 5 - $minutesAgo . ' minutos'
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Cooldown activo',
-                'cooldown_remaining_minutes' => 5 - $minutesAgo,
-                'recommendation_sent' => false
-            ]);
-        }
-
-        // 🔥 VALIDAR NOTIFICACIÓN DUPLICADA (solo 2 horas) - MÁS FLEXIBLE
-        $recentNotifications = $user->notifications()
-            ->where('type', 'App\Notifications\TestNotification')
-            ->where('created_at', '>', now()->subHours(2))  // Reducido de 24h a 2h
-            ->get();
-
-        $sameQueryNotification = $recentNotifications->filter(function($notification) use ($searchQuery) {
-            $data = $notification->data;
-            if (isset($data['original_query'])) {
-                return strtolower(trim($data['original_query'])) === strtolower(trim($searchQuery));
-            }
-            return false;
-        })->first();
-
-        if ($sameQueryNotification) {
-            $minutesAgo = $sameQueryNotification->created_at->diffInMinutes(now());
-            Log::info('⏸️ Ya se envió notificación para esta búsqueda recientemente', [
-                'user_id' => $userId,
-                'query' => $searchQuery,
-                'last_sent' => "{$minutesAgo} minutos atrás"
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Notificación ya enviada recientemente',
-                'last_sent_minutes_ago' => $minutesAgo,
-                'recommendation_sent' => false
-            ]);
-        }
-
-        // 🔥 LÍMITE DIARIO MÁS GENEROSO (15 notificaciones)
         $todayNotifications = $user->notifications()
             ->where('type', 'App\Notifications\TestNotification')
             ->whereDate('created_at', today())
             ->count();
 
-        if ($todayNotifications >= 15) {  // Incrementado de 5 a 15
-            Log::info('⏸️ Límite diario alcanzado', [
-                'user_id' => $userId,
-                'today_count' => $todayNotifications
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Límite diario alcanzado',
-                'today_count' => $todayNotifications,
-                'recommendation_sent' => false
-            ]);
-        }
+        Log::info('📊 Estadísticas (sin bloqueo):', [
+            'user_id' => $userId,
+            'query' => $searchQuery,
+            'recent_searches' => $recentSearches,
+            'today_notifications' => $todayNotifications,
+            'note' => 'Sistema sin restricciones - Procesando recomendación'
+        ]);
 
         // 🔥 BÚSQUEDA INTELIGENTE Y FLEXIBLE DE PROPIEDADES
         Log::info('🔍 Buscando propiedades en base de datos...');
@@ -1031,8 +959,8 @@ public function processRecommendations(Request $request)
             'properties_found' => $propertiesCount,
             'similar_searches_count' => count($similarSearches),
             'recommendation_sent' => true,
-            'cooldown_minutes' => 5,  // Actualizado de 15 a 5
-            'daily_limit_remaining' => 15 - $todayNotifications - 1  // Actualizado de 5 a 15
+            'no_restrictions' => true,  // Sistema sin límites
+            'today_notifications' => $todayNotifications + 1
         ]);
 
     } catch (\Exception $e) {
