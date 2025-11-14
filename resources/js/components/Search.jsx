@@ -23,16 +23,127 @@ function Search() {
         'Propiedades con Jardín',
         'Departamentos Amueblados'
     ]);
+    const [searchSuggestions, setSearchSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    // 🔥 DICCIONARIO DE SINÓNIMOS Y TÉRMINOS RELACIONADOS (igual que backend)
+    const synonyms = {
+        'casa': ['casa', 'hogar', 'residencia', 'vivienda', 'chalet', 'bungalow'],
+        'departamento': ['departamento', 'apartamento', 'depa', 'piso', 'flat'],
+        'terreno': ['terreno', 'lote', 'parcela', 'solar'],
+        'local': ['local', 'comercial', 'negocio', 'tienda'],
+        'oficina': ['oficina', 'despacho', 'corporativo'],
+        'bodega': ['bodega', 'almacén', 'warehouse'],
+        'estudio': ['estudio', 'loft', 'monoambiente'],
+        'guadalajara': ['guadalajara', 'gdl', 'zapopan', 'tlaquepaque', 'tonalá'],
+        'monterrey': ['monterrey', 'mty', 'san pedro', 'apodaca'],
+        'cdmx': ['cdmx', 'ciudad de méxico', 'méxico', 'df', 'ciudad'],
+    };
+
+    // 🔥 TÉRMINOS COMUNES Y SUS CORRECCIONES
+    const commonTerms = {
+        'depa': 'departamento',
+        'gdl': 'guadalajara',
+        'mty': 'monterrey',
+        'df': 'cdmx',
+        'apto': 'apartamento',
+        'amueb': 'amueblado'
+    };
 
     const searchTimeoutRef = useRef(null);
     const searchInputRef = useRef(null);
+    const suggestionsRef = useRef(null);
     const [tracker, setTracker] = useState(null);
+
+    // 🔥 GENERAR SUGERENCIAS INTELIGENTES
+    const generateSmartSuggestions = (query) => {
+        if (!query || query.length < 2) {
+            setSearchSuggestions([]);
+            return;
+        }
+
+        const queryLower = query.toLowerCase();
+        const words = queryLower.split(' ').filter(w => w.length >= 2);
+        const suggestions = new Set();
+
+        // 1. Buscar sinónimos
+        words.forEach(word => {
+            Object.entries(synonyms).forEach(([key, syns]) => {
+                if (word.includes(key.slice(0, 3)) || key.includes(word)) {
+                    syns.forEach(syn => {
+                        if (syn !== word) {
+                            const newQuery = queryLower.replace(word, syn);
+                            suggestions.add(newQuery);
+                        }
+                    });
+                }
+            });
+        });
+
+        // 2. Correcciones comunes
+        words.forEach(word => {
+            Object.entries(commonTerms).forEach(([short, full]) => {
+                if (word === short) {
+                    const newQuery = queryLower.replace(word, full);
+                    suggestions.add(newQuery);
+                }
+            });
+        });
+
+        // 3. Combinaciones inteligentes
+        if (words.length === 1) {
+            // Si solo hay una palabra, sugerir ubicaciones
+            const locations = ['guadalajara', 'zapopan', 'monterrey', 'cdmx'];
+            locations.forEach(loc => {
+                suggestions.add(`${query} en ${loc}`);
+            });
+        }
+
+        // 4. Agregar términos relacionados
+        const relatedTerms = {
+            'casa': ['con jardín', 'amueblada', '2 pisos'],
+            'departamento': ['amueblado', 'cerca del metro', 'con estacionamiento'],
+            'terreno': ['comercial', 'residencial', 'esquina'],
+            'local': ['comercial', 'en plaza', 'frente a calle']
+        };
+
+        words.forEach(word => {
+            Object.entries(relatedTerms).forEach(([key, terms]) => {
+                if (word.includes(key.slice(0, 3)) || key.includes(word)) {
+                    terms.forEach(term => {
+                        suggestions.add(`${query} ${term}`);
+                    });
+                }
+            });
+        });
+
+        // Limitar a 5 sugerencias únicas
+        const uniqueSuggestions = Array.from(suggestions)
+            .filter(s => s !== queryLower)
+            .slice(0, 5);
+
+        setSearchSuggestions(uniqueSuggestions);
+        setShowSuggestions(uniqueSuggestions.length > 0);
+    };
 
     // Inicializar tracker
     useEffect(() => {
         const searchTracker = new ViveSpacesSearchTracker();
         setTracker(searchTracker);
         console.log('✅ Search Tracker inicializado en Search.jsx');
+    }, []);
+
+    // Cerrar sugerencias al hacer clic fuera
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (suggestionsRef.current && !suggestionsRef.current.contains(event.target) &&
+                searchInputRef.current && !searchInputRef.current.contains(event.target)) {
+                setShowSuggestions(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     // Obtener query inicial desde URL si existe
@@ -242,8 +353,16 @@ function Search() {
                                 ref={searchInputRef}
                                 type="text"
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="¿Qué estás buscando? Propiedades, ubicaciones, características..."
+                                onChange={(e) => {
+                                    setSearchQuery(e.target.value);
+                                    generateSmartSuggestions(e.target.value);
+                                }}
+                                onFocus={() => {
+                                    if (searchQuery.length >= 2) {
+                                        generateSmartSuggestions(searchQuery);
+                                    }
+                                }}
+                                placeholder="¿Qué estás buscando? Ej: casa en guadalajara, depa zapopan..."
                                 className="bg-transparent text-lg text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none flex-1 font-normal"
                             />
 
@@ -282,6 +401,63 @@ function Search() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* 🔥 SUGERENCIAS INTELIGENTES */}
+                        {showSuggestions && searchSuggestions.length > 0 && (
+                            <div
+                                ref={suggestionsRef}
+                                className="absolute top-full left-0 right-0 mt-2 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-200/60 dark:border-gray-700/60 overflow-hidden z-50"
+                            >
+                                <div className="p-2">
+                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                        💡 Sugerencias inteligentes
+                                    </div>
+                                    {searchSuggestions.map((suggestion, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => {
+                                                setSearchQuery(suggestion);
+                                                setShowSuggestions(false);
+                                                performSearch(suggestion);
+                                            }}
+                                            className="w-full text-left px-4 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all duration-200 flex items-center justify-between group"
+                                        >
+                                            <div className="flex items-center space-x-3">
+                                                <svg
+                                                    className="w-4 h-4 text-gray-400 group-hover:text-emerald-500 transition-colors"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        strokeWidth="2"
+                                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                                    />
+                                                </svg>
+                                                <span className="text-gray-700 dark:text-gray-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                                                    {suggestion}
+                                                </span>
+                                            </div>
+                                            <svg
+                                                className="w-4 h-4 text-gray-300 group-hover:text-emerald-500 transition-colors"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth="2"
+                                                    d="M14 5l7 7m0 0l-7 7m7-7H3"
+                                                />
+                                            </svg>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -605,7 +781,7 @@ function Search() {
                             </div>
                         ) : (
                             <div className="text-center py-12">
-                                <div className="max-w-md mx-auto">
+                                <div className="max-w-2xl mx-auto">
                                     <svg
                                         className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4"
                                         fill="none"
@@ -623,8 +799,36 @@ function Search() {
                                         No se encontraron resultados
                                     </h3>
                                     <p className="text-gray-600 dark:text-gray-400 mb-6">
-                                        No encontramos ningún resultado para "{searchQuery}". Intenta con otros términos o ajusta los filtros.
+                                        No encontramos propiedades para "{searchQuery}".
                                     </p>
+
+                                    {/* Sugerencias alternativas */}
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-6 mb-6">
+                                        <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-400 mb-3">
+                                            💡 Prueba buscando:
+                                        </h4>
+                                        <div className="flex flex-wrap gap-2 justify-center">
+                                            {['casa guadalajara', 'departamento zapopan', 'terreno monterrey', 'local comercial'].map((term, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => {
+                                                        setSearchQuery(term);
+                                                        performSearch(term);
+                                                    }}
+                                                    className="px-4 py-2 bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 rounded-lg hover:shadow-md transition-all duration-200 text-sm font-medium"
+                                                >
+                                                    {term}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                                        <p>✓ Intenta con términos más generales (ej: "casa" en lugar de "casa grande con jardín")</p>
+                                        <p>✓ Busca solo por ciudad o tipo de propiedad</p>
+                                        <p>✓ Ajusta los filtros de precio o tipo</p>
+                                    </div>
+
                                     <button
                                         onClick={clearSearch}
                                         className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"

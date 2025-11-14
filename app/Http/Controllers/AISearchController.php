@@ -503,14 +503,14 @@ public function trackSearch(Request $request)
                 ]);
 
                 if ($shouldSchedule) {
-                    // 🔥 DELAY ALEATORIO entre 2-5 minutos
-                    $minDelay = 120;  // 2 minutos en segundos
-                    $maxDelay = 300;  // 5 minutos en segundos
+                    // 🔥 DELAY MÁS RÁPIDO: entre 30 segundos y 2 minutos
+                    $minDelay = 30;   // 30 segundos
+                    $maxDelay = 120;  // 2 minutos
 
-                    // En local: 2-5 minutos (igual que producción)
+                    // En local: más rápido para testing
                     if (app()->environment('local')) {
-                        $minDelay = 120;  // 2 minutos
-                        $maxDelay = 300;  // 5 minutos
+                        $minDelay = 15;   // 15 segundos
+                        $maxDelay = 60;   // 1 minuto
                     }
 
                     $delay = rand($minDelay, $maxDelay);
@@ -647,59 +647,53 @@ public function processRecommendations(Request $request)
             ], 404);
         }
 
-        // 🔥 VALIDAR BÚSQUEDAS REPETIDAS (últimos 30 minutos)
+        // 🔥 VALIDAR BÚSQUEDAS REPETIDAS (solo si son idénticas en los últimos 10 minutos)
         $recentSearches = \DB::table('search_events')
             ->where('user_id', $userId)
-            ->where('search_query', 'like', "%{$searchQuery}%")
-            ->where('created_at', '>', now()->subMinutes(30))
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get();
+            ->where('search_query', $searchQuery)  // Búsqueda exacta
+            ->where('created_at', '>', now()->subMinutes(10))  // Solo últimos 10 minutos
+            ->count();
 
-        $sameSearchCount = $recentSearches->filter(function($search) use ($searchQuery) {
-            return strtolower(trim($search->search_query)) === strtolower(trim($searchQuery));
-        })->count();
-
-        if ($sameSearchCount >= 3) {
-            Log::info('⏸️ Usuario buscó lo mismo varias veces - Omitiendo notificación', [
+        if ($recentSearches >= 5) {  // Permitir hasta 5 búsquedas idénticas
+            Log::info('⏸️ Usuario buscó exactamente lo mismo muchas veces - Omitiendo notificación', [
                 'user_id' => $userId,
                 'query' => $searchQuery,
-                'repeticiones' => $sameSearchCount
+                'repeticiones' => $recentSearches
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Búsqueda repetida detectada',
-                'repeated_searches' => $sameSearchCount,
+                'repeated_searches' => $recentSearches,
                 'recommendation_sent' => false
             ]);
         }
 
-        // 🔥 RATE LIMITING (15 minutos)
+        // 🔥 RATE LIMITING MÁS FLEXIBLE (5 minutos)
         $lastNotification = $user->notifications()
             ->where('type', 'App\Notifications\TestNotification')
-            ->where('created_at', '>', now()->subMinutes(15))
+            ->where('created_at', '>', now()->subMinutes(5))  // Reducido de 15 a 5 minutos
             ->first();
 
         if ($lastNotification) {
             $minutesAgo = $lastNotification->created_at->diffInMinutes(now());
             Log::info('⏸️ Cooldown activo', [
                 'user_id' => $userId,
-                'cooldown_remaining' => 15 - $minutesAgo . ' minutos'
+                'cooldown_remaining' => 5 - $minutesAgo . ' minutos'
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Cooldown activo',
-                'cooldown_remaining_minutes' => 15 - $minutesAgo,
+                'cooldown_remaining_minutes' => 5 - $minutesAgo,
                 'recommendation_sent' => false
             ]);
         }
 
-        // 🔥 VALIDAR NOTIFICACIÓN DUPLICADA (24 horas)
+        // 🔥 VALIDAR NOTIFICACIÓN DUPLICADA (solo 2 horas) - MÁS FLEXIBLE
         $recentNotifications = $user->notifications()
             ->where('type', 'App\Notifications\TestNotification')
-            ->where('created_at', '>', now()->subHours(24))
+            ->where('created_at', '>', now()->subHours(2))  // Reducido de 24h a 2h
             ->get();
 
         $sameQueryNotification = $recentNotifications->filter(function($notification) use ($searchQuery) {
@@ -711,28 +705,28 @@ public function processRecommendations(Request $request)
         })->first();
 
         if ($sameQueryNotification) {
-            $hoursAgo = $sameQueryNotification->created_at->diffInHours(now());
-            Log::info('⏸️ Ya se envió notificación para esta búsqueda', [
+            $minutesAgo = $sameQueryNotification->created_at->diffInMinutes(now());
+            Log::info('⏸️ Ya se envió notificación para esta búsqueda recientemente', [
                 'user_id' => $userId,
                 'query' => $searchQuery,
-                'last_sent' => "{$hoursAgo} horas atrás"
+                'last_sent' => "{$minutesAgo} minutos atrás"
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Notificación ya enviada',
-                'last_sent_hours_ago' => $hoursAgo,
+                'message' => 'Notificación ya enviada recientemente',
+                'last_sent_minutes_ago' => $minutesAgo,
                 'recommendation_sent' => false
             ]);
         }
 
-        // 🔥 LÍMITE DIARIO (5 notificaciones)
+        // 🔥 LÍMITE DIARIO MÁS GENEROSO (15 notificaciones)
         $todayNotifications = $user->notifications()
             ->where('type', 'App\Notifications\TestNotification')
             ->whereDate('created_at', today())
             ->count();
 
-        if ($todayNotifications >= 5) {
+        if ($todayNotifications >= 15) {  // Incrementado de 5 a 15
             Log::info('⏸️ Límite diario alcanzado', [
                 'user_id' => $userId,
                 'today_count' => $todayNotifications
@@ -746,75 +740,92 @@ public function processRecommendations(Request $request)
             ]);
         }
 
-        // 🔥 BÚSQUEDA PRECISA DE PROPIEDADES
+        // 🔥 BÚSQUEDA INTELIGENTE Y FLEXIBLE DE PROPIEDADES
         Log::info('🔍 Buscando propiedades en base de datos...');
 
-        // Extraer palabras clave (mínimo 3 caracteres)
+        // 🔥 DICCIONARIO DE SINÓNIMOS Y TÉRMINOS RELACIONADOS
+        $synonyms = [
+            'casa' => ['casa', 'hogar', 'residencia', 'vivienda', 'chalet', 'bungalow'],
+            'departamento' => ['departamento', 'apartamento', 'depa', 'piso', 'flat'],
+            'terreno' => ['terreno', 'lote', 'parcela', 'solar'],
+            'local' => ['local', 'comercial', 'negocio', 'tienda'],
+            'oficina' => ['oficina', 'despacho', 'corporativo'],
+            'bodega' => ['bodega', 'almacén', 'warehouse'],
+            'estudio' => ['estudio', 'loft', 'monoambiente'],
+            // Ciudades comunes y sus variaciones
+            'guadalajara' => ['guadalajara', 'gdl', 'zapopan', 'tlaquepaque', 'tonalá'],
+            'monterrey' => ['monterrey', 'mty', 'san pedro', 'apodaca'],
+            'cdmx' => ['cdmx', 'ciudad de méxico', 'méxico', 'df', 'ciudad'],
+        ];
+
+        // Extraer palabras clave (mínimo 2 caracteres para ser más flexible)
         $keywords = array_filter(explode(' ', strtolower($searchQuery)), function($word) {
-            return strlen($word) >= 3;
+            return strlen($word) >= 2;
         });
 
-        Log::info('🔑 Keywords extraídos:', ['keywords' => $keywords]);
+        // 🔥 EXPANDIR KEYWORDS CON SINÓNIMOS
+        $expandedKeywords = [];
+        foreach ($keywords as $keyword) {
+            $expandedKeywords[] = $keyword;
+            foreach ($synonyms as $mainWord => $syns) {
+                if (in_array($keyword, $syns) || stripos($mainWord, $keyword) !== false) {
+                    $expandedKeywords = array_merge($expandedKeywords, $syns);
+                    break;
+                }
+            }
+        }
+        $expandedKeywords = array_unique($expandedKeywords);
 
-        // 🔥 BÚSQUEDA MÁS ESTRICTA Y PRECISA
+        Log::info('🔑 Keywords extraídos:', [
+            'original' => $keywords,
+            'expanded' => $expandedKeywords
+        ]);
+
+        // 🔥 BÚSQUEDA AMPLIA E INTELIGENTE
         $properties = \App\Models\Property::query()
             ->where('is_active', true)
-            ->where(function($query) use ($searchQuery, $keywords) {
-                if (count($keywords) > 0) {
-                    // Si hay keywords, buscar que AL MENOS coincida UNO
-                    $query->where(function($subQuery) use ($searchQuery, $keywords) {
-                        // Búsqueda exacta del query completo
-                        $subQuery->where('title', 'like', "%{$searchQuery}%")
-                            ->orWhere('description', 'like', "%{$searchQuery}%")
-                            ->orWhere('city', 'like', "%{$searchQuery}%")
-                            ->orWhere('address', 'like', "%{$searchQuery}%");
-
-                        // O buscar por keywords individuales
-                        foreach ($keywords as $keyword) {
-                            $subQuery->orWhere(function($keywordQuery) use ($keyword) {
-                                $keywordQuery->where('title', 'like', "%{$keyword}%")
-                                    ->orWhere('description', 'like', "%{$keyword}%")
-                                    ->orWhere('city', 'like', "%{$keyword}%")
-                                    ->orWhere('type', 'like', "%{$keyword}%")
-                                    ->orWhere('address', 'like', "%{$keyword}%");
-                            });
-                        }
+            ->where(function($query) use ($searchQuery, $expandedKeywords) {
+                // Búsqueda por cada keyword expandido
+                foreach ($expandedKeywords as $keyword) {
+                    $query->orWhere(function($subQuery) use ($keyword) {
+                        $subQuery->where('title', 'like', "%{$keyword}%")
+                            ->orWhere('description', 'like', "%{$keyword}%")
+                            ->orWhere('city', 'like', "%{$keyword}%")
+                            ->orWhere('state', 'like', "%{$keyword}%")
+                            ->orWhere('country', 'like', "%{$keyword}%")
+                            ->orWhere('address', 'like', "%{$keyword}%")
+                            ->orWhere('type', 'like', "%{$keyword}%")
+                            ->orWhere('pets_details', 'like', "%{$keyword}%");
                     });
-                } else {
-                    // Si no hay keywords, solo búsqueda exacta
-                    $query->where('title', 'like', "%{$searchQuery}%")
-                        ->orWhere('description', 'like', "%{$searchQuery}%")
-                        ->orWhere('city', 'like', "%{$searchQuery}%")
-                        ->orWhere('address', 'like', "%{$searchQuery}%");
                 }
+
+                // También buscar el query completo
+                $query->orWhere('title', 'like', "%{$searchQuery}%")
+                    ->orWhere('description', 'like', "%{$searchQuery}%")
+                    ->orWhere('city', 'like', "%{$searchQuery}%")
+                    ->orWhere('state', 'like', "%{$searchQuery}%")
+                    ->orWhere('address', 'like', "%{$searchQuery}%");
             })
-            ->orderByRaw("
-                CASE
-                    WHEN LOWER(title) LIKE ? THEN 1
-                    WHEN LOWER(city) LIKE ? THEN 2
-                    WHEN LOWER(description) LIKE ? THEN 3
-                    WHEN LOWER(address) LIKE ? THEN 4
-                    ELSE 5
-                END
-            ", [
-                '%' . strtolower($searchQuery) . '%',
-                '%' . strtolower($searchQuery) . '%',
-                '%' . strtolower($searchQuery) . '%',
-                '%' . strtolower($searchQuery) . '%'
-            ])
-            ->orderBy('created_at', 'desc')
-            ->get(); // Sin limit aquí, lo aplicamos después del filtro
+            ->limit(50)  // Traer más resultados para filtrar después
+            ->get();
 
-        // 🔥 CALCULAR SCORE DE RELEVANCIA PARA CADA PROPIEDAD
-        $propertiesWithScore = $properties->map(function($property) use ($searchQuery, $keywords) {
+        // 🔥 CALCULAR SCORE DE RELEVANCIA MÁS INTELIGENTE
+        $propertiesWithScore = $properties->map(function($property) use ($searchQuery, $expandedKeywords) {
             $score = 0;
+            $searchLower = strtolower($searchQuery);
 
-            // SCORE POR COINCIDENCIA EXACTA
+            // SCORE POR COINCIDENCIA EXACTA DEL QUERY COMPLETO (prioridad alta)
             if (stripos($property->title, $searchQuery) !== false) {
-                $score += 10; // Coincidencia exacta en título
+                $score += 15; // Coincidencia exacta en título
             }
             if (stripos($property->city, $searchQuery) !== false) {
-                $score += 8; // Coincidencia en ciudad
+                $score += 12; // Coincidencia en ciudad
+            }
+            if (stripos($property->state, $searchQuery) !== false) {
+                $score += 10; // Coincidencia en estado
+            }
+            if (stripos($property->type, $searchQuery) !== false) {
+                $score += 10; // Coincidencia en tipo
             }
             if (stripos($property->description, $searchQuery) !== false) {
                 $score += 5; // Coincidencia en descripción
@@ -822,37 +833,48 @@ public function processRecommendations(Request $request)
             if (stripos($property->address, $searchQuery) !== false) {
                 $score += 5; // Coincidencia en dirección
             }
-            if (stripos($property->type, $searchQuery) !== false) {
-                $score += 7; // Coincidencia en tipo
-            }
 
-            // SCORE POR KEYWORDS INDIVIDUALES
-            foreach ($keywords as $keyword) {
+            // SCORE POR KEYWORDS EXPANDIDOS (más flexible)
+            foreach ($expandedKeywords as $keyword) {
                 if (stripos($property->title, $keyword) !== false) {
-                    $score += 3;
+                    $score += 4;
                 }
                 if (stripos($property->city, $keyword) !== false) {
-                    $score += 2;
+                    $score += 3;
+                }
+                if (stripos($property->state, $keyword) !== false) {
+                    $score += 3;
                 }
                 if (stripos($property->type, $keyword) !== false) {
+                    $score += 3;
+                }
+                if (stripos($property->address, $keyword) !== false) {
                     $score += 2;
                 }
                 if (stripos($property->description, $keyword) !== false) {
                     $score += 1;
                 }
+                if (stripos($property->country, $keyword) !== false) {
+                    $score += 2;
+                }
+            }
+
+            // BONUS: Propiedades recientes (menos de 30 días)
+            if ($property->created_at && $property->created_at->gt(now()->subDays(30))) {
+                $score += 2;
             }
 
             $property->relevance_score = $score;
             return $property;
         });
 
-        // 🔥 FILTRAR: Solo propiedades con score >= 5 (MÁS ESTRICTO)
+        // 🔥 FILTRAR: Score más bajo para incluir MÁS resultados
         $relevantProperties = $propertiesWithScore
             ->filter(function($property) {
-                return $property->relevance_score >= 5; // Mínimo score de 5
+                return $property->relevance_score >= 2; // Score mínimo muy bajo para ser inclusivo
             })
             ->sortByDesc('relevance_score')
-            ->take(10) // Máximo 10 propiedades
+            ->take(15) // Más propiedades en resultados
             ->values();
 
         $propertiesCount = $relevantProperties->count();
@@ -861,7 +883,8 @@ public function processRecommendations(Request $request)
             'total_raw' => $properties->count(),
             'relevant_filtered' => $propertiesCount,
             'query' => $searchQuery,
-            'keywords' => $keywords
+            'keywords_expanded' => $expandedKeywords,
+            'top_scores' => $relevantProperties->take(5)->pluck('relevance_score', 'title')->toArray()
         ]);
 
         // 🔥 SI NO HAY PROPIEDADES RELEVANTES, NO CONTINUAR
@@ -1008,8 +1031,8 @@ public function processRecommendations(Request $request)
             'properties_found' => $propertiesCount,
             'similar_searches_count' => count($similarSearches),
             'recommendation_sent' => true,
-            'cooldown_minutes' => 15,
-            'daily_limit_remaining' => 5 - $todayNotifications - 1
+            'cooldown_minutes' => 5,  // Actualizado de 15 a 5
+            'daily_limit_remaining' => 15 - $todayNotifications - 1  // Actualizado de 5 a 15
         ]);
 
     } catch (\Exception $e) {

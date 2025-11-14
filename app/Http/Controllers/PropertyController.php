@@ -134,14 +134,54 @@ class PropertyController extends Controller
             $query->where('user_id', '!=', Auth::id());
         }
 
-        // Filtros de búsqueda
+        // 🔥 FILTROS DE BÚSQUEDA INTELIGENTE
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+
+            // Diccionario de sinónimos
+            $synonyms = [
+                'casa' => ['casa', 'hogar', 'residencia', 'vivienda', 'chalet', 'bungalow'],
+                'departamento' => ['departamento', 'apartamento', 'depa', 'piso', 'flat'],
+                'terreno' => ['terreno', 'lote', 'parcela', 'solar'],
+                'local' => ['local', 'comercial', 'negocio', 'tienda'],
+                'guadalajara' => ['guadalajara', 'gdl', 'zapopan', 'tlaquepaque', 'tonalá'],
+                'monterrey' => ['monterrey', 'mty', 'san pedro', 'apodaca'],
+            ];
+
+            // Expandir keywords
+            $keywords = array_filter(explode(' ', strtolower($search)), function($word) {
+                return strlen($word) >= 2;
+            });
+
+            $expandedKeywords = [];
+            foreach ($keywords as $keyword) {
+                $expandedKeywords[] = $keyword;
+                foreach ($synonyms as $mainWord => $syns) {
+                    if (in_array($keyword, $syns) || stripos($mainWord, $keyword) !== false) {
+                        $expandedKeywords = array_merge($expandedKeywords, $syns);
+                        break;
+                    }
+                }
+            }
+            $expandedKeywords = array_unique($expandedKeywords);
+
+            $query->where(function($q) use ($search, $expandedKeywords) {
+                // Búsqueda del texto completo
                 $q->where('title', 'like', "%{$search}%")
                 ->orWhere('description', 'like', "%{$search}%")
                 ->orWhere('city', 'like', "%{$search}%")
-                ->orWhere('address', 'like', "%{$search}%");
+                ->orWhere('state', 'like', "%{$search}%")
+                ->orWhere('address', 'like', "%{$search}%")
+                ->orWhere('type', 'like', "%{$search}%");
+
+                // Búsqueda por keywords expandidos
+                foreach ($expandedKeywords as $keyword) {
+                    $q->orWhere('title', 'like', "%{$keyword}%")
+                      ->orWhere('city', 'like', "%{$keyword}%")
+                      ->orWhere('state', 'like', "%{$keyword}%")
+                      ->orWhere('type', 'like', "%{$keyword}%")
+                      ->orWhere('description', 'like', "%{$keyword}%");
+                }
             });
         }
 
@@ -950,20 +990,66 @@ class PropertyController extends Controller
         }
 
         try {
+            // 🔥 BÚSQUEDA INTELIGENTE CON SINÓNIMOS
+            $synonyms = [
+                'casa' => ['casa', 'hogar', 'residencia', 'vivienda', 'chalet', 'bungalow'],
+                'departamento' => ['departamento', 'apartamento', 'depa', 'piso', 'flat'],
+                'terreno' => ['terreno', 'lote', 'parcela', 'solar'],
+                'local' => ['local', 'comercial', 'negocio', 'tienda'],
+                'oficina' => ['oficina', 'despacho', 'corporativo'],
+                'bodega' => ['bodega', 'almacén', 'warehouse'],
+                'estudio' => ['estudio', 'loft', 'monoambiente'],
+                'guadalajara' => ['guadalajara', 'gdl', 'zapopan', 'tlaquepaque', 'tonalá'],
+                'monterrey' => ['monterrey', 'mty', 'san pedro', 'apodaca'],
+                'cdmx' => ['cdmx', 'ciudad de méxico', 'méxico', 'df', 'ciudad'],
+            ];
+
+            // Expandir keywords con sinónimos
+            $expandedKeywords = [];
+            if (!empty(trim($query))) {
+                $keywords = array_filter(explode(' ', strtolower($query)), function($word) {
+                    return strlen($word) >= 2;
+                });
+
+                foreach ($keywords as $keyword) {
+                    $expandedKeywords[] = $keyword;
+                    foreach ($synonyms as $mainWord => $syns) {
+                        if (in_array($keyword, $syns) || stripos($mainWord, $keyword) !== false) {
+                            $expandedKeywords = array_merge($expandedKeywords, $syns);
+                            break;
+                        }
+                    }
+                }
+                $expandedKeywords = array_unique($expandedKeywords);
+            }
+
             $searchQuery = Property::with(['user:id,name,last_name', 'photos'])
                 ->where('is_active', true);
 
-            // Filtro de texto (query)
+            // Filtro de texto (query) con sinónimos expandidos
             if (!empty(trim($query))) {
-                $searchQuery->where(function($q) use ($query) {
+                $searchQuery->where(function($q) use ($query, $expandedKeywords) {
+                    // Búsqueda del query completo
                     $searchTerm = '%' . $query . '%';
-
                     $q->where('title', 'like', $searchTerm)
                       ->orWhere('description', 'like', $searchTerm)
                       ->orWhere('city', 'like', $searchTerm)
                       ->orWhere('address', 'like', $searchTerm)
                       ->orWhere('state', 'like', $searchTerm)
+                      ->orWhere('country', 'like', $searchTerm)
                       ->orWhere('type', 'like', $searchTerm);
+
+                    // También buscar por keywords expandidos
+                    foreach ($expandedKeywords as $keyword) {
+                        $q->orWhere(function($subQuery) use ($keyword) {
+                            $subQuery->where('title', 'like', "%{$keyword}%")
+                                ->orWhere('description', 'like', "%{$keyword}%")
+                                ->orWhere('city', 'like', "%{$keyword}%")
+                                ->orWhere('state', 'like', "%{$keyword}%")
+                                ->orWhere('type', 'like', "%{$keyword}%")
+                                ->orWhere('address', 'like', "%{$keyword}%");
+                        });
+                    }
                 });
             }
 
