@@ -1681,18 +1681,28 @@ function Chat() {
             
             if (response.ok && data.success && isMountedRef.current) {
                 console.log('✅ Conversación eliminada exitosamente');
-                
-                // Actualizar lista de conversaciones
-                setConversations(prev => prev.filter(conv => {
-                    const convId = `property_${conv.property_id}_users_${Math.min(conv.other_user_id, user.id)}_${Math.max(conv.other_user_id, user.id)}`;
-                    return convId !== conversationId;
-                }));
-                
-                // Si el chat eliminado es el actual, limpiar TODOS los estados
-                if (currentChat?.id === conversationId) {
+
+                // ✅ Verificar si la conversación eliminada es la actual
+                const isCurrentChat = currentChat?.id === conversationId ||
+                                     (currentChat?.property_id === conversation.property_id &&
+                                      currentChat?.other_user_id === conversation.other_user_id);
+
+                console.log('🔍 Eliminando conversación:', {
+                    conversationId,
+                    currentChatId: currentChat?.id,
+                    isCurrentChat,
+                    propertyId: conversation.property_id,
+                    otherUserId: conversation.other_user_id
+                });
+
+                // ✅ SIEMPRE limpiar el chat actual si coincide
+                if (isCurrentChat) {
+                    console.log('🧹 Limpiando chat actual...');
+                    // Limpiar chat actual y todos los estados relacionados
                     setCurrentChat(null);
                     setMessages([]);
                     setNewMessage('');
+                    newMessageRef.current = '';
                     setSelectedFile(null);
                     setShowFilePreview(false);
                     setErrorMessage('');
@@ -1707,18 +1717,31 @@ function Chat() {
                     setVoiceRecorder(null);
                     setHoveredMessage(null);
                     setShowReactionPicker(null);
-                    
+
                     // Limpiar input de archivo
                     if (fileInputRef.current) {
                         fileInputRef.current.value = '';
                     }
                 }
-                
-                // Actualizar cache
-                await loadConversationsWithCache();
-                
+
+                // Actualizar lista de conversaciones
+                setConversations(prev => prev.filter(conv => {
+                    const convId = `property_${conv.property_id}_users_${Math.min(conv.other_user_id, user.id)}_${Math.max(conv.other_user_id, user.id)}`;
+                    return convId !== conversationId;
+                }));
+
+                // Cerrar modal inmediatamente
                 setShowDeleteModal(false);
                 setChatToDelete(null);
+
+                // ✅ Recargar conversaciones en background (no bloqueante)
+                setTimeout(() => {
+                    if (isMountedRef.current) {
+                        loadConversationsWithCache().catch(err =>
+                            console.error('Error recargando conversaciones:', err)
+                        );
+                    }
+                }, 100);
             } else {
                 console.error('❌ Error del servidor:', data.message);
                 setErrorMessage(data.message || 'Error al eliminar la conversación');
@@ -1781,11 +1804,11 @@ function Chat() {
     // ============================================
     const sendMessage = useCallback(async (e) => {
         e.preventDefault();
-        
+
         const messageText = newMessageRef.current.trim();
-        
+
         if ((!messageText && !selectedFile) || !currentChat || isSending || !isMountedRef.current) return;
-        
+
         // ✅ MEJORA: Rate limiting
         const now = Date.now();
         if (now - lastMessageTime < MESSAGE_COOLDOWN) {
@@ -1800,7 +1823,10 @@ function Chat() {
             return;
         }
         setLastMessageTime(now);
-        
+
+        // ID temporal para optimistic update
+        const tempId = `temp_${Date.now()}`;
+
         try {
             setIsSending(true);
             setErrorMessage('');
@@ -1844,6 +1870,43 @@ function Chat() {
                 throw new Error(errorData.message || 'Error al enviar mensaje');
             }
 
+            // ✅ OPTIMISTIC UPDATE: Crear mensaje temporal inmediatamente
+            const optimisticMessage = {
+                id: tempId,
+                content: messageText || '',
+                sender_id: user.id,
+                receiver_id: currentChat.other_user_id,
+                created_at: new Date().toISOString(),
+                is_read: false,
+                file_url: selectedFile ? URL.createObjectURL(selectedFile) : null,
+                file_type: selectedFile?.type?.split('/')[0] || null,
+                sender: {
+                    id: user.id,
+                    name: user.name,
+                    avatar_url: user.avatar_url
+                },
+                _optimistic: true // Marca para identificar mensajes optimistas
+            };
+
+            // Mostrar mensaje inmediatamente
+            if (isMountedRef.current) {
+                setMessages(prev => [...prev, optimisticMessage]);
+                setNewMessage('');
+                newMessageRef.current = '';
+                setSelectedFile(null);
+                setShowFilePreview(false);
+
+                // Limpiar input de archivo
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+
+                if (messageText) {
+                    detectKeywords(messageText);
+                }
+            }
+
+            // Obtener respuesta del servidor
             const data = await response.json();
 
             // 🔒 Actualizar límite de mensajes con la respuesta
@@ -1855,30 +1918,22 @@ function Chat() {
                     setShowVerificationBanner(true);
                 }
             }
-            
+
+            // Reemplazar mensaje optimista con el real del servidor
             if (isMountedRef.current) {
-                setMessages(prev => [...prev, data.message]);
-                setNewMessage('');
-                newMessageRef.current = '';
-                setSelectedFile(null);
-                setShowFilePreview(false);
-                
-                // Limpiar input de archivo
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                }
-                
+                setMessages(prev => prev.map(msg =>
+                    msg.id === tempId ? data.message : msg
+                ));
+
                 // Resetear polling a frecuencia alta (conversación activa)
                 consecutiveEmptyPolls.current = 0;
                 setPollInterval(5000);
-                
-                if (messageText) {
-                    detectKeywords(messageText);
-                }
             }
         } catch (error) {
             console.error('❌ Error sending message:', error);
             if (isMountedRef.current) {
+                // Eliminar mensaje optimista si hay error
+                setMessages(prev => prev.filter(msg => msg.id !== tempId));
                 setErrorMessage(error.message);
                 setErrorType('message');
             }

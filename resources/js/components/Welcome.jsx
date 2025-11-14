@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import PropertyMap from './PropertyMap';
 
 function Welcome({ user = null }) {
    const [isMobile, setIsMobile] = useState(false);
@@ -208,37 +207,216 @@ function Welcome({ user = null }) {
                </div>
            </section>
 
-           {/* Map Section - REACTIVADO */}
+           {/* Interactive Map CTA Section */}
            <section className="section" style={{background: 'var(--bg-primary)', padding: 'clamp(3rem, 8vw, 6rem) 1rem'}}>
                <div className="container" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-                   <h2 className="section-title font-display" style={{
-                       fontSize: 'clamp(2rem, 5vw, 3rem)',
-                       textAlign: 'center',
-                       marginBottom: '1rem'
-                   }}>
-                       Ubicaciones de Propiedades
-                   </h2>
-                   <p className="section-subtitle" style={{
-                       fontSize: 'clamp(1rem, 2.5vw, 1.25rem)',
-                       textAlign: 'center',
-                       marginBottom: '3rem',
-                       maxWidth: '600px',
-                       margin: '0 auto 3rem'
-                   }}>
-                       Explora nuestras propiedades disponibles en el mapa interactivo
-                   </p>
-
-                   <div style={{
+                   <div className="map-cta-card" style={{
                        position: 'relative',
-                       height: 'clamp(300px, 50vw, 500px)',
-                       borderRadius: '1rem',
+                       background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
+                       borderRadius: '2rem',
+                       padding: 'clamp(3rem, 8vw, 4rem) clamp(2rem, 5vw, 3rem)',
                        overflow: 'hidden',
-                       boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
-                       border: '1px solid var(--border-primary)'
+                       boxShadow: '0 20px 60px rgba(59, 130, 246, 0.3)'
                    }}>
-                       <PropertyMap />
+                       {/* Background Pattern */}
+                       <div style={{
+                           position: 'absolute',
+                           inset: 0,
+                           opacity: 0.1,
+                           backgroundImage: 'radial-gradient(circle at 20px 20px, white 2px, transparent 0)',
+                           backgroundSize: '40px 40px'
+                       }}></div>
+
+                       {/* Floating Elements */}
+                       <div style={{
+                           position: 'absolute',
+                           top: '10%',
+                           right: '10%',
+                           width: '100px',
+                           height: '100px',
+                           background: 'rgba(255, 255, 255, 0.1)',
+                           borderRadius: '50%',
+                           animation: 'float 6s ease-in-out infinite'
+                       }}></div>
+                       <div style={{
+                           position: 'absolute',
+                           bottom: '15%',
+                           left: '5%',
+                           width: '150px',
+                           height: '150px',
+                           background: 'rgba(255, 255, 255, 0.05)',
+                           borderRadius: '50%',
+                           animation: 'float 8s ease-in-out infinite'
+                       }}></div>
+
+                       <div style={{ position: 'relative', zIndex: 10, textAlign: 'center' }}>
+                           {/* Icon */}
+                           <div style={{
+                               display: 'inline-flex',
+                               alignItems: 'center',
+                               justifyContent: 'center',
+                               width: 'clamp(80px, 15vw, 100px)',
+                               height: 'clamp(80px, 15vw, 100px)',
+                               background: 'rgba(255, 255, 255, 0.2)',
+                               backdropFilter: 'blur(10px)',
+                               borderRadius: '2rem',
+                               marginBottom: '2rem',
+                               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
+                           }}>
+                               <svg style={{
+                                   width: 'clamp(40px, 8vw, 50px)',
+                                   height: 'clamp(40px, 8vw, 50px)',
+                                   color: 'white'
+                               }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   <circle cx="12" cy="12" r="10" strokeWidth="2" />
+                                   <circle cx="12" cy="12" r="3" fill="currentColor" />
+                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v4m0 12v4M2 12h4m12 0h4" />
+                               </svg>
+                           </div>
+
+                           <h2 className="font-display" style={{
+                               fontSize: 'clamp(2rem, 6vw, 3.5rem)',
+                               fontWeight: '800',
+                               color: 'white',
+                               marginBottom: '1rem',
+                               lineHeight: '1.2'
+                           }}>
+                               Encuentra tu zona ideal
+                           </h2>
+
+                           <p style={{
+                               fontSize: 'clamp(1rem, 2.5vw, 1.25rem)',
+                               color: 'rgba(255, 255, 255, 0.9)',
+                               marginBottom: '2rem',
+                               maxWidth: '600px',
+                               marginLeft: 'auto',
+                               marginRight: 'auto',
+                               lineHeight: '1.6'
+                           }}>
+                               Usa nuestro radar interactivo para explorar propiedades cercanas a cualquier ubicación
+                           </p>
+
+                           {/* Features Grid */}
+                           <div style={{
+                               display: 'grid',
+                               gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                               gap: '1.5rem',
+                               marginBottom: '3rem',
+                               maxWidth: '900px',
+                               marginLeft: 'auto',
+                               marginRight: 'auto'
+                           }}>
+                               <div style={{
+                                   background: 'rgba(255, 255, 255, 0.15)',
+                                   backdropFilter: 'blur(10px)',
+                                   borderRadius: '1rem',
+                                   padding: '1.5rem',
+                                   border: '1px solid rgba(255, 255, 255, 0.2)'
+                               }}>
+                                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎯</div>
+                                   <h3 style={{ color: 'white', fontWeight: '700', marginBottom: '0.5rem', fontSize: 'clamp(1rem, 2vw, 1.1rem)' }}>
+                                       Búsqueda Precisa
+                                   </h3>
+                                   <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: 'clamp(0.875rem, 1.8vw, 0.95rem)', margin: 0 }}>
+                                       Radio ajustable de 0.5 a 10km
+                                   </p>
+                               </div>
+
+                               <div style={{
+                                   background: 'rgba(255, 255, 255, 0.15)',
+                                   backdropFilter: 'blur(10px)',
+                                   borderRadius: '1rem',
+                                   padding: '1.5rem',
+                                   border: '1px solid rgba(255, 255, 255, 0.2)'
+                               }}>
+                                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📍</div>
+                                   <h3 style={{ color: 'white', fontWeight: '700', marginBottom: '0.5rem', fontSize: 'clamp(1rem, 2vw, 1.1rem)' }}>
+                                       Ubicación Real
+                                   </h3>
+                                   <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: 'clamp(0.875rem, 1.8vw, 0.95rem)', margin: 0 }}>
+                                       Propiedades en tiempo real
+                                   </p>
+                               </div>
+
+                               <div style={{
+                                   background: 'rgba(255, 255, 255, 0.15)',
+                                   backdropFilter: 'blur(10px)',
+                                   borderRadius: '1rem',
+                                   padding: '1.5rem',
+                                   border: '1px solid rgba(255, 255, 255, 0.2)'
+                               }}>
+                                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⚡</div>
+                                   <h3 style={{ color: 'white', fontWeight: '700', marginBottom: '0.5rem', fontSize: 'clamp(1rem, 2vw, 1.1rem)' }}>
+                                       Resultados Rápidos
+                                   </h3>
+                                   <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: 'clamp(0.875rem, 1.8vw, 0.95rem)', margin: 0 }}>
+                                       Búsqueda instantánea
+                                   </p>
+                               </div>
+                           </div>
+
+                           {/* CTA Button */}
+                           <button
+                               onClick={() => {
+                                   // Trigger el LayoutMap flotante
+                                   const mapButton = document.querySelector('.floating-map-btn');
+                                   if (mapButton) {
+                                       mapButton.click();
+                                   }
+                               }}
+                               style={{
+                                   background: 'white',
+                                   color: '#3b82f6',
+                                   border: 'none',
+                                   padding: 'clamp(1rem, 2.5vw, 1.25rem) clamp(2.5rem, 6vw, 3.5rem)',
+                                   borderRadius: '1rem',
+                                   fontSize: 'clamp(1rem, 2.5vw, 1.2rem)',
+                                   fontWeight: '700',
+                                   cursor: 'pointer',
+                                   boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
+                                   transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                                   display: 'inline-flex',
+                                   alignItems: 'center',
+                                   gap: '0.75rem'
+                               }}
+                               onMouseEnter={(e) => {
+                                   e.target.style.transform = 'translateY(-4px) scale(1.05)';
+                                   e.target.style.boxShadow = '0 15px 50px rgba(0, 0, 0, 0.3)';
+                               }}
+                               onMouseLeave={(e) => {
+                                   e.target.style.transform = 'translateY(0) scale(1)';
+                                   e.target.style.boxShadow = '0 10px 40px rgba(0, 0, 0, 0.2)';
+                               }}
+                           >
+                               <svg style={{ width: '24px', height: '24px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   <circle cx="12" cy="12" r="10" strokeWidth="2" />
+                                   <circle cx="12" cy="12" r="3" fill="currentColor" />
+                               </svg>
+                               Abrir Radar de Propiedades
+                           </button>
+
+                           <p style={{
+                               marginTop: '1.5rem',
+                               fontSize: 'clamp(0.875rem, 2vw, 1rem)',
+                               color: 'rgba(255, 255, 255, 0.7)',
+                               margin: '1.5rem 0 0 0'
+                           }}>
+                               Haz clic en el mapa para buscar propiedades en cualquier ubicación
+                           </p>
+                       </div>
                    </div>
                </div>
+
+               <style>{`
+                   @keyframes float {
+                       0%, 100% {
+                           transform: translateY(0px) rotate(0deg);
+                       }
+                       50% {
+                           transform: translateY(-20px) rotate(5deg);
+                       }
+                   }
+               `}</style>
            </section>
 
            {/* Property Showcase */}

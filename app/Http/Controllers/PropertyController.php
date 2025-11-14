@@ -922,13 +922,26 @@ class PropertyController extends Controller
     {
         $request->validate([
             'query' => 'nullable|string|max:255',
-            'limit' => 'nullable|integer|min:1|max:20'
+            'limit' => 'nullable|integer|min:1|max:50',
+            'type' => 'nullable|string|in:all,properties,users,communities',
+            'location' => 'nullable|string|max:255',
+            'property_type' => 'nullable|string',
+            'sort_by' => 'nullable|string|in:relevance,price_asc,price_desc,date_new,date_old',
+            'price_min' => 'nullable|numeric|min:0',
+            'price_max' => 'nullable|numeric|min:0'
         ]);
 
         $query = $request->get('query', '');
-        $limit = $request->get('limit', 8);
+        $limit = $request->get('limit', 20);
+        $type = $request->get('type', 'all');
+        $location = $request->get('location', '');
+        $propertyType = $request->get('property_type', 'all');
+        $sortBy = $request->get('sort_by', 'relevance');
+        $priceMin = $request->get('price_min');
+        $priceMax = $request->get('price_max');
 
-        if (empty(trim($query))) {
+        // Si no hay query ni filtros, retornar vacío
+        if (empty(trim($query)) && empty(trim($location)) && !$priceMin && !$priceMax) {
             return response()->json([
                 'success' => true,
                 'results' => [],
@@ -938,8 +951,11 @@ class PropertyController extends Controller
 
         try {
             $searchQuery = Property::with(['user:id,name,last_name', 'photos'])
-                ->where('is_active', true)
-                ->where(function($q) use ($query) {
+                ->where('is_active', true);
+
+            // Filtro de texto (query)
+            if (!empty(trim($query))) {
+                $searchQuery->where(function($q) use ($query) {
                     $searchTerm = '%' . $query . '%';
 
                     $q->where('title', 'like', $searchTerm)
@@ -948,29 +964,78 @@ class PropertyController extends Controller
                       ->orWhere('address', 'like', $searchTerm)
                       ->orWhere('state', 'like', $searchTerm)
                       ->orWhere('type', 'like', $searchTerm);
-                })
-                ->select([
-                    'id', 'title', 'description', 'city', 'address',
-                    'state', 'price', 'type', 'bedrooms', 'bathrooms',
-                    'area', 'image', 'user_id'
-                ])
-                ->orderByRaw("
-                    CASE
-                        WHEN title LIKE ? THEN 1
-                        WHEN city LIKE ? THEN 2
-                        WHEN address LIKE ? THEN 3
-                        WHEN type LIKE ? THEN 4
-                        ELSE 5
-                    END
-                ", [
-                    '%' . $query . '%',
-                    '%' . $query . '%',
-                    '%' . $query . '%',
-                    '%' . $query . '%'
-                ])
-                ->limit($limit);
+                });
+            }
 
-            $properties = $searchQuery->get();
+            // Filtro de ubicación
+            if (!empty(trim($location))) {
+                $searchQuery->where(function($q) use ($location) {
+                    $locationTerm = '%' . $location . '%';
+                    $q->where('city', 'like', $locationTerm)
+                      ->orWhere('state', 'like', $locationTerm)
+                      ->orWhere('address', 'like', $locationTerm);
+                });
+            }
+
+            // Filtro de tipo de propiedad
+            if ($propertyType !== 'all' && !empty($propertyType)) {
+                $searchQuery->where('type', $propertyType);
+            }
+
+            // Filtro de rango de precio
+            if ($priceMin !== null && $priceMin > 0) {
+                $searchQuery->where('price', '>=', $priceMin);
+            }
+
+            if ($priceMax !== null && $priceMax > 0) {
+                $searchQuery->where('price', '<=', $priceMax);
+            }
+
+            // Ordenamiento
+            switch ($sortBy) {
+                case 'price_asc':
+                    $searchQuery->orderBy('price', 'asc');
+                    break;
+                case 'price_desc':
+                    $searchQuery->orderBy('price', 'desc');
+                    break;
+                case 'date_new':
+                    $searchQuery->orderBy('created_at', 'desc');
+                    break;
+                case 'date_old':
+                    $searchQuery->orderBy('created_at', 'asc');
+                    break;
+                case 'relevance':
+                default:
+                    // Ordenar por relevancia si hay query
+                    if (!empty(trim($query))) {
+                        $searchQuery->orderByRaw("
+                            CASE
+                                WHEN title LIKE ? THEN 1
+                                WHEN city LIKE ? THEN 2
+                                WHEN address LIKE ? THEN 3
+                                WHEN type LIKE ? THEN 4
+                                ELSE 5
+                            END
+                        ", [
+                            '%' . $query . '%',
+                            '%' . $query . '%',
+                            '%' . $query . '%',
+                            '%' . $query . '%'
+                        ]);
+                    } else {
+                        $searchQuery->orderBy('created_at', 'desc');
+                    }
+                    break;
+            }
+
+            $searchQuery->select([
+                'id', 'title', 'description', 'city', 'address',
+                'state', 'price', 'type', 'bedrooms', 'bathrooms',
+                'area', 'image', 'user_id', 'created_at'
+            ]);
+
+            $properties = $searchQuery->limit($limit)->get();
 
             $formattedResults = $properties->map(function($property) {
                 return [
@@ -994,7 +1059,14 @@ class PropertyController extends Controller
                 'success' => true,
                 'results' => $formattedResults,
                 'total' => $properties->count(),
-                'query' => $query
+                'query' => $query,
+                'filters_applied' => [
+                    'location' => $location,
+                    'property_type' => $propertyType,
+                    'price_min' => $priceMin,
+                    'price_max' => $priceMax,
+                    'sort_by' => $sortBy
+                ]
             ]);
 
         } catch (\Exception $e) {

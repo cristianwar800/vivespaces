@@ -905,6 +905,128 @@ function FaceIDStep({ onComplete, onBack, previousResult }) {
                                 </div>
                             )}
 
+                            {/* 🔥 MOSTRAR DATOS EXTRAÍDOS DEL OCR aunque haya error */}
+                            {result.ocr_validation && result.ocr_validation.extracted_text && (
+                                <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 p-6 rounded-xl border-2 border-gray-300 dark:border-gray-700 text-left mb-6 shadow-lg">
+                                    <p className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center space-x-2 text-lg">
+                                        <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <span>📄 Información extraída de la INE:</span>
+                                    </p>
+
+                                    <div className="space-y-3 bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        {result.ocr_validation.expected_name && (
+                                            <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
+                                                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                                                    Nombre esperado (tu perfil):
+                                                </p>
+                                                <p className="text-base font-bold text-green-600 dark:text-green-400">
+                                                    {result.ocr_validation.expected_name}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
+                                            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                                                Texto completo extraído:
+                                            </p>
+                                            <p className="text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
+                                                {result.ocr_validation.extracted_text}
+                                            </p>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                                                    Palabras coincidentes:
+                                                </p>
+                                                <p className="text-lg font-bold text-gray-700 dark:text-gray-300">
+                                                    {result.ocr_validation.matched_words || 0} / {result.ocr_validation.total_words || 0}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                                                    Porcentaje de coincidencia:
+                                                </p>
+                                                <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                                                    {result.ocr_validation.name_match_percentage}%
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {result.code === 'NAME_MISMATCH' && (
+                                        <div className="mt-4 space-y-3">
+                                            {result.face_id && result.face_id.approved ? (
+                                                // Rostro coincide pero nombre no - POSIBLE FRAUDE
+                                                <div className="p-5 bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20 rounded-lg border-l-4 border-red-500">
+                                                    <div className="flex items-start space-x-3">
+                                                        <svg className="w-6 h-6 flex-shrink-0 mt-0.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <div className="flex-1">
+                                                            <p className="font-bold text-red-900 dark:text-red-200 mb-2 text-base">
+                                                                ⚠️ El nombre en la INE no coincide con tu perfil
+                                                            </p>
+                                                            <p className="text-sm text-red-800 dark:text-red-300 mb-3">
+                                                                Tu rostro coincidió ({result.face_id.similarity_percentage}%), pero el nombre en la INE que subiste no corresponde con el nombre registrado en tu perfil de ViveSpaces.
+                                                            </p>
+                                                            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-red-300 dark:border-red-700">
+                                                                <p className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center space-x-2">
+                                                                    <span>🔒</span>
+                                                                    <span>Por tu seguridad:</span>
+                                                                </p>
+                                                                <div className="space-y-3 text-sm">
+                                                                    <div className="bg-red-50 dark:bg-red-900/30 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                                                                        <p className="font-semibold text-red-900 dark:text-red-200 mb-1">
+                                                                            👤 Nombre en tu perfil ViveSpaces:
+                                                                        </p>
+                                                                        <p className="font-mono text-red-700 dark:text-red-300 text-base">
+                                                                            {result.ocr_validation.expected_name}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div className="bg-amber-50 dark:bg-amber-900/30 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
+                                                                        <p className="font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                                                                            📄 Nombre detectado en la INE:
+                                                                        </p>
+                                                                        <p className="font-mono text-amber-700 dark:text-amber-300 text-base">
+                                                                            {result.ocr_validation.extracted_text.match(/NOMBRE\s+([A-ZÑ\s]+)/)?.[1]?.trim() || 'Ver texto extraído arriba'}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                                                                        <p className="text-gray-700 dark:text-gray-300 font-semibold mb-2">
+                                                                            ✅ Para verificar tu identidad correctamente:
+                                                                        </p>
+                                                                        <p className="text-gray-600 dark:text-gray-400">
+                                                                            Debes subir tu <strong>propia INE</strong> que corresponda con el nombre <strong className="text-red-600 dark:text-red-400">{result.ocr_validation.expected_name}</strong> registrado en tu perfil.
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                // Ni el rostro ni el nombre coinciden
+                                                <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-500">
+                                                    <p className="text-sm font-semibold text-red-800 dark:text-red-300 flex items-start space-x-2">
+                                                        <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <span>
+                                                            El nombre en la INE no coincide con tu perfil. Por seguridad, debes usar tu propia INE para verificar tu identidad.
+                                                        </span>
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Razones y Sugerencias - TODO DEL CÓDIGO ORIGINAL */}
                             {result.error_reasons && result.error_reasons.length > 0 && (
                                 <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-200 dark:border-red-800 text-left mb-6">

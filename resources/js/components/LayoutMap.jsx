@@ -48,6 +48,62 @@ const calculateCirclePoint = (centerLat, centerLng, radiusKm, angleDegrees) => {
   };
 };
 
+// Función para dispersar marcadores que tienen EXACTAMENTE la misma ubicación
+const disperseOverlappingMarkers = (properties) => {
+  const SAME_LOCATION_THRESHOLD = 0.0000001; // Prácticamente las mismas coordenadas exactas
+  const DISPERSE_RADIUS_KM = 0.03; // 30 metros de radio para dispersar
+
+  const dispersed = [];
+  const processed = new Set();
+
+  properties.forEach((property, index) => {
+    if (processed.has(index)) return;
+
+    // Buscar propiedades en la MISMA ubicación EXACTA
+    const sameLocation = [property];
+    processed.add(index);
+
+    properties.forEach((other, otherIndex) => {
+      if (otherIndex === index || processed.has(otherIndex)) return;
+
+      const latDiff = Math.abs(property.latitude - other.latitude);
+      const lngDiff = Math.abs(property.longitude - other.longitude);
+
+      // Solo agrupar si están en EXACTAMENTE la misma ubicación
+      if (latDiff < SAME_LOCATION_THRESHOLD && lngDiff < SAME_LOCATION_THRESHOLD) {
+        sameLocation.push(other);
+        processed.add(otherIndex);
+      }
+    });
+
+    // Si solo hay una propiedad, NO dispersar - usar coordenadas originales
+    if (sameLocation.length === 1) {
+      dispersed.push(property);
+    } else {
+      // Solo dispersar si hay 2 o más propiedades en la MISMA ubicación exacta
+      sameLocation.forEach((prop, idx) => {
+        const angle = (idx / sameLocation.length) * 360;
+        const newCoords = calculateCirclePoint(
+          property.latitude,
+          property.longitude,
+          DISPERSE_RADIUS_KM,
+          angle
+        );
+
+        dispersed.push({
+          ...prop,
+          displayLatitude: newCoords.lat,
+          displayLongitude: newCoords.lng,
+          originalLatitude: prop.latitude,
+          originalLongitude: prop.longitude
+        });
+      });
+    }
+  });
+
+  return dispersed;
+};
+
 // ==================== COMPONENTE MARCADOR CLUSTER ====================
 const ClusterMarker = ({ count, onClick }) => (
   <div className="cluster-marker-wrapper" onClick={onClick} style={{ cursor: 'pointer' }}>
@@ -124,10 +180,9 @@ const SearchBar = ({ onSearch, onClose }) => {
   );
 };
 
-// ==================== COMPONENTE BARRA DE RADIO COMPACTO ====================
+// ==================== COMPONENTE BARRA DE RADIO COMPACTO (SIEMPRE VISIBLE) ====================
 const RadiusSlider = ({ radius, onRadiusChange, isSearching, propertiesCount }) => {
   const [localRadius, setLocalRadius] = useState(radius);
-  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     setLocalRadius(radius);
@@ -144,8 +199,8 @@ const RadiusSlider = ({ radius, onRadiusChange, isSearching, propertiesCount }) 
   };
 
   return (
-    <div className={`radius-slider-compact ${isCollapsed ? 'collapsed' : ''}`}>
-      <div className="radius-header-compact" onClick={() => setIsCollapsed(!isCollapsed)}>
+    <div className="radius-slider-compact">
+      <div className="radius-header-compact">
         <div className="radius-info-compact">
           <svg className="radius-icon-small" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" strokeWidth="2" />
@@ -156,48 +211,43 @@ const RadiusSlider = ({ radius, onRadiusChange, isSearching, propertiesCount }) 
             <span className="properties-badge">{propertiesCount}</span>
           )}
         </div>
-        <svg className={`toggle-arrow ${isCollapsed ? 'rotated' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-        </svg>
       </div>
 
-      {!isCollapsed && (
-        <div className="radius-content-compact">
-          <div className="radius-track-wrapper">
-            <input
-              type="range"
-              min="0.5"
-              max="10"
-              step="0.5"
-              value={localRadius}
-              onChange={handleChange}
-              onMouseUp={handleMouseUp}
-              onTouchEnd={handleMouseUp}
-              className="radius-input-compact"
-              disabled={isSearching}
+      <div className="radius-content-compact">
+        <div className="radius-track-wrapper">
+          <input
+            type="range"
+            min="0.5"
+            max="10"
+            step="0.5"
+            value={localRadius}
+            onChange={handleChange}
+            onMouseUp={handleMouseUp}
+            onTouchEnd={handleMouseUp}
+            className="radius-input-compact"
+            disabled={isSearching}
+          />
+          <div className="radius-track-bg-compact">
+            <div
+              className="radius-track-fill-compact"
+              style={{ width: `${((localRadius - 0.5) / 9.5) * 100}%` }}
             />
-            <div className="radius-track-bg-compact">
-              <div
-                className="radius-track-fill-compact"
-                style={{ width: `${((localRadius - 0.5) / 9.5) * 100}%` }}
-              />
-            </div>
           </div>
-
-          {isSearching && (
-            <div className="radius-status-compact searching">
-              <div className="status-spinner-small"></div>
-              <span>Buscando...</span>
-            </div>
-          )}
-
-          {!isSearching && propertiesCount !== undefined && propertiesCount === 0 && (
-            <div className="radius-status-compact warning">
-              <span>Sin propiedades - expande el radio</span>
-            </div>
-          )}
         </div>
-      )}
+
+        {isSearching && (
+          <div className="radius-status-compact searching">
+            <div className="status-spinner-small"></div>
+            <span>Buscando...</span>
+          </div>
+        )}
+
+        {!isSearching && propertiesCount !== undefined && propertiesCount === 0 && (
+          <div className="radius-status-compact warning">
+            <span>Sin propiedades - expande el radio</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -431,10 +481,12 @@ function LayoutMap({ user = null }) {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
-  const [expandedCluster, setExpandedCluster] = useState(null);
-
   // 🔥 NUEVO: Estado para el tracker
   const [tracker, setTracker] = useState(null);
+
+  // Estado para detectar si el mapa está siendo arrastrado
+  const [isMapDragging, setIsMapDragging] = useState(false);
+  const mapDragStartRef = useRef(null);
 
   // Estado para detectar si el menú móvil del navbar está abierto
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -444,7 +496,6 @@ function LayoutMap({ user = null }) {
   const userMarkerRef = useRef(null);
   const clickMarkerRef = useRef(null);
   const markersRef = useRef([]);
-  const clustersDataRef = useRef([]);
 
   // 🔥 NUEVO: Inicializar tracker
   useEffect(() => {
@@ -544,7 +595,6 @@ function LayoutMap({ user = null }) {
   const handleCloseRadar = useCallback(() => {
     setShowRadar(false);
     setRadarProperties([]);
-    setExpandedCluster(null);
 
     const map = mapInstanceRef.current;
     if (map) {
@@ -555,7 +605,6 @@ function LayoutMap({ user = null }) {
 
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current = [];
-    clustersDataRef.current = [];
 
     if (clickMarkerRef.current) {
       clickMarkerRef.current.remove();
@@ -590,19 +639,8 @@ function LayoutMap({ user = null }) {
   const searchPropertiesAtPoint = useCallback(async (lngLat, radius = radarRadius) => {
     setIsSearchingRadar(true);
 
-    // 🔥 NUEVO: Trackear búsqueda del radar con información geográfica
-    if (tracker) {
-      const searchQuery = `Radar ${radius}km en ${lngLat.lat.toFixed(4)}, ${lngLat.lng.toFixed(4)}`;
-      tracker.trackCustomSearch(searchQuery, {
-        type: 'map_radar',
-        search_context: 'map_radar_search',
-        radius: radius,
-        latitude: lngLat.lat,
-        longitude: lngLat.lng,
-        map_center: mapCenter
-      });
-      console.log('📊 Búsqueda de radar trackeada:', searchQuery);
-    }
+    // ℹ️ Las búsquedas geográficas de radar usan /api/properties/nearby directamente
+    // No necesitan trackeo de IA porque no son búsquedas por keywords
 
     try {
       const response = await fetch('/api/properties/nearby', {
@@ -675,7 +713,6 @@ function LayoutMap({ user = null }) {
 
   const handleRadiusChange = useCallback((newRadius) => {
     setRadarRadius(newRadius);
-    setExpandedCluster(null);
 
     // Cancelar búsqueda anterior si existe
     if (debounceTimerRef.current) {
@@ -691,14 +728,8 @@ function LayoutMap({ user = null }) {
   }, [showRadar, radarClickCoords, searchPropertiesAtPoint]);
 
   const handleSearch = useCallback(async (searchTerm) => {
-    // 🔥 NUEVO: Trackear búsqueda de ubicación
-    if (tracker) {
-      tracker.trackCustomSearch(searchTerm, {
-        type: 'map_location_search',
-        search_context: 'map_searchbar'
-      });
-      console.log('📊 Búsqueda de ubicación trackeada:', searchTerm);
-    }
+    // ℹ️ Las búsquedas de ubicación son geográficas (Mapbox geocoding)
+    // No necesitan trackeo de IA porque no buscan propiedades por keywords
 
     try {
       const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchTerm)}.json?access_token=${mapConfig.mapboxToken}&country=MX&limit=1`);
@@ -747,103 +778,16 @@ function LayoutMap({ user = null }) {
     }
   }, [isOpen, calculateModalPosition()]);
 
-  const expandCluster = useCallback((cluster, clusterIndex, avgLng, avgLat) => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    setExpandedCluster(clusterIndex);
-
-    map.flyTo({
-      center: [avgLng, avgLat],
-      zoom: Math.min(map.getZoom() + 3, 18),
-      duration: 800
-    });
-
-    setTimeout(() => {
-      const clusterMarkerIndex = markersRef.current.findIndex(m => {
-        const lngLat = m.getLngLat();
-        return Math.abs(lngLat.lng - avgLng) < 0.0001 && Math.abs(lngLat.lat - avgLat) < 0.0001;
-      });
-
-      if (clusterMarkerIndex !== -1) {
-        markersRef.current[clusterMarkerIndex].remove();
-        markersRef.current.splice(clusterMarkerIndex, 1);
-      }
-
-      cluster.forEach((property, propIndex) => {
-        setTimeout(() => {
-          const markerEl = document.createElement('div');
-
-          markerEl.style.opacity = '0';
-          markerEl.style.transform = 'scale(0)';
-          markerEl.style.transition = 'opacity 0.4s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
-
-          const root = ReactDOM.createRoot(markerEl);
-          root.render(<PropertyMarker featured={propIndex === 0} />);
-
-          const marker = new mapboxgl.Marker(markerEl)
-            .setLngLat([property.longitude, property.latitude])
-            .addTo(map);
-
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              markerEl.style.opacity = '1';
-              markerEl.style.transform = 'scale(1)';
-            });
-          });
-
-          markerEl.onclick = () => {
-            const popupContent = `
-              <div class="property-popup-mini">
-                <div class="popup-mini-image">
-                  <img
-                    src="${property.image ? `/storage/${property.image}` : `https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=200&h=120&fit=crop`}"
-                    alt="${property.title}"
-                    onerror="this.src='https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=200&h=120&fit=crop'"
-                  />
-                  <div class="popup-mini-badge">${property.distance}km</div>
-                </div>
-                <div class="popup-mini-content">
-                  <h4 class="popup-mini-title">${property.title}</h4>
-                  <div class="popup-mini-location">📍 ${property.city}</div>
-                  <div class="popup-mini-specs">
-                    <span>🛏️ ${property.bedrooms || 0}</span>
-                    <span>🚿 ${property.bathrooms || 0}</span>
-                    <span>📐 ${property.area || 0}m²</span>
-                  </div>
-                  <div class="popup-mini-price">$${Number(property.price).toLocaleString('es-MX')}</div>
-                  <a href="/properties/${property.id}" class="popup-mini-button">Ver más →</a>
-                </div>
-              </div>
-            `;
-
-            new mapboxgl.Popup({
-              maxWidth: '240px',
-              className: 'custom-popup-mini',
-              closeButton: true,
-              closeOnClick: true
-            })
-              .setLngLat([property.longitude, property.latitude])
-              .setHTML(popupContent)
-              .addTo(map);
-          };
-
-          markersRef.current.push(marker);
-        }, propIndex * 80);
-      });
-    }, 800);
-  }, []);
-
   useEffect(() => {
     if (!showRadar || !mapInstanceRef.current) return;
 
     const map = mapInstanceRef.current;
 
-    if (expandedCluster === null) {
-      markersRef.current.forEach(marker => marker.remove());
-      markersRef.current = [];
-    }
+    // Limpiar marcadores anteriores
+    markersRef.current.forEach(marker => marker.remove());
+    markersRef.current = [];
 
+    // Limpiar capas del radar si existen
     if (map.getLayer('radar-circle-border')) map.removeLayer('radar-circle-border');
     if (map.getLayer('radar-circle')) map.removeLayer('radar-circle');
     if (map.getSource('radar-source')) map.removeSource('radar-source');
@@ -855,12 +799,14 @@ function LayoutMap({ user = null }) {
 
     const circleCoords = [];
 
+    // Crear coordenadas del círculo
     for (let i = 0; i <= points; i++) {
       const angle = (i / points) * 360;
       const point = calculateCirclePoint(centerLat, centerLng, radiusInKm, angle);
       circleCoords.push([point.lng, point.lat]);
     }
 
+    // Agregar fuente del círculo
     map.addSource('radar-source', {
       type: 'geojson',
       data: {
@@ -872,6 +818,7 @@ function LayoutMap({ user = null }) {
       }
     });
 
+    // Capa de relleno del círculo
     map.addLayer({
       id: 'radar-circle',
       type: 'fill',
@@ -882,6 +829,7 @@ function LayoutMap({ user = null }) {
       }
     });
 
+    // Capa de borde del círculo
     map.addLayer({
       id: 'radar-circle-border',
       type: 'line',
@@ -903,134 +851,107 @@ function LayoutMap({ user = null }) {
       };
     }
 
-    const propertiesInRadius = radarProperties.filter(prop => {
-      const dist = calculateDistance(
-        radarClickCoords.lat,
-        radarClickCoords.lng,
-        prop.latitude,
-        prop.longitude
-      );
-      return dist <= (radarRadius + 0.01);
-    });
+    // ✅ MOSTRAR CADA PROPIEDAD INDIVIDUALMENTE (sin clustering)
+    // Dispersar propiedades que tienen exactamente la misma ubicación
+    const dispersedProperties = disperseOverlappingMarkers(radarProperties);
 
-    const clusters = [];
-    const clustered = new Set();
-    const CLUSTER_DISTANCE_KM = 0.2;
-
-    propertiesInRadius.forEach((prop, index) => {
-      if (clustered.has(index)) return;
-
-      const nearby = [prop];
-      clustered.add(index);
-
-      propertiesInRadius.forEach((other, otherIndex) => {
-        if (otherIndex === index || clustered.has(otherIndex)) return;
-
-        const distanceKm = calculateDistance(
-          prop.latitude,
-          prop.longitude,
-          other.latitude,
-          other.longitude
-        );
-
-        if (distanceKm < CLUSTER_DISTANCE_KM) {
-          nearby.push(other);
-          clustered.add(otherIndex);
-        }
-      });
-
-      clusters.push(nearby);
-    });
-
-    clustersDataRef.current = clusters;
-
-    clusters.forEach((cluster, clusterIndex) => {
-      if (expandedCluster === clusterIndex) {
-        return;
-      }
-
+    dispersedProperties.forEach((property, index) => {
       setTimeout(() => {
-        const avgLat = cluster.reduce((sum, p) => sum + p.latitude, 0) / cluster.length;
-        const avgLng = cluster.reduce((sum, p) => sum + p.longitude, 0) / cluster.length;
-
         const markerEl = document.createElement('div');
+
+        // Hacer el marcador completamente clickeable
+        markerEl.style.cursor = 'pointer';
+        markerEl.style.opacity = '0';
+        markerEl.style.transform = 'scale(0)';
+        markerEl.style.transition = 'opacity 0.4s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+
         const root = ReactDOM.createRoot(markerEl);
+        root.render(<PropertyMarker featured={index === 0} />);
 
-        if (cluster.length > 1) {
-          root.render(
-            <ClusterMarker
-              count={cluster.length}
-              onClick={() => expandCluster(cluster, clusterIndex, avgLng, avgLat)}
-            />
-          );
+        // Usar coordenadas originales (NO dispersadas) para mostrar en su ubicación real
+        const displayLng = property.longitude;
+        const displayLat = property.latitude;
 
-          const marker = new mapboxgl.Marker(markerEl)
-            .setLngLat([avgLng, avgLat])
-            .addTo(map);
+        const marker = new mapboxgl.Marker(markerEl)
+          .setLngLat([displayLng, displayLat])
+          .addTo(map);
 
-          markersRef.current.push(marker);
-        } else {
-          root.render(<PropertyMarker featured={clusterIndex === 0} />);
+        // Animar entrada del marcador
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            markerEl.style.opacity = '1';
+            markerEl.style.transform = 'scale(1)';
+          });
+        });
 
-          const property = cluster[0];
-          const marker = new mapboxgl.Marker(markerEl)
-            .setLngLat([property.longitude, property.latitude])
-            .addTo(map);
+        // Handler para mostrar popup - usando addEventListener en lugar de onclick
+        const showPopup = (e) => {
+          e.stopPropagation();
 
-          markerEl.onclick = () => {
-            const popupContent = `
-              <div class="property-popup-mini">
-                <div class="popup-mini-image">
-                  <img
-                    src="${property.image ? `/storage/${property.image}` : `https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=200&h=120&fit=crop`}"
-                    alt="${property.title}"
-                    onerror="this.src='https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=200&h=120&fit=crop'"
-                  />
-                  <div class="popup-mini-badge">${property.distance}km</div>
-                </div>
-                <div class="popup-mini-content">
-                  <h4 class="popup-mini-title">${property.title}</h4>
-                  <div class="popup-mini-location">📍 ${property.city}</div>
-                  <div class="popup-mini-specs">
-                    <span>🛏️ ${property.bedrooms || 0}</span>
-                    <span>🚿 ${property.bathrooms || 0}</span>
-                    <span>📐 ${property.area || 0}m²</span>
-                  </div>
-                  <div class="popup-mini-price">$${Number(property.price).toLocaleString('es-MX')}</div>
-                  <a href="/properties/${property.id}" class="popup-mini-button">Ver más →</a>
-                </div>
+          const popupContent = `
+            <div class="property-popup-mini">
+              <div class="popup-mini-image">
+                <img
+                  src="${property.image ? `/storage/${property.image}` : `https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=200&h=120&fit=crop`}"
+                  alt="${property.title}"
+                  onerror="this.src='https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=200&h=120&fit=crop'"
+                />
+                <div class="popup-mini-badge">${property.distance}km</div>
               </div>
-            `;
+              <div class="popup-mini-content">
+                <h4 class="popup-mini-title">${property.title}</h4>
+                <div class="popup-mini-location">📍 ${property.city}</div>
+                <div class="popup-mini-specs">
+                  <span>🛏️ ${property.bedrooms || 0}</span>
+                  <span>🚿 ${property.bathrooms || 0}</span>
+                  <span>📐 ${property.area || 0}m²</span>
+                </div>
+                <div class="popup-mini-price">$${Number(property.price).toLocaleString('es-MX')}</div>
+                <button onclick="window.location.href='/properties/${property.id}'" class="popup-mini-button">Ver más →</button>
+              </div>
+            </div>
+          `;
 
-            new mapboxgl.Popup({
-              maxWidth: '240px',
-              className: 'custom-popup-mini',
-              closeButton: true,
-              closeOnClick: true
-            })
-              .setLngLat([property.longitude, property.latitude])
-              .setHTML(popupContent)
-              .addTo(map);
-          };
+          new mapboxgl.Popup({
+            maxWidth: '240px',
+            className: 'custom-popup-mini',
+            closeButton: true,
+            closeOnClick: true
+          })
+            .setLngLat([displayLng, displayLat])
+            .setHTML(popupContent)
+            .addTo(map);
+        };
 
-          markersRef.current.push(marker);
-        }
-      }, clusterIndex * 100);
+        // Agregar event listener con captura para asegurar que se ejecute
+        markerEl.addEventListener('click', showPopup, true);
+
+        markersRef.current.push(marker);
+      }, index * 50);
     });
 
     return () => {
-      if (expandedCluster === null) {
-        markersRef.current.forEach(marker => marker.remove());
-        markersRef.current = [];
-      }
+      markersRef.current.forEach(marker => marker.remove());
+      markersRef.current = [];
 
       if (map.getLayer('radar-circle-border')) map.removeLayer('radar-circle-border');
       if (map.getLayer('radar-circle')) map.removeLayer('radar-circle');
       if (map.getSource('radar-source')) map.removeSource('radar-source');
     };
-  }, [showRadar, radarProperties, radarClickCoords, radarRadius, expandedCluster, expandCluster]);
+  }, [showRadar, radarProperties, radarClickCoords, radarRadius]);
 
   const handleMapClick = useCallback((e) => {
+    // Si el mapa fue arrastrado, no activar el radar
+    if (isMapDragging) {
+      return;
+    }
+
+    // Si el click fue en un popup o marcador, no activar el radar
+    if (e.originalEvent.target.closest('.mapboxgl-popup') ||
+        e.originalEvent.target.closest('.mapboxgl-marker')) {
+      return;
+    }
+
     if (showRadar) {
       handleCloseRadar();
     }
@@ -1049,10 +970,9 @@ function LayoutMap({ user = null }) {
 
     setRadarClickCoords({ lng: e.lngLat.lng, lat: e.lngLat.lat });
     setShowRadar(true);
-    setExpandedCluster(null);
 
     searchPropertiesAtPoint(e.lngLat);
-  }, [showRadar, handleCloseRadar, searchPropertiesAtPoint]);
+  }, [showRadar, handleCloseRadar, searchPropertiesAtPoint, isMapDragging]);
 
   const getUserLocation = useCallback(() => {
     setIsLoading(true);
@@ -1096,6 +1016,47 @@ function LayoutMap({ user = null }) {
       });
 
       map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
+
+      // Detectar cuando el usuario empieza a arrastrar el mapa
+      map.on('mousedown', () => {
+        mapDragStartRef.current = Date.now();
+        setIsMapDragging(false);
+      });
+
+      map.on('mousemove', () => {
+        // Si el mouse se mueve después de hacer mousedown, es un drag
+        if (mapDragStartRef.current) {
+          setIsMapDragging(true);
+        }
+      });
+
+      map.on('mouseup', () => {
+        // Después de 100ms, resetear el estado de dragging
+        setTimeout(() => {
+          setIsMapDragging(false);
+          mapDragStartRef.current = null;
+        }, 100);
+      });
+
+      // También detectar drag con touch (móvil)
+      map.on('touchstart', () => {
+        mapDragStartRef.current = Date.now();
+        setIsMapDragging(false);
+      });
+
+      map.on('touchmove', () => {
+        if (mapDragStartRef.current) {
+          setIsMapDragging(true);
+        }
+      });
+
+      map.on('touchend', () => {
+        setTimeout(() => {
+          setIsMapDragging(false);
+          mapDragStartRef.current = null;
+        }, 100);
+      });
+
       map.on('click', handleMapClick);
 
       mapInstanceRef.current = map;
@@ -1628,6 +1589,9 @@ function LayoutMap({ user = null }) {
           font-size: 12px;
           font-weight: 600;
           transition: all 0.2s;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
         }
 
         .popup-mini-button:hover {
@@ -1833,17 +1797,11 @@ function LayoutMap({ user = null }) {
           border-color: rgba(6, 182, 212, 0.2);
         }
 
-        .radius-slider-compact.collapsed .radius-content-compact {
-          max-height: 0;
-          padding: 0 16px;
-        }
-
         .radius-header-compact {
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 10px 16px;
-          cursor: pointer;
           user-select: none;
         }
 
@@ -1882,18 +1840,6 @@ function LayoutMap({ user = null }) {
           font-size: 12px;
           font-weight: 700;
           box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-        }
-
-        .toggle-arrow {
-          width: 16px;
-          height: 16px;
-          color: #10b981;
-          transition: transform 0.3s;
-          flex-shrink: 0;
-        }
-
-        .toggle-arrow.rotated {
-          transform: rotate(180deg);
         }
 
         .radius-content-compact {

@@ -29,42 +29,21 @@ import FavoritesPage from './components/Favorites';
 // ==================== 🎯 CONTROL DE WIDGETS ====================
 /**
  * Determina si los widgets globales (ChatBot y LayoutMap) deben mostrarse
- * según la ruta actual
+ * según la ruta actual.
+ *
+ * REGLA: Solo mostrar en la página Welcome (/)
  */
 function shouldShowGlobalWidgets() {
     const currentPath = window.location.pathname;
-    
-    // Lista de rutas/patrones donde NO queremos mostrar los widgets
-    const hiddenRoutes = [
-        '/properties/',          // Detalles de propiedades (ej: /properties/1)
-        '/admin',                // Panel de administración
-        '/messages',             // Mensajes de usuario
-        '/chat',                 // Chat
-        '/profile',              // Perfil de usuario
-        '/verification',         // Todo el flujo de verificación
-        '/verify',               // Rutas de verificación
-        '/photo-verification',   // Verificación de foto
-        '/test-ocr',            // Test OCR
-        '/my-properties',        // Mis propiedades
-        '/user/properties',      // Propiedades del usuario
-    ];
-    
-    // Verificar si la ruta actual coincide con alguna ruta oculta
-    const shouldHide = hiddenRoutes.some(route => currentPath.includes(route));
-    
-    // También ocultar si estamos en un contenedor específico de verificación
-    const verificationContainer = document.getElementById('verification-router-root');
-    const testOCRContainer = document.getElementById('test-ocr-root');
-    const chatContainer = document.getElementById('chat-root');
-    const adminPanelContainer = document.getElementById('admin-panel-root');
-    const profileContainer = document.getElementById('profile-root');
-    
-    if (verificationContainer || testOCRContainer || 
-        chatContainer || adminPanelContainer || profileContainer) {
-        return false;
-    }
-    
-    return !shouldHide;
+
+    // ✅ SOLO mostrar widgets en la página de bienvenida (Welcome)
+    const isWelcomePage = currentPath === '/' || currentPath === '/welcome';
+
+    // También verificar que exista el contenedor de Welcome
+    const welcomeContainer = document.getElementById('welcome-content');
+
+    // Solo mostrar si estamos en Welcome Y existe el contenedor
+    return isWelcomePage && welcomeContainer !== null;
 }
 
 // Función para obtener datos del usuario desde Laravel

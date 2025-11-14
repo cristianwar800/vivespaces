@@ -319,12 +319,20 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                                 <span className="text-sm mr-1">📐</span>
                                 <span className="text-sm font-medium">{property.area || 0} m²</span>
                             </div>
-                            {property.pets_allowed === 'pets_allowed' && (
-                                <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg px-2.5 py-1.5 border border-emerald-200 dark:border-emerald-800">
-                                    <span className="text-sm mr-1">🐕</span>
-                                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Mascotas OK</span>
-                                </div>
-                            )}
+                            <div className={`flex items-center rounded-lg px-2.5 py-1.5 border ${
+                                property.pets_allowed === 'pets_allowed'
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-800'
+                                    : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
+                            }`}>
+                                <span className="text-sm mr-1">{property.pets_allowed === 'pets_allowed' ? '🐕' : '🚫'}</span>
+                                <span className={`text-xs font-medium ${
+                                    property.pets_allowed === 'pets_allowed'
+                                        ? 'text-emerald-700 dark:text-emerald-300'
+                                        : 'text-red-700 dark:text-red-300'
+                                }`}>
+                                    {property.pets_allowed === 'pets_allowed' ? 'Mascotas OK' : 'Sin mascotas'}
+                                </span>
+                            </div>
                         </div>
 
                         <div className="flex items-center justify-between">
@@ -447,8 +455,8 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                     <span className="truncate text-sm">{property.address}, {property.city}, {property.state}</span>
                 </div>
 
-                <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-3 flex-wrap">
+                <div className="mb-5">
+                    <div className="flex items-center gap-2 flex-wrap justify-center">
                         <div className="flex items-center bg-gray-50 dark:bg-gray-700 rounded-lg px-2.5 py-1.5">
                             <span className="text-sm mr-1">🛏️</span>
                             <span className="text-sm font-medium">{property.bedrooms || 0}</span>
@@ -461,12 +469,20 @@ function PropertyCard({ property, user, navigate, contactSeller, viewMode = 'gri
                             <span className="text-sm mr-1">📐</span>
                             <span className="text-sm font-medium">{property.area || 0}m²</span>
                         </div>
-                        {property.pets_allowed === 'pets_allowed' && (
-                            <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg px-2.5 py-1.5 border border-emerald-200 dark:border-emerald-800">
-                                <span className="text-sm mr-1">🐕</span>
-                                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Mascotas OK</span>
-                            </div>
-                        )}
+                        <div className={`flex items-center rounded-lg px-2.5 py-1.5 border ${
+                            property.pets_allowed === 'pets_allowed'
+                                ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-800'
+                                : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
+                        }`}>
+                            <span className="text-sm mr-1">{property.pets_allowed === 'pets_allowed' ? '🐕' : '🚫'}</span>
+                            <span className={`text-xs font-medium ${
+                                property.pets_allowed === 'pets_allowed'
+                                    ? 'text-emerald-700 dark:text-emerald-300'
+                                    : 'text-red-700 dark:text-red-300'
+                            }`}>
+                                {property.pets_allowed === 'pets_allowed' ? 'Mascotas OK' : 'Sin mascotas'}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -758,7 +774,7 @@ function PropertiesIndex({ properties, allProperties, user, searchTerm, setSearc
     );
 }
 
-function PropertyShow({ property, user, navigate, handleDelete, showToast }) {
+function PropertyShow({ property, user, navigate, handleDelete, showToast, contactSeller }) {
     const [isImageModalOpen, setIsImageModalOpen] = useState(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [mapLoaded, setMapLoaded] = useState(false);
@@ -1206,25 +1222,43 @@ function PropertyShow({ property, user, navigate, handleDelete, showToast }) {
                                     </div>
 
                                     {property.user && (
-                                        <div className="bg-gray-700/30 backdrop-blur-sm rounded-xl p-4 border border-gray-600/30 mb-6">
-                                            <div className="flex items-center">
-                                                <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center mr-4">
-                                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                    </svg>
-                                                </div>
-                                                <div>
-                                                    <div className="text-sm text-gray-400">Publicado por</div>
-                                                    <div className="text-lg font-semibold text-white">
-                                                        {property.user.name} {property.user.last_name || ''}
+                                        <div className="mb-6 space-y-4">
+                                            <div className="bg-gray-700/30 backdrop-blur-sm rounded-xl p-4 border border-gray-600/30">
+                                                <div className="flex items-center">
+                                                    <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center mr-4">
+                                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm text-gray-400">Publicado por</div>
+                                                        <div className="text-lg font-semibold text-white">
+                                                            {property.user.name} {property.user.last_name || ''}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {/* Botón de mensaje */}
+                                            {user && user.id !== property.user.id && (
+                                                <button
+                                                    onClick={() => contactSeller(property.id, property.user.id)}
+                                                    className="group relative w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold py-4 px-6 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/50 hover:scale-105 active:scale-95"
+                                                >
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                                    <div className="relative flex items-center justify-center gap-3">
+                                                        <svg className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                                        </svg>
+                                                        <span>Enviar mensaje</span>
+                                                    </div>
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-4 mb-8">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
                                     <div className="text-center bg-gray-700/30 backdrop-blur-sm rounded-xl p-4 border border-gray-600/30 hover:border-blue-500/30 transition-colors">
                                         <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center mx-auto mb-3 border border-blue-500/30">
                                             <span className="text-2xl">🛏️</span>
@@ -1245,6 +1279,25 @@ function PropertyShow({ property, user, navigate, handleDelete, showToast }) {
                                         </div>
                                         <div className="text-2xl font-bold text-white mb-1">{property.area || 0}</div>
                                         <div className="text-sm text-gray-400">m²</div>
+                                    </div>
+                                    <div className={`text-center backdrop-blur-sm rounded-xl p-4 border transition-colors ${
+                                        property.pets_allowed === 'pets_allowed'
+                                            ? 'bg-emerald-500/20 border-emerald-500/30 hover:border-emerald-500/50'
+                                            : 'bg-red-500/20 border-red-500/30 hover:border-red-500/50'
+                                    }`}>
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 border ${
+                                            property.pets_allowed === 'pets_allowed'
+                                                ? 'bg-emerald-500/20 border-emerald-500/30'
+                                                : 'bg-red-500/20 border-red-500/30'
+                                        }`}>
+                                            <span className="text-2xl">{property.pets_allowed === 'pets_allowed' ? '🐾' : '🚫'}</span>
+                                        </div>
+                                        <div className={`text-lg font-bold mb-1 ${
+                                            property.pets_allowed === 'pets_allowed' ? 'text-emerald-300' : 'text-red-300'
+                                        }`}>
+                                            {property.pets_allowed === 'pets_allowed' ? 'Sí' : 'No'}
+                                        </div>
+                                        <div className="text-sm text-gray-400">Pet Friendly</div>
                                     </div>
                                 </div>
 
@@ -3359,6 +3412,7 @@ function Properties() {
                         navigate={navigate}
                         handleDelete={handleDelete}
                         showToast={showToast}
+                        contactSeller={contactSeller}
                     />
                 );
             case 'edit':

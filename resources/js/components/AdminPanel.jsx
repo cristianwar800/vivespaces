@@ -646,9 +646,9 @@ const AdminPanel = ({ user }) => {
       const searchData = {
         user_id: user?.id || 1,
         session_id: `test-${Date.now()}`,
-        search_query: 'casa en guadalajara con piscina',
+        search_query: 'casa en el centro',
         search_type: 'property',
-        filters: { location: 'guadalajara', type: 'casa' },
+        filters: { location: 'centro', type: 'casa' },
         results_count: 25
       };
 
@@ -781,9 +781,9 @@ const AdminPanel = ({ user }) => {
           }
         },
         testQueries: [
+          'casa en el centro',
+          'departamento en el centro',
           'casa venta zapopan',
-          'departamento renta guadalajara',
-          'oficina comercial centro',
           'terreno industrial'
         ]
       });
@@ -2468,7 +2468,7 @@ const AdminPanel = ({ user }) => {
                 value={mlQuery}
                 onChange={(e) => setMlQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && testAiAlgorithm()}
-                placeholder="Ej: casa venta zapopan con piscina"
+                placeholder="Ej: casa en el centro"
                 className="w-full px-4 py-3 text-lg border-2 border-gray-300 dark:border-gray-700 rounded-lg focus:border-emerald-500 focus:outline-none dark:bg-gray-700 dark:text-white"
               />
             </div>

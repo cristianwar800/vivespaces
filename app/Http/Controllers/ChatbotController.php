@@ -259,8 +259,9 @@ Te guiaré paso a paso para publicar tu propiedad.
 
 1️⃣ **Verifica tu identidad** (obligatorio)
    • Ve a Verificación en el menú
-   • Sube tu INE (frente y reverso)
-   • Espera la aprobación (2-5 minutos)
+   • Toma una selfie
+   • Sube foto del FRENTE de tu INE
+   • Aprobación automática (segundos)
 
 2️⃣ **Prepara la información:**
    • Título atractivo (ej: Hermosa casa en zona norte)
@@ -467,7 +468,7 @@ Es completamente seguro y automático usando tecnología OCR (Reconocimiento Óp
 
 1️⃣ **Prepara tu INE**
    • Ten a la mano tu credencial vigente
-   • Limpia la superficie
+   • Limpia la superficie del FRENTE
    • Busca buena iluminación
 
 2️⃣ **Accede a verificación**
@@ -475,30 +476,32 @@ Es completamente seguro y automático usando tecnología OCR (Reconocimiento Óp
    • Haz clic en tu foto de perfil
    • Selecciona Verificar Identidad
 
-3️⃣ **Sube foto del FRENTE**
+3️⃣ **Toma tu SELFIE**
+   • Permite acceso a cámara
+   • Centra tu rostro
+   • Busca buena iluminación
+   • Toma la foto (sin lentes oscuros ni gorras)
+
+4️⃣ **Sube foto del FRENTE de tu INE**
    • Coloca tu INE horizontal
    • Asegúrate que se vea completa
    • Sin reflejos ni sombras
    • Toma la foto
 
-4️⃣ **Sube foto del REVERSO**
-   • Voltea tu INE
-   • Mismos cuidados que el frente
-   • Toma la foto
-
 5️⃣ **Confirmación automática**
-   • El sistema OCR lee tus datos
-   • Revisa que la información sea correcta
-   • Confirma los datos
+   • El sistema compara tu rostro con la foto de la INE
+   • El OCR lee automáticamente tu nombre de la credencial
+   • Validación instantánea
    • ¡Listo! Eres usuario verificado
 
-⚡ **TIEMPO TOTAL: 2 minutos**
+⚡ **TIEMPO TOTAL: 2-3 minutos**
 
 **TIPS IMPORTANTES:**
-✅ Usa modo horizontal
-✅ INE debe verse completa
+✅ Selfie sin lentes oscuros ni gorras
+✅ Sube solo el FRENTE de la INE
+✅ INE debe verse completa y legible
 ✅ Sin reflejos ni brillos
-✅ Buena iluminación
+✅ Buena iluminación natural
 ✅ Foto nítida (no borrosa)
 ✅ INE vigente',
                 'options' => [
@@ -512,33 +515,30 @@ Es completamente seguro y automático usando tecnología OCR (Reconocimiento Óp
                 'text' => '🤖 **OCR - Reconocimiento Óptico de Caracteres**
 
 **¿QUÉ ES?**
-Es tecnología de Inteligencia Artificial que lee automáticamente tu INE sin que tengas que escribir nada.
+Es tecnología de Inteligencia Artificial que lee automáticamente el texto de tu INE sin que tengas que escribir nada.
 
-**¿QUÉ LEE?**
-📄 Datos que extrae:
-- Nombre completo
-- CURP
-- Fecha de nacimiento
-- Domicilio
-- Número de credencial
-- Clave de elector
-- Vigencia
+**¿QUÉ VALIDAMOS?**
+📄 El sistema verifica:
+- ✅ **Tu nombre completo** - Se compara con tu perfil
+- ✅ **Tu foto en la INE** - Se compara con tu selfie usando reconocimiento facial
+- ✅ **Credencial válida** - Verifica que sea una INE oficial
 
 **VENTAJAS:**
-✅ **Instantáneo** - Lectura en segundos
+✅ **Instantáneo** - Validación en segundos
 ✅ **Sin errores** - No escribes manualmente
-✅ **Muy preciso** - 99.9% de exactitud
+✅ **Muy preciso** - Reconocimiento facial avanzado
 ✅ **Seguro** - Datos encriptados
 ✅ **Automático** - Sin intervención humana
 
 **¿CÓMO FUNCIONA?**
-1. Subes la foto de tu INE
-2. La IA analiza la imagen
-3. Extrae todos los datos automáticamente
-4. Te muestra los resultados
-5. Tú solo confirmas
+1. Tomas una selfie
+2. Subes la foto del FRENTE de tu INE
+3. La IA compara tu rostro con la foto de la INE
+4. El OCR lee tu nombre de la credencial
+5. Valida que tu nombre coincida con tu perfil
+6. ¡Verificación completada!
 
-💡 Es la misma tecnología que usan bancos y gobiernos.',
+💡 Es la misma tecnología de reconocimiento facial que usan bancos y aeropuertos.',
                 'options' => [
                     ['id' => 'verification_safe', 'text' => '🔒 ¿Es seguro?', 'icon' => '🔒'],
                     ['id' => 'verification_how', 'text' => '🔧 Ver proceso completo', 'icon' => '🔧'],
@@ -565,12 +565,11 @@ Es tecnología de Inteligencia Artificial que lee automáticamente tu INE sin qu
 
 **¿QUÉ ES VISIBLE PÚBLICAMENTE?**
 ✅ Badge de "Usuario Verificado"
-✅ Tu nombre (solo si autorizas)
-❌ Número de INE (NUNCA)
-❌ CURP (NUNCA)
-❌ Dirección (NUNCA)
-❌ Fecha de nacimiento (NUNCA)
-❌ Fotos de tu INE (NUNCA)
+✅ Tu nombre en el perfil
+❌ Tu selfie de verificación (NUNCA)
+❌ Foto de tu INE (NUNCA)
+❌ Datos extraídos de la INE (NUNCA)
+❌ Resultados de la verificación facial (NUNCA)
 
 **DERECHOS SOBRE TUS DATOS:**
 📝 Ver tus datos cuando quieras

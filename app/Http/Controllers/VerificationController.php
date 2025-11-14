@@ -233,10 +233,49 @@ class VerificationController extends Controller
             $fullExtractedText = 'No se pudo extraer texto de la INE';
         }
 
+        $isApproved = $faceSimilarity >= $threshold;
+
+        // 🔥 VALIDACIÓN ESTRICTA: El nombre debe coincidir al menos 60%
+        // Validar DESPUÉS de calcular la similitud facial para mostrar el progreso
+        if ($nameMatchPercentage < 60) {
+            Storage::disk('local')->delete($selfieTempPath);
+            Storage::disk('local')->delete($ineTempPath);
+
+            \Log::warning('⚠️ Nombre en INE no coincide con usuario', [
+                'user_id' => $user->id,
+                'user_name' => $userName,
+                'extracted_text' => $fullExtractedText,
+                'match_percentage' => $nameMatchPercentage,
+                'face_similarity' => $faceSimilarity
+            ]);
+
+            // Retornar con información de similitud facial para que el usuario vea el progreso
+            return response()->json([
+                'success' => false,
+                'error' => 'El nombre en la INE no coincide con tu perfil',
+                'code' => 'NAME_MISMATCH',
+                'face_id' => [
+                    'similarity_percentage' => $faceSimilarity,
+                    'threshold' => $threshold,
+                    'approved' => $isApproved
+                ],
+                'ocr_validation' => [
+                    'name_match_percentage' => $nameMatchPercentage,
+                    'matched_words' => $nameMatchDetails['matched_words'] ?? 0,
+                    'total_words' => $nameMatchDetails['total_words'] ?? 0,
+                    'expected_name' => $userName,
+                    'extracted_text' => $fullExtractedText,
+                ],
+                'details' => [
+                    'expected_name' => $userName,
+                    'match_percentage' => $nameMatchPercentage,
+                    'message' => 'Por favor sube tu propia INE, no la de otra persona'
+                ]
+            ], 422);
+        }
+
         Storage::disk('local')->delete($selfieTempPath);
         Storage::disk('local')->delete($ineTempPath);
-
-        $isApproved = $faceSimilarity >= $threshold;
 
         // 🔥 GUARDAR PROGRESO DEL PASO 1 SI ES APROBADO
         if ($isApproved) {
@@ -892,6 +931,38 @@ class VerificationController extends Controller
                 ]);
             }
             
+            // 🔥 VALIDACIÓN DE INTEGRIDAD: Verificar que los datos pertenecen al usuario
+            $user = auth()->user();
+            $userName = $user->name . ' ' . $user->last_name;
+            $stepsData = $session->steps_data ?? [];
+
+            // Verificar si hay datos de verificación facial
+            if (isset($stepsData['1']) && isset($stepsData['1']['ocr_text'])) {
+                $ocrText = $stepsData['1']['ocr_text'];
+
+                // Validar que el nombre en el OCR coincida con el usuario
+                $nameMatch = $this->ocrService->validateNameMatch($ocrText, $userName);
+                $matchPercentage = $nameMatch['match_percentage'];
+
+                if ($matchPercentage < 60) {
+                    \Log::warning('⚠️ Datos de verificación no coinciden con usuario actual', [
+                        'user_id' => $userId,
+                        'user_name' => $userName,
+                        'match_percentage' => $matchPercentage,
+                        'session_id' => $session->session_id
+                    ]);
+
+                    // Invalidar la sesión corrupta
+                    $session->update(['status' => 'invalidated']);
+
+                    return response()->json([
+                        'success' => true,
+                        'has_session' => false,
+                        'warning' => 'Sesión anterior inválida - datos no coinciden con tu perfil'
+                    ]);
+                }
+            }
+
             // 🔥 LOG DETALLADO de lo que se va a devolver
             \Log::info('📦 Sesión recuperada', [
                 'session_id' => $session->session_id,
@@ -901,7 +972,7 @@ class VerificationController extends Controller
                 'progress' => $session->progress_percentage,
                 'current_step' => $session->current_step
             ]);
-            
+
             return response()->json([
                 'success' => true,
                 'has_session' => true,
