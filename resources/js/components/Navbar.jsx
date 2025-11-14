@@ -297,11 +297,24 @@ const performSearch = async (query) => {
 
    useEffect(() => {
        if (typeof window !== 'undefined') {
-           const savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-           setDarkMode(savedTheme === 'dark');
+           // 🔥 Intentar cargar tema guardado en localStorage
+           const savedTheme = localStorage.getItem('theme');
 
-           if (savedTheme === 'dark') {
+           let isDark = false;
+           if (savedTheme) {
+               // Si hay tema guardado, usarlo
+               isDark = savedTheme === 'dark';
+           } else {
+               // Si no hay tema guardado, usar preferencia del sistema
+               isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+           }
+
+           setDarkMode(isDark);
+
+           if (isDark) {
                document.documentElement.classList.add('dark');
+           } else {
+               document.documentElement.classList.remove('dark');
            }
 
            const handleScroll = () => {
@@ -398,6 +411,9 @@ const performSearch = async (query) => {
        setDarkMode(newDarkMode);
 
        if (typeof window !== 'undefined') {
+           // 🔥 Guardar preferencia en localStorage
+           localStorage.setItem('theme', newDarkMode ? 'dark' : 'light');
+
            if (newDarkMode) {
                document.documentElement.classList.add('dark');
            } else {

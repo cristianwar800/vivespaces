@@ -22,7 +22,8 @@ import {
     ChevronRight,
     Zap,
     Star,
-    Trash
+    Trash,
+    RefreshCw
 } from 'lucide-react';
 
 const NotificationPanel = ({ asPage = false }) => {
@@ -36,31 +37,38 @@ const NotificationPanel = ({ asPage = false }) => {
     const [newNotificationAlert, setNewNotificationAlert] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // ==================== TIEMPO REAL ====================
 
-    // Polling cada 10 segundos para nuevas notificaciones
+    // Cargar notificaciones solo al montar el componente
     useEffect(() => {
         if (asPage) {
             loadNotifications();
         }
         loadUnreadCount();
 
+        // Solo verificar contador de no leídas cada 5 minutos (muy esporádico)
         const interval = setInterval(() => {
             loadUnreadCount();
-            if (isOpen || asPage) {
-                loadNotifications();
-            }
-        }, 10000);
+        }, 300000); // 5 minutos - solo para contador badge
 
         return () => clearInterval(interval);
-    }, []);
+    }, []); // Solo se ejecuta al montar
 
+    // Cargar notificaciones solo cuando cambia filter o selectedType (no cuando isOpen cambia)
     useEffect(() => {
         if (isOpen || asPage) {
             loadNotifications();
         }
-    }, [filter, isOpen, asPage, selectedType]);
+    }, [filter, selectedType]); // Removido isOpen y asPage de las dependencias
+
+    // Cargar al abrir el panel por primera vez
+    useEffect(() => {
+        if (isOpen && notifications.length === 0) {
+            loadNotifications();
+        }
+    }, [isOpen]);
 
     // Detectar nuevas notificaciones
     useEffect(() => {
@@ -100,8 +108,13 @@ const NotificationPanel = ({ asPage = false }) => {
         }
     };
 
-    const loadNotifications = async () => {
-        setLoading(true);
+    const loadNotifications = async (manual = false) => {
+        if (manual) {
+            setIsRefreshing(true);
+        } else {
+            setLoading(true);
+        }
+
         try {
             const endpoint = filter === 'unread'
                 ? '/notifications/api/unread'
@@ -134,8 +147,18 @@ const NotificationPanel = ({ asPage = false }) => {
         } catch (error) {
             console.error('Error cargando notificaciones:', error);
         } finally {
-            setLoading(false);
+            if (manual) {
+                setIsRefreshing(false);
+            } else {
+                setLoading(false);
+            }
         }
+    };
+
+    // 🔥 NUEVA: Función para recarga manual
+    const handleManualRefresh = () => {
+        loadNotifications(true);
+        loadUnreadCount();
     };
 
     const loadUnreadCount = async () => {
@@ -519,6 +542,18 @@ const NotificationPanel = ({ asPage = false }) => {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                    onClick={handleManualRefresh}
+                                    disabled={isRefreshing}
+                                    className="group/btn relative flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 text-white rounded-xl font-semibold shadow-lg overflow-hidden transition-all transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                                    title="Recargar notificaciones"
+                                >
+                                    <div className="absolute inset-0 bg-white/20 transform -skew-x-12 -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700"></div>
+                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 opacity-0 group-hover/btn:opacity-100 transition-opacity"></div>
+                                    <RefreshCw className={`w-5 h-5 relative z-10 transition-transform ${isRefreshing ? 'animate-spin' : 'group-hover/btn:rotate-180'}`} />
+                                    <span className="relative z-10">{isRefreshing ? 'Recargando...' : 'Recargar'}</span>
+                                </button>
+
                                 {unreadCount > 0 && (
                                     <button
                                         onClick={markAllAsRead}
@@ -1050,15 +1085,26 @@ const NotificationPanel = ({ asPage = false }) => {
                                     </button>
                                 </div>
 
-                                {unreadCount > 0 && (
+                                <div className="flex items-center gap-2">
                                     <button
-                                        onClick={markAllAsRead}
-                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-xl transition-all transform hover:scale-110 active:scale-90 backdrop-blur-sm"
-                                        title="Marcar todas como leídas"
+                                        onClick={handleManualRefresh}
+                                        disabled={isRefreshing}
+                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-xl transition-all transform hover:scale-110 active:scale-90 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                                        title="Recargar notificaciones"
                                     >
-                                        <CheckCheck className="w-5 h-5" />
+                                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
                                     </button>
-                                )}
+
+                                    {unreadCount > 0 && (
+                                        <button
+                                            onClick={markAllAsRead}
+                                            className="p-2 bg-white/20 hover:bg-white/30 rounded-xl transition-all transform hover:scale-110 active:scale-90 backdrop-blur-sm"
+                                            title="Marcar todas como leídas"
+                                        >
+                                            <CheckCheck className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
 

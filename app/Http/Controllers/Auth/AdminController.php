@@ -818,6 +818,9 @@ class AdminController extends Controller
             $user->verification_method = null;
             $user->save();
 
+            // 🔥 ELIMINAR SESIONES DE VERIFICACIÓN (progreso guardado)
+            $deletedSessions = \App\Models\UserVerification::where('user_id', $user->id)->delete();
+
             // Refrescar el modelo para asegurar que tenemos los datos actualizados
             $user->refresh();
 
@@ -827,6 +830,7 @@ class AdminController extends Controller
                 'user_id' => $user->id,
                 'user_email' => $user->email,
                 'is_identity_verified_after' => $user->is_identity_verified,
+                'verification_sessions_deleted' => $deletedSessions,
                 'reason' => $request->reason ?? 'Revocado manualmente desde panel de administración'
             ]);
 
