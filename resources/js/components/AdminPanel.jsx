@@ -747,7 +747,7 @@ const AdminPanel = ({ user }) => {
     setMlLoading(false);
   };
 
-  const loadAiConfig = () => {
+  const loadAiConfig = async () => {
     const configElement = document.getElementById('ai-config');
     if (configElement) {
       try {
@@ -757,6 +757,63 @@ const AdminPanel = ({ user }) => {
         console.error('❌ Error cargando configuración AI:', e);
       }
     } else {
+      // 🔥 GENERAR EJEMPLOS DINÁMICOS BASADOS EN PROPIEDADES REALES
+      let dynamicTestQueries = [
+        'casa en el centro',
+        'departamento en el centro',
+        'casa venta zapopan',
+        'terreno industrial'
+      ];
+
+      try {
+        // Intentar obtener propiedades reales para ejemplos
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const response = await fetch('/admin/dashboard', {
+          method: 'GET',
+          headers: {
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+
+          if (data.success && data.recent_properties && data.recent_properties.length > 0) {
+            // Generar ejemplos basados en propiedades reales
+            dynamicTestQueries = [];
+
+            data.recent_properties.slice(0, 4).forEach(property => {
+              // Crear búsquedas variadas y realistas
+              if (property.type && property.city) {
+                dynamicTestQueries.push(`${property.type} en ${property.city}`);
+              } else if (property.city && property.title) {
+                // Extraer palabra clave del título
+                const firstWord = property.title.split(' ')[0].toLowerCase();
+                dynamicTestQueries.push(`${firstWord} ${property.city}`);
+              } else if (property.title) {
+                // Usar parte del título
+                const words = property.title.split(' ').slice(0, 3).join(' ');
+                dynamicTestQueries.push(words);
+              }
+            });
+
+            // Si no se generaron suficientes ejemplos, agregar genéricos
+            if (dynamicTestQueries.length === 0) {
+              dynamicTestQueries = [
+                'casa en el centro',
+                'departamento moderno',
+                'propiedad con jardín',
+                'renta mensual'
+              ];
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ No se pudieron cargar propiedades para ejemplos, usando valores por defecto');
+      }
+
       setAiConfig({
         algorithms: {
           naive_bayes: {
@@ -780,12 +837,7 @@ const AdminPanel = ({ user }) => {
             description: 'Combinación de modelos'
           }
         },
-        testQueries: [
-          'casa en el centro',
-          'departamento en el centro',
-          'casa venta zapopan',
-          'terreno industrial'
-        ]
+        testQueries: dynamicTestQueries
       });
     }
   };
